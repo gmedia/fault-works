@@ -1,7 +1,7 @@
 # FaultWorks — Ringkasan Keputusan Proyek
 
 **Tanggal:** 12 Oktober 2026  
-**Status:** Usulan desain untuk brainstorming; belum disetujui sebagai rilis resmi perusahaan.  
+**Status:** v0.1 sudah diimplementasikan dan teruji (12 Oktober 2026), tetapi belum dirilis. Kepemilikan resmi GMEDIA, repo publik, nama, dan lisensi masih menunggu persetujuan. Langkah berikutnya adalah pilot dengan 3–5 pengguna sesuai [rencana validasi](10-VALIDATION-PLAN.md).  
 **Nama usulan:** FaultWorks by GMEDIA  
 **Tagline:** Experiment with failure. Build more resilient systems.
 

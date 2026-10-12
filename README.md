@@ -1,74 +1,85 @@
 # FaultWorks
 
-> **Proposed open-source project by GMEDIA — planning documents plus an empty web app scaffold; the simulation is not implemented yet.**
-
 **Experiment with failure. Build more resilient systems.**
 
-FaultWorks is a proposed **local-first infrastructure experimentation workbench**. It helps developers, DevOps/SRE teams, and educators describe an architecture, model traffic and failures, run repeatable scenarios, compare alternatives, and eventually check simulated predictions against **observations from isolated local sandboxes**.
+FaultWorks is a browser-based workbench for reproducible infrastructure failure experiments. You describe a small system (a client, a load balancer and a few servers), schedule a failure, run a deterministic simulation, and compare two versions of the experiment to see exactly what one change does.
 
-## Why build it?
+> **Status:** v0.1 is implemented and tested, but not released. GMEDIA ownership, the public repository, the name and the license are still pending approval (see [Project status](#project-status)).
 
-Architecture diagrams explain structure but not necessarily behavior. Production systems are too risky to break just to learn how failures propagate. FaultWorks focuses on **reproducible experiment definitions and understandable evidence**, rather than just animated nodes.
+## What you can do
 
-**Product hypothesis:** a small, transparent experiment that lets a user compare *healthy vs failed* infrastructure is more valuable than a large visual editor with unvalidated physics. The hypothesis must be validated with users; existing open-source projects already provide simulation, fault injection, or container labs.
+Open the app and the *Load balancer failure* pair is ready to run: Server B crashes for 20 seconds while the client sends 100 requests per second. Without health checks, 1,005 requests fail. With health checks every 5 seconds, 255 fail. The Compare page shows that health checks are the only setting that differs, and the timelines show why: the load balancer keeps sending traffic to the dead server until two probes in a row have failed.
 
-## Intended user experience
+From there you can:
 
-1. Open a browser and load the built-in *Load Balancer Failure* experiment.
-2. Inspect or edit Client → Load Balancer → Server A/B topology.
-3. Define a load pattern and scheduled server failure; choose a seed.
-4. Run the deterministic simulation and inspect event timeline, errors, latencies, and throughput.
-5. Clone the experiment, change just one variable (for example, enable failure detection), and compare results.
-6. Export a portable, versioned experiment artifact with inputs, assumptions and metrics.
+- edit the topology and every parameter, with units and inline validation;
+- replay a run over simulated time and watch servers go down, get detected and come back;
+- read a plain-language explanation built only from the simulated events;
+- trace any single request through the event log;
+- create a variant, change one setting and compare, including a paired ten-seed check for random scenarios;
+- export the experiment, the result (with input digest and trace fingerprint) or the full event log as CSV.
 
-In a **later, optional** phase, an isolated local agent can execute a real proxy plus dummy backends and record observed behavior. **Simulation is not a production prediction, and sandbox results do not certify production resilience.**
+Everything runs in your browser. There is no account, no backend and no telemetry; experiments are saved in the browser's local storage.
 
-## Proposed release boundaries
+## What it is not
 
-| Release | Planned scope |
-|---|---|
-| v0.1 | Browser-only experiment: one topology, traffic, server failure, health-check model, comparisons, portable artifact |
-| v0.2 | More behavioral components: queue, retries, timeouts, cache, database; curated scenarios |
-| v0.3 | Experimental local sandbox for a tightly controlled proxy/backend scenario |
-| Future | Hosted sandbox and education/team workflows only if real demand is established |
+The simulation is an abstract request-level model. It does not emulate TCP, a specific proxy such as NGINX or HAProxy, or any production environment, and its numbers are not predictions or capacity plans. The in-app [Model guide](apps/web/src/routes/guide.tsx) and [docs/05](docs/05-SIMULATION-AND-METRICS.md) state every assumption.
 
-## Engineering principles
+## Quick start
 
-- Simulation engine is independent of the UI and executable headlessly.
-- Reproducible seeds, deterministic event ordering, and explicit units.
-- Declare simplifications and unknowns; do not present synthetic metrics as production measurements.
-- Prove correctness with invariants, property-based tests, and reference cases.
-- Core stays browser-first, offline-capable, and without login.
-- Treat execution of real containers as a distinct security boundary.
-- No company/customer topology, credentials, or proprietary Failab source in public artifacts.
-
-## Development
-
-The web app lives in `apps/web` (React 19, Vite, TanStack Router, Tailwind CSS v4). Requires Node 22+ and pnpm.
+Requires Node 22 or newer and pnpm 10.
 
 ```bash
 pnpm install
-pnpm dev         # http://localhost:3000
-pnpm build       # static bundle in apps/web/dist
-pnpm typecheck
-pnpm test
-pnpm check       # Biome lint + format check
+pnpm dev          # http://localhost:3000
 ```
+
+`pnpm build` produces a static site in `apps/web/dist` that any static host can serve. Unknown paths must fall back to `index.html` because routing happens in the browser.
+
+## How it is built
+
+```text
+apps/web               React 19 + Vite SPA: TanStack Router, React Flow, Tailwind CSS v4
+packages/engine        deterministic discrete-event simulation, no UI dependencies
+packages/experiment    experiment schema (zod), migrations, validation, compiler, diff
+packages/metrics       reducers from events to metrics, checks, explanations, comparison
+examples               the built-in experiments as portable JSON
+```
+
+The web app validates an experiment, sends it to a Web Worker, and the worker compiles it, runs the engine and reduces the event stream into metrics. The engine never imports React or browser APIs, so the same code runs in Node for tests. Details are in [docs/04-ARCHITECTURE.md](docs/04-ARCHITECTURE.md).
+
+## Development
+
+```bash
+pnpm check        # Biome lint and format check
+pnpm typecheck
+pnpm test         # unit, property-based and golden tests (Vitest)
+pnpm test:e2e     # Playwright journeys, axe accessibility scans, mobile layout
+```
+
+The engine is checked three ways: reference cases whose answers were computed by hand, property-based tests over random experiments (conservation, single outcome per request, capacity and queue bounds, determinism), and invariant checks that run after every simulation in the app. The E2E suite covers the first-use journey from [docs/03](docs/03-USER-JOURNEYS.md) and scans every page for WCAG 2.2 A/AA violations in both themes.
 
 ## Project status
 
-**Design proposal (2026-10-12), web app scaffolded.** No runtime implementation, repository creation, official GMEDIA ownership authorization, trademark clearance, or Apache-2.0 license grant is implied by these files. The name **FaultWorks by GMEDIA** and proposed repository slug `faultworks` are provisional.
+v0.1 (October 2026) covers the scope in [docs/02](docs/02-SCOPE-AND-ROADMAP.md). The next gate is the pilot in [docs/10](docs/10-VALIDATION-PLAN.md): three to five people should be able to run the A/B experiment and explain the difference without help before any v0.2 work starts.
+
+Nothing in this repository implies official GMEDIA authorization, trademark clearance or a license grant. The name **FaultWorks by GMEDIA** and the slug `faultworks` are provisional, and Apache-2.0 is recommended but not granted ([ADR-008](docs/11-DECISION-LOG.md)).
 
 ## Documentation
 
-Start with [Project Brief (Bahasa Indonesia)](docs/00-PROJECT-BRIEF-ID.md), [Vision](docs/01-VISION-AND-POSITIONING.md), [Scope](docs/02-SCOPE-AND-ROADMAP.md), [Architecture](docs/04-ARCHITECTURE.md), and [Validation Plan](docs/10-VALIDATION-PLAN.md).
+- [Project brief (Bahasa Indonesia)](docs/00-PROJECT-BRIEF-ID.md)
+- [Vision](docs/01-VISION-AND-POSITIONING.md) and [scope](docs/02-SCOPE-AND-ROADMAP.md)
+- [Architecture](docs/04-ARCHITECTURE.md) and [simulation model](docs/05-SIMULATION-AND-METRICS.md)
+- [Experiment format](docs/06-EXPERIMENT-FORMAT.md)
+- [Validation plan](docs/10-VALIDATION-PLAN.md) and [decision log](docs/11-DECISION-LOG.md)
+- [Changelog](CHANGELOG.md)
 
 ## Existing projects to study (not copied)
 
-- [Stability Sim](https://github.com/marcbrooker/stability-sim) — discrete-event browser simulation.
-- [Breakscale](https://github.com/xevrion/breakscale) — interactive distributed-system failure examples.
-- [DistSim](https://github.com/hamidxgh/distsim) — real container-based distributed-system laboratory.
-- [Containerlab](https://containerlab.dev/) — container network topology tooling.
-- [React Flow](https://reactflow.dev/) — MIT-licensed node editor foundation.
+- [Stability Sim](https://github.com/marcbrooker/stability-sim): discrete-event browser simulation.
+- [Breakscale](https://github.com/xevrion/breakscale): interactive distributed-system failure examples.
+- [DistSim](https://github.com/hamidxgh/distsim): real container-based distributed-system laboratory.
+- [Containerlab](https://containerlab.dev/): container network topology tooling.
+- [React Flow](https://reactflow.dev/): the MIT-licensed node editor FaultWorks uses for its canvas.
 
 See [Competitive Landscape](docs/08-COMPETITIVE-LANDSCAPE.md) for a gap analysis without claims of uniqueness.

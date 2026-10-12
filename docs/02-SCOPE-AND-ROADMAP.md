@@ -2,6 +2,8 @@
 
 ## MVP v0.1: Load Balancer Failure Experiment
 
+**Status (2026-10-12):** every must-have below is implemented and covered by tests. What is not done yet is the product validation: the pilot in [docs/10](10-VALIDATION-PLAN.md) decides whether v0.2 happens. Small additions beyond the list: replay over simulated time, a plain-language run explanation, a paired ten-seed check on the Compare page, and five built-in experiments instead of one.
+
 A single vertical slice must complete the loop: **load → configure → run → inject fault → inspect → clone & compare → export**.
 
 ### Must-have

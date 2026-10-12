@@ -273,8 +273,8 @@ function GuidePage() {
 					</ul>
 					<p>
 						The engine itself is covered by reference cases with hand-computed
-						answers and by property-based tests over thousands of random
-						experiments.
+						answers and by property-based tests over a few hundred freshly
+						generated random experiments on every test run.
 					</p>
 				</Section>
 

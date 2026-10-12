@@ -34,6 +34,19 @@ Observe without leading: time-to-first-run, completion, misinterpretations, conf
 - Configurable max events/time horizon prevents browser freezes.
 - Persistent artifacts remain interpretable with schema/engine version and units.
 
+## Test status (v0.1)
+
+| Layer | Where | State |
+|---|---|---|
+| Unit | `packages/*/src/*.test.ts` | PRNG, event queue, schema, migration, compiler, digests, diff, editing helpers, percentiles |
+| Property | same files, with fast-check | determinism, conservation, single outcome, capacity and queue bounds, monotonic time, canonical JSON, SHA-256 |
+| Golden reference | `packages/metrics/src/metrics.test.ts` | the four scenarios above with hand-computed counts (1,005 vs 255 failures, 355 timeouts, detection at 25 s and 27 s), window-size invariance |
+| Browser E2E | `apps/web/e2e/journeys.spec.ts` | first-use A/B journey, undo and persistence, invalid input, replay speed invariance, import and migration, export, delete undo |
+| Accessibility | `apps/web/e2e/accessibility.spec.ts` | axe WCAG 2.2 A/AA on every page in light and dark themes, keyboard checks |
+| Mobile | `apps/web/e2e/mobile.spec.ts` | no horizontal scroll on a phone viewport |
+
+Performance check: the largest allowed run (about 240,000 requests, 1.2 million events) simulates in under a second on a laptop, in a Web Worker so the page stays responsive.
+
 ## Three proof points before sandbox investment
 
 1. Simulator is correct against known reference cases.

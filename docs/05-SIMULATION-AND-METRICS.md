@@ -20,6 +20,18 @@ Has N concurrent service slots; arriving requests join a queue if occupied. Serv
 
 Probe interval, timeout, unsuccessful-successful thresholds and propagation delay are first-class parameters. For v0.1, model simplified scheduled probes; do **not** claim parity with NGINX passive checks or HAProxy active checks. Distinguish detected loss from actual failure time.
 
+## Decisions made in the v0.1 implementation
+
+The proposal left some behavior open. The engine settles it as follows; the in-app Model guide says the same in plain language.
+
+- **Two failure behaviors.** `refuse` models a crashed process: new connections and probes fail immediately, and work in progress fails at the crash (reason: lost in crash). `hang` models an unreachable host: connections and probes get no answer, so requests fail at the client timeout and probes at the probe timeout.
+- **No cancellation.** A server does not know a client gave up. Queued or running work continues, uses capacity, and its response is discarded as a late response.
+- **Probe model.** Probes start at time 0 and repeat every interval. They bypass the queue and answer instantly from a running server. Status changes after the configured number of consecutive failures or successes, with no extra propagation delay.
+- **Same-time ordering.** Faults, then probe results, completions, timeouts, probe sends and arrivals. A response landing exactly on the deadline counts as on time.
+- **Percentiles.** Nearest rank, always an observed sample, always shown with its sample count. Success latency excludes failures; a separate "all ended requests" p95 includes them, with timeouts counted as the full timeout.
+- **Censoring.** Requests without an outcome at the horizon are reported as still in flight, never as success or failure.
+- **Attribution.** A failure counts against a fault when the request was lost in the crash, or was routed to the server after it failed and before it was detected or recovered.
+
 ## Metrics with definitions
 
 - **Offered:** number of client attempts generated.
@@ -34,6 +46,8 @@ Probe interval, timeout, unsuccessful-successful thresholds and propagation dela
 - **Detection delay:** time when LB marks backend unhealthy minus actual backend failure time.
 
 ## Invariants and correctness
+
+All five runtime checks below (1–4 and monotonic time) run after every simulation in the app. Invariants 5–8 are covered by automated tests.
 
 1. For any final run: `offered = success + failure + still_inflight` when every generated attempt is tracked; failed admission is a failure subtype. If there are retries in future versions, make distinction between logical client requests and individual attempts explicit.
 2. Every request has exactly one terminal state; timeout + late completion must not double-count.

@@ -37,3 +37,19 @@ All decisions are **provisional** until reviewed and approved by project maintai
 ## ADR-009 — Frontend stack: React + TanStack Router in a pnpm workspace
 
 **Decision:** Scaffold `apps/web` with React 19, Vite, TanStack Router (file-based, code-split), Tailwind CSS v4 and shadcn/ui conventions, linted by Biome, inside a pnpm workspace that will also host `packages/engine`, `packages/experiment` and `packages/metrics`. TanStack Query is left out until there is real async server state. **Why:** matches the stack the team already uses in other React projects, keeps type-safe routing for experiment and comparison URLs, and still builds to a plain static bundle as required by ADR-003. **Consequence:** route files follow TanStack conventions and `routeTree.gen.ts` is generated; engine packages must stay free of React and router imports (ADR-004).
+
+## ADR-010 — All state stays in the browser
+
+**Decision:** Experiments and undo history live in a Zustand store; the library is persisted to `localStorage`. Results are kept in memory only and recomputed when needed. **Why:** v0.1 has no backend by design (ADR-003), and results are reproducible from the experiment, so storing them would only risk showing stale numbers. **Consequence:** experiments are per browser; sharing works by exporting and importing files. A sync or hosted mode would need its own design.
+
+## ADR-011 — Simulation in a Web Worker, results replayed on the page
+
+**Decision:** The worker validates, compiles, simulates and reduces; the page only renders and replays recorded results over simulated time. **Why:** long runs must not block input, and the replay must never be able to change results (invariant 7). **Consequence:** the replay works from windowed series plus exact transition times, so per-request animation is not shown; the event log covers that detail.
+
+## ADR-012 — Hand-written SVG charts instead of a chart library
+
+**Decision:** Time charts are a small SVG component with fault bands, a shared crosshair, keyboard slider semantics and a table view. **Why:** the detection-gap band, cross-chart hover and accessibility requirements were easier to meet exactly than to bend a library to, and it avoids a large dependency. **Consequence:** new chart types (histograms, scatter) need their own components.
+
+## ADR-013 — Failure semantics: refuse or hang, no cancellation
+
+**Decision:** Faults either refuse connections or hang; servers keep working on requests whose clients gave up and discard the late responses. **Why:** these two behaviors produce the contrast the first lessons need (immediate errors versus timeouts and slower detection), and no cancellation is the common real default. **Consequence:** overload scenarios can waste capacity on abandoned work, which is visible as late responses. Cancellation can be added later as an explicit server option.

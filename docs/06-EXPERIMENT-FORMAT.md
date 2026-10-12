@@ -1,53 +1,75 @@
 # Portable Experiment Contract
 
-## Goal
+**Status:** schema `0.1.0`, implemented in `packages/experiment`. The zod schema in [`schema.ts`](../packages/experiment/src/schema.ts) is the source of truth; this page explains it.
 
-One file captures enough information to **reproduce** an abstract simulation and understand its assumptions. Don't let the React Flow layout become the source of truth for behavior.
+One file captures everything needed to reproduce a simulation and understand its assumptions. Canvas layout is stored for convenience but never affects results.
 
-## Proposed schema
+## Experiment file
 
-Top-level fields:
+| Field | Meaning |
+|---|---|
+| `schemaVersion` | `"0.1.0"`. Unknown versions are rejected with an explanation. |
+| `experimentId` | 1–48 lowercase letters, digits or hyphens. |
+| `title`, `question`, `description` | What the experiment is for. Shown in the app, ignored by the engine. |
+| `seed` | Unsigned 32-bit integer. Only matters with Poisson arrivals or exponential service times. |
+| `model.nodes` | Exactly one `client`, one `load-balancer` and 1–8 `server` nodes. Each may have a display `label`. |
+| `model.links` | `client → load-balancer` and `load-balancer → server` for every server; nothing else is accepted in v0.1. |
+| `workload` | `arrival` (`constant` or `poisson`), `offeredRps`, `startMs`, `durationMs`, `timeoutMs`, and up to 10 `bursts` of `{ atMs, durationMs, extraRps }`. |
+| `faults` | Up to 10 `node-failure` faults: `{ id, target, atMs, recoverAtMs \| null, behavior: "refuse" \| "hang" }`. Faults on the same server must not overlap. |
+| `run` | `sampleWindowMs` for charts, and an optional `horizonMs` (default: end of traffic plus one client timeout). |
+| `assumptions` | Simplifications, exported with every result. |
+| `expectedObservations` | Teaching hypotheses. Shown next to results, never evaluated. |
+| `layout` | Optional canvas positions by node id. |
 
-- `schemaVersion` — artifact schema, e.g. `0.1.0`.
-- `experimentId`, `title`, `question`, `description` — user-facing metadata.
-- `model` — nodes, directed links and their component parameters.
-- `workload` — arrival plan and simulation horizon in named units.
-- `faults` — ordered fault injections with simulated timestamps.
-- `seed` — integer or string normalized by specified PRNG implementation.
-- `assumptions` — model simplifications, limits and unsupported behavior.
-- `expectedObservations` — human-readable teaching hypotheses, not hard-coded answers.
-- `layout` — optional canvas positions; must not affect engine results.
+Load balancer config: `algorithm: "round-robin"` and `healthCheck: { enabled, intervalMs, probeTimeoutMs, unhealthyThreshold, healthyThreshold }`.
 
-See [`examples/load-balancer-failure.scenario.json`](../examples/load-balancer-failure.scenario.json) for **provisional example data**. It is a proposal, not an implemented schema and not an executable verified simulation.
+Server config: `capacity` (slots), `queueCapacity`, `serviceTimeMs` and `serviceTimeDistribution` (`fixed` or `exponential`).
 
-## Result artifact (future implementation)
+The bundled examples in [`examples/`](../examples) are valid files of this format and are checked in tests.
 
-Separate `experiment-input.json` from `result.json`. Result should include:
+## Budget limits
+
+A file is rejected when the run would exceed 15 minutes of simulated time or about 250,000 offered requests, or when the file is larger than 512 KB. The engine also stops at 3,000,000 events and marks the result as stopped early. These limits keep a browser tab responsive; they are product limits, not model limits.
+
+## Import rules
+
+- The file is parsed as JSON data only; nothing is executed.
+- Unknown fields are rejected rather than ignored, so typos do not silently change meaning.
+- Older versions are migrated first. `0.1.0-proposal`, the planning-phase example, is upgraded automatically: `failureThreshold` becomes `unhealthyThreshold`, `workload.kind: "constant-rate"` becomes `arrival: "constant"`, and missing fields get documented defaults.
+- Every problem is reported with its path (for example `model.nodes[2].config.serviceTimeMs`) and a message that says how to fix it.
+- If the id already exists in the browser, the import is saved under a new id and the user is told.
+
+## Digests
+
+- **Input digest:** SHA-256 of the canonical experiment without `layout`. Canonical form sorts object keys, keeps array order (server order is round-robin order) and drops undefined values.
+- **Run key:** SHA-256 of the compiled engine input. It changes exactly when results can change, so titles, notes, labels and layout never make a result stale.
+- **Trace fingerprint:** a non-cryptographic hash over every event field in emission order. Two runs with the same input, seed and engine version must produce the same fingerprint.
+
+## Result artifact
+
+Exported as `<experimentId>.result.json`:
 
 ```json
 {
   "resultSchemaVersion": "0.1.0",
-  "engineVersion": "<git-sha-or-release>",
-  "inputDigest": "<sha256-of-canonical-input>",
+  "engineVersion": "0.1.0",
+  "metricDefinitionsVersion": "0.1.0",
+  "inputDigest": "sha256:…",
+  "traceDigest": "fnv1a32x2:…",
   "seed": 42,
   "runStatus": "completed",
-  "metrics": {"offered": 0, "success": 0, "failure": 0, "inflight": 0},
-  "metricDefinitionsVersion": "0.1.0",
-  "limitations": ["abstract request-level simulation"]
+  "eventCount": 30431,
+  "horizonMs": 61000,
+  "metrics": { "offered": 6000, "succeeded": 5745, "failed": 255, "inFlight": 0, "…": "…" },
+  "checks": [ { "id": "conservation", "passed": true, "…": "…" } ],
+  "series": { "…": "…" },
+  "limitations": [ "…" ],
+  "experiment": { "…": "the full input" }
 }
 ```
 
-This is a **schema sketch**, not an observed result. The values `0` and placeholders are illustrative only.
+The numbers above are the real result of `lb-failure-with-health-checks`, except the event count, which is illustrative. The artifact contains no wall-clock values, so exporting the same run twice gives byte-identical files. The full event trace can be exported separately as CSV.
 
-## Import/export requirements
+## Diff for comparisons
 
-- Strict schema validation and readable rejection errors.
-- Explicit migration path when a schema field is renamed or default behavior changes.
-- Canonical sorting/serialization for input digest; execution semantics never depend on object key order.
-- Limit input bytes, node count, edge count, and events; importing JSON must not execute scripts.
-- No secrets, internal IPs or customer data in bundled public examples.
-- Diff-aware A/B experiments should show exactly which semantic configuration fields changed; layout coordinates ignored.
-
-## Reproducibility test
-
-Given the same validated input, engine commit/version, and seed, event results and metrics must match. Browser/device framerate cannot change the output.
+`semanticDiff(a, b)` lists every behavior-relevant difference, keyed by node id, fault id and burst position, with human labels and units. Titles, notes, labels and layout are ignored. When health checks are off on both sides, probe settings are ignored too, because they cannot affect results.

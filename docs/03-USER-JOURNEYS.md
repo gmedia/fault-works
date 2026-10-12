@@ -22,13 +22,14 @@ Start from known topology, edit server capacity and traffic profile; run A/B; in
 
 Provide canonical scenario JSON and expected conceptual observations; have learners fork with a single variable change; check output version/seed; review explanation rather than gamified points alone.
 
-## Workspace layout (proposal)
+## Workspace layout (as built in v0.1)
 
-- Left: component palette + sample experiments.
-- Center: topology canvas, node states, restrained event animations.
-- Right: selected node configuration, explicit units, assumptions, and invalid configuration hints.
-- Bottom: timeline, time-series metrics, table for before/after; contextual 'why it changed' sourced from deterministic events.
-- Primary actions: Run, Pause, Step, Reset, Clone Experiment, Compare, Export.
+- **Header:** experiment title and question, a status line (not run, results current, settings changed, problems to fix), and the actions Undo, Redo, Create variant, Compare, Export and Run.
+- **Canvas (left):** the topology with each server's status, busy slots and queue at the replay position, and request rates on the links. Below it, the replay bar: play and pause, step one window, jump to the previous or next state change, a scrubber that shows fault periods, and replay speed.
+- **Inspector (right):** tabs for the selected component, traffic, faults, run settings (seed, horizon, chart window) and notes (question, expected observations, assumptions). Units sit inside every field and errors appear next to it.
+- **Results (below):** summary figures led by failed requests, then tabs for charts over time, a plain-language explanation next to the author's expected observations and assumptions, the event log, and model checks with a reproducibility re-run.
+
+The original proposal put a component palette on the left. v0.1 has a fixed topology shape, so an "Add server" button on the canvas replaces it.
 
 ## UX rules
 
