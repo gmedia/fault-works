@@ -1,21 +1,27 @@
-import type { EngineInput, RatePhase } from "@faultworks/engine";
+import type {
+	EdgeInput,
+	EngineInput,
+	FaultInput,
+	NodeInput,
+	RatePhase,
+} from "@faultworks/engine";
 import {
 	type Experiment,
+	type ExperimentNode,
 	LIMITS,
-	type LoadBalancerNode,
-	type ServerNode,
 	type Workload,
 } from "./schema.ts";
 
 const US_PER_MS = 1000;
 
 export interface TopologyInfo {
-	clientId: string;
-	clientLabel: string;
-	loadBalancerId: string;
-	loadBalancerLabel: string;
-	/** In round-robin order, which is the order servers appear in `model.nodes`. */
-	servers: Array<{ id: string; label: string }>;
+	/** Node ids in engine index order (the order they appear in `model.nodes`). */
+	nodeIds: string[];
+	nodeLabels: string[];
+	nodeKinds: ExperimentNode["kind"][];
+	/** Link ids in engine edge order. */
+	linkIds: string[];
+	client: number;
 }
 
 export interface CompiledExperiment {
@@ -67,68 +73,184 @@ export function effectiveHorizonMs(experiment: Experiment): number {
 	return Math.ceil(lastEndUs / US_PER_MS) + experiment.workload.timeoutMs;
 }
 
+export function defaultLabel(node: ExperimentNode): string {
+	return node.label ?? node.id;
+}
+
+const toUs = (ms: number) => Math.max(1, Math.round(ms * US_PER_MS));
+
 /** Compiles an experiment that already passed `parseExperiment`/`checkExperiment`. */
 export function compileExperiment(experiment: Experiment): CompiledExperiment {
 	const nodes = experiment.model.nodes;
-	const client = nodes.find((n) => n.kind === "client");
-	const lb = nodes.find(
-		(n): n is LoadBalancerNode => n.kind === "load-balancer",
-	);
-	const servers = nodes.filter((n): n is ServerNode => n.kind === "server");
-	if (!client || !lb || servers.length === 0)
+	const nodeIndex = new Map(nodes.map((n, i) => [n.id, i]));
+	const linkIndex = new Map(experiment.model.links.map((l, i) => [l.id, i]));
+	const client = nodes.findIndex((n) => n.kind === "client");
+	if (client === -1)
 		throw new Error("compileExperiment needs a validated experiment");
 
-	const serverIndex = new Map(servers.map((s, i) => [s.id, i]));
-	const hc = lb.config.healthCheck;
-	const horizonMs = effectiveHorizonMs(experiment);
+	const engineNodes: NodeInput[] = nodes.map((n): NodeInput => {
+		switch (n.kind) {
+			case "client":
+				return { kind: "client", id: n.id };
+			case "load-balancer": {
+				const hc = n.config.healthCheck;
+				return {
+					kind: "load-balancer",
+					id: n.id,
+					algorithm: n.config.algorithm,
+					retries: n.config.retries,
+					healthCheck: hc.enabled
+						? {
+								intervalUs: hc.intervalMs * US_PER_MS,
+								probeTimeoutUs: hc.probeTimeoutMs * US_PER_MS,
+								unhealthyThreshold: hc.unhealthyThreshold,
+								healthyThreshold: hc.healthyThreshold,
+							}
+						: null,
+				};
+			}
+			case "cache":
+				return {
+					kind: "cache",
+					id: n.id,
+					capacity: n.config.capacity,
+					queueCapacity: n.config.queueCapacity,
+					serviceTimeUs: toUs(n.config.serviceTimeMs),
+					distribution: n.config.serviceTimeDistribution,
+					hitRatio: n.config.hitRatio,
+				};
+			default:
+				return {
+					kind: n.kind,
+					id: n.id,
+					capacity: n.config.capacity,
+					queueCapacity: n.config.queueCapacity,
+					serviceTimeUs: toUs(n.config.serviceTimeMs),
+					distribution: n.config.serviceTimeDistribution,
+				};
+		}
+	});
 
-	const engine: EngineInput = {
-		seed: experiment.seed,
-		horizonUs: horizonMs * US_PER_MS,
-		maxEvents: LIMITS.maxEvents,
-		healthCheck: hc.enabled
-			? {
-					intervalUs: hc.intervalMs * US_PER_MS,
-					probeTimeoutUs: hc.probeTimeoutMs * US_PER_MS,
-					unhealthyThreshold: hc.unhealthyThreshold,
-					healthyThreshold: hc.healthyThreshold,
-				}
-			: null,
-		servers: servers.map((s) => ({
-			id: s.id,
-			capacity: s.config.capacity,
-			queueCapacity: s.config.queueCapacity,
-			serviceTimeUs: Math.max(
-				1,
-				Math.round(s.config.serviceTimeMs * US_PER_MS),
-			),
-			distribution: s.config.serviceTimeDistribution,
-		})),
-		arrival: experiment.workload.arrival,
-		phases: compilePhases(experiment.workload),
-		timeoutUs: experiment.workload.timeoutMs * US_PER_MS,
-		faults: experiment.faults.map((f) => {
-			const index = serverIndex.get(f.target);
-			if (index === undefined)
-				throw new Error(`Fault ${f.id} targets unknown server ${f.target}`);
-			return {
-				id: f.id,
-				server: index,
-				atUs: f.atMs * US_PER_MS,
-				recoverAtUs: f.recoverAtMs === null ? null : f.recoverAtMs * US_PER_MS,
-				behavior: f.behavior,
-			};
-		}),
+	const index = (id: string, what: string) => {
+		const i = nodeIndex.get(id);
+		if (i === undefined)
+			throw new Error(`${what} refers to unknown node ${id}`);
+		return i;
 	};
 
+	const edges: EdgeInput[] = experiment.model.links.map((l) => ({
+		id: l.id,
+		source: index(l.source, `link ${l.id}`),
+		target: index(l.target, `link ${l.id}`),
+		latencyUs: Math.round(l.latencyMs * US_PER_MS),
+		timeoutUs: l.timeoutMs === null ? null : l.timeoutMs * US_PER_MS,
+		retries: l.retries,
+		circuitBreaker: l.circuitBreaker.enabled
+			? {
+					failureThreshold: l.circuitBreaker.failureThreshold,
+					openUs: l.circuitBreaker.openMs * US_PER_MS,
+				}
+			: null,
+	}));
+
+	const faults: FaultInput[] = experiment.faults.map((f): FaultInput => {
+		const atUs = f.atMs * US_PER_MS;
+		switch (f.kind) {
+			case "node-failure":
+				return {
+					kind: "node-failure",
+					id: f.id,
+					node: index(f.target, `fault ${f.id}`),
+					atUs,
+					recoverAtUs:
+						f.recoverAtMs === null ? null : f.recoverAtMs * US_PER_MS,
+					behavior: f.behavior,
+				};
+			case "slowdown":
+				return {
+					kind: "slowdown",
+					id: f.id,
+					node: index(f.target, `fault ${f.id}`),
+					atUs,
+					untilUs: f.untilMs === null ? null : f.untilMs * US_PER_MS,
+					factor: f.factor,
+					addUs: Math.round(f.addMs * US_PER_MS),
+				};
+			case "error-rate":
+				return {
+					kind: "error-rate",
+					id: f.id,
+					node: index(f.target, `fault ${f.id}`),
+					atUs,
+					untilUs: f.untilMs === null ? null : f.untilMs * US_PER_MS,
+					rate: f.rate,
+				};
+			case "capacity":
+				return {
+					kind: "capacity",
+					id: f.id,
+					node: index(f.target, `fault ${f.id}`),
+					atUs,
+					untilUs: f.untilMs === null ? null : f.untilMs * US_PER_MS,
+					capacity: f.capacity,
+				};
+			case "link-latency": {
+				const edge = linkIndex.get(f.target);
+				if (edge === undefined)
+					throw new Error(`fault ${f.id} refers to unknown link ${f.target}`);
+				return {
+					kind: "link-latency",
+					id: f.id,
+					edge,
+					atUs,
+					untilUs: f.untilMs === null ? null : f.untilMs * US_PER_MS,
+					addUs: Math.round(f.addMs * US_PER_MS),
+				};
+			}
+			case "link-loss": {
+				const edge = linkIndex.get(f.target);
+				if (edge === undefined)
+					throw new Error(`fault ${f.id} refers to unknown link ${f.target}`);
+				return {
+					kind: "link-loss",
+					id: f.id,
+					edge,
+					atUs,
+					untilUs: f.untilMs === null ? null : f.untilMs * US_PER_MS,
+					rate: f.rate,
+				};
+			}
+			default:
+				return {
+					kind: "cache-flush",
+					id: f.id,
+					node: index(f.target, `fault ${f.id}`),
+					atUs,
+					untilUs: f.untilMs === null ? null : f.untilMs * US_PER_MS,
+				};
+		}
+	});
+
+	const horizonMs = effectiveHorizonMs(experiment);
 	return {
-		engine,
+		engine: {
+			seed: experiment.seed,
+			horizonUs: horizonMs * US_PER_MS,
+			maxEvents: LIMITS.maxEvents,
+			nodes: engineNodes,
+			edges,
+			client,
+			arrival: experiment.workload.arrival,
+			phases: compilePhases(experiment.workload),
+			timeoutUs: experiment.workload.timeoutMs * US_PER_MS,
+			faults,
+		},
 		topology: {
-			clientId: client.id,
-			clientLabel: client.label ?? "Client",
-			loadBalancerId: lb.id,
-			loadBalancerLabel: lb.label ?? "Load balancer",
-			servers: servers.map((s) => ({ id: s.id, label: s.label ?? s.id })),
+			nodeIds: nodes.map((n) => n.id),
+			nodeLabels: nodes.map(defaultLabel),
+			nodeKinds: nodes.map((n) => n.kind),
+			linkIds: experiment.model.links.map((l) => l.id),
+			client,
 		},
 		horizonMs,
 		sampleWindowMs: experiment.run.sampleWindowMs,

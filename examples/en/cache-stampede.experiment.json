@@ -1,0 +1,142 @@
+{
+	"schemaVersion": "0.2.0",
+	"experimentId": "cache-stampede",
+	"title": "Cache stampede: when the cache suddenly empties",
+	"question": "What happens to the database when a cache that absorbs 90% of reads suddenly empties?",
+	"description": "The API reads through a cache with a 90% hit ratio, so the database only sees a tenth of the traffic. From 20 s to 25 s the cache is flushed (a restart or an explicit flush). Every request falls through to a database sized for a tenth of the load.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 100,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "cache",
+				"kind": "cache",
+				"label": "Cache",
+				"config": {
+					"capacity": 200,
+					"queueCapacity": 0,
+					"serviceTimeMs": 2,
+					"serviceTimeDistribution": "fixed",
+					"hitRatio": 0.9
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 5,
+					"queueCapacity": 20,
+					"serviceTimeMs": 40,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-cache",
+				"source": "api",
+				"target": "cache",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "cache-db",
+				"source": "cache",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 300,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "cache-cache-flush",
+			"kind": "cache-flush",
+			"target": "cache",
+			"atMs": 20000,
+			"untilMs": 25000
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Health probes bypass the request queue and answer instantly when the component is up.",
+		"Components do not know when their caller gave up; they finish the work and the answer is discarded.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"While the cache is empty, the database's queue fills and latency jumps.",
+		"Failures originate at the database (queue full) and as timeouts, not at the cache.",
+		"Once the cache is warm again, database load drops back to its normal level."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"cache": {
+			"x": 600,
+			"y": 0
+		},
+		"db": {
+			"x": 900,
+			"y": 0
+		}
+	}
+}

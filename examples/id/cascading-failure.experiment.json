@@ -1,0 +1,115 @@
+{
+	"schemaVersion": "0.2.0",
+	"experimentId": "cascading-failure",
+	"title": "Kegagalan berantai: database lambat menjatuhkan API",
+	"question": "Bagaimana database yang lambat bisa membuat API yang sehat ikut gagal?",
+	"description": "Klien memanggil API, API memanggil database. Di detik 20 sampai 40 database jadi 50 kali lebih lambat. API tidak memakai timeout ke database, jadi tiap slot API tertahan menunggu, antreannya penuh, dan klien mulai menerima penolakan dan timeout dari API, padahal API sendiri tidak rusak.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 50,
+					"serviceTimeMs": 20,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-db",
+				"source": "api",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "db-slowdown",
+			"kind": "slowdown",
+			"target": "db",
+			"atMs": 20000,
+			"untilMs": 40000,
+			"factor": 50,
+			"addMs": 0
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Probe health check melewati antrean dan dijawab seketika saat komponen hidup.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah; pekerjaan tetap diselesaikan dan jawabannya dibuang.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Slot API habis dalam beberapa detik setelah database melambat, karena tiap request menahan slot selama menunggu database.",
+		"Kegagalan yang dilihat klien berasal dari API (antrean penuh) dan dari timeout, bukan dari database secara langsung.",
+		"Setelah database normal kembali, API butuh waktu untuk menghabiskan antreannya."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"db": {
+			"x": 600,
+			"y": 0
+		}
+	}
+}

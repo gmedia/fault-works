@@ -1,5 +1,5 @@
 {
-	"schemaVersion": "0.1.0",
+	"schemaVersion": "0.2.0",
 	"experimentId": "lb-failure-no-health-checks",
 	"title": "Load balancer failure without health checks",
 	"question": "What happens to requests when Server B crashes and the load balancer never notices?",
@@ -18,6 +18,7 @@
 				"label": "Load balancer",
 				"config": {
 					"algorithm": "round-robin",
+					"retries": 0,
 					"healthCheck": {
 						"enabled": false,
 						"intervalMs": 5000,
@@ -29,7 +30,7 @@
 			},
 			{
 				"id": "server-a",
-				"kind": "server",
+				"kind": "service",
 				"label": "Server A",
 				"config": {
 					"capacity": 10,
@@ -40,7 +41,7 @@
 			},
 			{
 				"id": "server-b",
-				"kind": "server",
+				"kind": "service",
 				"label": "Server B",
 				"config": {
 					"capacity": 10,
@@ -52,16 +53,43 @@
 		],
 		"links": [
 			{
+				"id": "client-lb",
 				"source": "client",
-				"target": "lb"
+				"target": "lb",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
 			},
 			{
+				"id": "lb-server-a",
 				"source": "lb",
-				"target": "server-a"
+				"target": "server-a",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
 			},
 			{
+				"id": "lb-server-b",
 				"source": "lb",
-				"target": "server-b"
+				"target": "server-b",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
 			}
 		]
 	},
@@ -88,10 +116,9 @@
 	},
 	"assumptions": [
 		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
-		"Each server has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
-		"Health probes bypass the request queue and answer instantly when the server is up.",
-		"Servers do not know when a client gave up; they finish the work and the late response is discarded.",
-		"No retries: every failed request is final.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Health probes bypass the request queue and answer instantly when the component is up.",
+		"Components do not know when their caller gave up; they finish the work and the answer is discarded.",
 		"Numbers are scenario inputs, not measured performance of any product."
 	],
 	"expectedObservations": [
@@ -110,11 +137,11 @@
 		},
 		"server-a": {
 			"x": 620,
-			"y": -75.0
+			"y": -80
 		},
 		"server-b": {
 			"x": 620,
-			"y": 75.0
+			"y": 80
 		}
 	}
 }

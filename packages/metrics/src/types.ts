@@ -1,10 +1,11 @@
 import type {
 	FailureReason,
-	FaultBehavior,
+	FaultKind,
+	NodeKind,
 	RunStatus,
 } from "@faultworks/engine";
 
-export const METRIC_DEFINITIONS_VERSION = "0.1.0";
+export const METRIC_DEFINITIONS_VERSION = "0.2.0";
 
 export interface LatencyStats {
 	/** Number of samples behind the percentiles. */
@@ -16,11 +17,14 @@ export interface LatencyStats {
 	maxMs: number;
 }
 
-export interface ServerSummary {
+export interface NodeSummary {
 	id: string;
 	label: string;
-	routed: number;
+	kind: NodeKind;
+	/** Calls that reached this node (after routing, latency and loss). */
+	calls: number;
 	succeeded: number;
+	/** Calls that failed with this node as the origin of the failure. */
 	failed: number;
 	failedByReason: Record<FailureReason, number>;
 	lateResponses: number;
@@ -30,29 +34,51 @@ export interface ServerSummary {
 	queueCapacity: number;
 	/** Busy slot-time divided by capacity × measured time, 0–1. */
 	utilization: number;
+	/** Latency of calls answered by this node, measured at its callers. */
+	callLatency: LatencyStats | null;
+	/** Cache only: lookups answered from memory over all lookups. */
+	hitRatio: number | null;
+	/** Queue only: jobs processed, failed, and the longest wait between storing and finishing. */
+	jobs: {
+		done: number;
+		failed: number;
+		maxWaitMs: number;
+		meanWaitMs: number;
+	} | null;
+}
+
+export interface LinkSummary {
+	id: string;
+	source: number;
+	target: number;
+	calls: number;
+	/** Calls that were retries (attempt > 1). */
+	retries: number;
+	failed: number;
+	breakerOpens: number;
 }
 
 export interface FaultSummary {
 	id: string;
-	serverId: string;
-	serverLabel: string;
-	behavior: FaultBehavior;
-	failedAtMs: number;
-	/** `null` when the server stays down until the horizon. */
-	recoveredAtMs: number | null;
-	/** When the load balancer marked the server unhealthy for this fault; `null` if it never did. */
+	kind: FaultKind;
+	/** Node index, or -1 for link faults. */
+	node: number;
+	nodeLabel: string;
+	/** Edge index, or -1 for node faults. */
+	edge: number;
+	startedAtMs: number;
+	/** `null` when the fault lasts until the horizon. */
+	endedAtMs: number | null;
+	behavior: "refuse" | "hang" | null;
+	/** Crash faults only: when a balancer marked the node unhealthy; `null` if none did. */
 	detectedAtMs: number | null;
 	detectionDelayMs: number | null;
-	/** When the load balancer routed to the server again after recovery. */
+	/** When a balancer routed to the node again after recovery. */
 	restoredAtMs: number | null;
-	/** Requests that failed at or because of this server between the crash and detection/recovery. */
+	/** Requests that failed because of this crash before it was detected or recovered. */
 	failedWhileUndetected: number;
-	/**
-	 * Detection delays the health-check settings allow for this fault, depending on where in the
-	 * probe cycle the crash lands. `null` without health checks.
-	 */
+	/** Detection delays the health-check settings allow for this crash; `null` without checks. */
 	possibleDetectionMs: { min: number; max: number } | null;
-	/** The crash landed exactly on a probe tick, which gives the shortest possible detection. */
 	crashOnProbeTick: boolean;
 }
 
@@ -60,11 +86,11 @@ export interface RunSummary {
 	status: RunStatus;
 	measuredMs: number;
 	offered: number;
-	/** Requests a backend accepted (started service or joined a queue). */
-	admitted: number;
 	succeeded: number;
 	failed: number;
 	failedByReason: Record<FailureReason, number>;
+	/** Failed requests by the node where the failure originated (-1: client deadline with no node). */
+	failedByOrigin: Array<{ node: number; count: number }>;
 	/** Not terminal at the horizon (censored): neither success nor failure. */
 	inFlight: number;
 	lateResponses: number;
@@ -74,47 +100,56 @@ export interface RunSummary {
 	completedLatency: LatencyStats | null;
 	/** Total time clients waited on requests that ended in failure, in ms. */
 	failedWaitMs: number;
-	/** Terminal requests (success + failure) per simulated second. */
 	throughputRps: number;
-	/** Successful completions per simulated second (no SLO is declared, so this is not "goodput"). */
 	successRateRps: number;
-	servers: ServerSummary[];
+	nodes: NodeSummary[];
+	links: LinkSummary[];
 	faults: FaultSummary[];
 	probes: number;
 }
 
 export interface TimeSeries {
 	windowMs: number;
-	/** Window start times in ms. */
 	startMs: number[];
 	offered: number[];
 	succeeded: number[];
 	failed: number[];
 	failedByReason: Record<FailureReason, number[]>;
-	/** Successful-request latency percentiles of completions in the window; null without samples. */
 	p50Ms: Array<number | null>;
 	p95Ms: Array<number | null>;
 	samples: number[];
-	/** p95 over every request that ended in the window, failures included (timeouts count as the timeout). */
 	endedP95Ms: Array<number | null>;
-	/** Requests not yet terminal at the end of the window. */
 	inFlight: number[];
-	/** Per server (outer index) per window: peak queue depth, peak busy slots, requests routed. */
+	/** Per node (outer index) per window. Client rows are zero. */
 	queueDepth: number[][];
 	busy: number[][];
-	routed: number[][];
-	/** Per server per window, state at the end of the window. */
+	/** Calls delivered to the node in the window. */
+	calls: number[][];
+	/** Calls that failed with the node as origin, in the window. */
+	nodeFailed: number[][];
+	/** Node state at the end of the window. */
 	up: boolean[][];
+	/** For nodes behind a balancer: in rotation at the end of the window (true otherwise). */
 	healthy: boolean[][];
+	/** Per edge per window: calls started. */
+	linkCalls: number[][];
 }
 
-/** State changes with exact times, for bands on charts and the playback canvas. */
-export interface Transition {
-	tMs: number;
-	server: number;
-	kind: "down" | "up" | "unhealthy" | "healthy";
-	fault: number;
-}
+/** State changes with exact times, for bands on charts and the replay. */
+export type Transition =
+	| {
+			tMs: number;
+			kind: "down" | "up" | "unhealthy" | "healthy";
+			node: number;
+			fault: number;
+	  }
+	| { tMs: number; kind: "fault-start" | "fault-end"; fault: number }
+	| {
+			tMs: number;
+			kind: "breaker";
+			edge: number;
+			state: "open" | "half-open" | "closed";
+	  };
 
 export interface InvariantCheck {
 	id:
@@ -123,9 +158,9 @@ export interface InvariantCheck {
 		| "capacity"
 		| "queue-bounds"
 		| "monotonic-time";
-	label: string;
 	passed: boolean;
-	detail: string;
+	/** Translatable detail: a key and parameters. */
+	detail: { key: string; params?: Record<string, string | number> };
 }
 
 export interface RunMetrics {

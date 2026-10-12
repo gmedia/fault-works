@@ -1,0 +1,147 @@
+{
+	"schemaVersion": "0.2.0",
+	"experimentId": "lb-failure-with-health-checks",
+	"title": "Load balancer dengan health check",
+	"question": "Berapa banyak request gagal yang dicegah health check saat Server B mati?",
+	"description": "Skenario yang sama dengan dasar, dengan satu perubahan: load balancer memeriksa tiap backend setiap 5 detik dan mengeluarkannya setelah dua probe gagal. Bandingkan dengan dasar untuk melihat efek satu variabel itu.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"label": "Load balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"retries": 0,
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 5000,
+						"probeTimeoutMs": 1000,
+						"unhealthyThreshold": 2,
+						"healthyThreshold": 2
+					}
+				}
+			},
+			{
+				"id": "server-a",
+				"kind": "service",
+				"label": "Server A",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 50,
+					"serviceTimeMs": 100,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "server-b",
+				"kind": "service",
+				"label": "Server B",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 50,
+					"serviceTimeMs": 100,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-lb",
+				"source": "client",
+				"target": "lb",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-server-a",
+				"source": "lb",
+				"target": "server-a",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-server-b",
+				"source": "lb",
+				"target": "server-b",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "server-b-crash",
+			"kind": "node-failure",
+			"target": "server-b",
+			"atMs": 20000,
+			"recoverAtMs": 40000,
+			"behavior": "refuse"
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Probe health check melewati antrean dan dijawab seketika saat komponen hidup.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah; pekerjaan tetap diselesaikan dan jawabannya dibuang.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Request masih gagal antara saat mati dan saat terdeteksi, karena dua probe harus gagal dulu.",
+		"Setelah terdeteksi, Server A memikul semua trafik dan kegagalan berhenti.",
+		"Setelah pulih, Server B baru dapat trafik lagi setelah dua probe berhasil."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"lb": {
+			"x": 300,
+			"y": 0
+		},
+		"server-a": {
+			"x": 620,
+			"y": -80
+		},
+		"server-b": {
+			"x": 620,
+			"y": 80
+		}
+	}
+}

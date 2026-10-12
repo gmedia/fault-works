@@ -1,16 +1,18 @@
 import { compilePhases, effectiveHorizonMs } from "./compile.ts";
+import { decodeMessage, type Message } from "./messages.ts";
 import { migrate } from "./migrate.ts";
 import {
 	type Experiment,
 	experimentSchema,
+	isWorker,
 	LIMITS,
-	type ServerNode,
+	LINK_FAULT_KINDS,
 } from "./schema.ts";
 
 export interface ValidationIssue {
 	/** Dotted path with array indexes, e.g. `model.nodes[2].config.capacity`. Empty for the root. */
 	path: string;
-	message: string;
+	message: Message;
 }
 
 export type ParseResult =
@@ -26,6 +28,15 @@ export function formatPath(path: ReadonlyArray<PropertyKey>): string {
 	return out;
 }
 
+const issue = (
+	path: string,
+	key: string,
+	params?: Message["params"],
+): ValidationIssue => ({
+	path,
+	message: params ? { key, params } : { key },
+});
+
 /** Parses and validates JSON text from an untrusted source (file import, paste). */
 export function parseExperimentJson(text: string): ParseResult {
 	const bytes = new TextEncoder().encode(text).length;
@@ -33,10 +44,10 @@ export function parseExperimentJson(text: string): ParseResult {
 		return {
 			ok: false,
 			issues: [
-				{
-					path: "",
-					message: `The file is ${Math.ceil(bytes / 1024)} KB; experiments are limited to ${LIMITS.maxImportBytes / 1024} KB.`,
-				},
+				issue("", "import.tooLarge", {
+					kb: Math.ceil(bytes / 1024),
+					limitKb: LIMITS.maxImportBytes / 1024,
+				}),
 			],
 		};
 	let value: unknown;
@@ -46,10 +57,9 @@ export function parseExperimentJson(text: string): ParseResult {
 		return {
 			ok: false,
 			issues: [
-				{
-					path: "",
-					message: `This is not valid JSON (${error instanceof Error ? error.message : "parse error"}).`,
-				},
+				issue("", "import.invalidJson", {
+					detail: error instanceof Error ? error.message : "parse error",
+				}),
 			],
 		};
 	}
@@ -60,18 +70,17 @@ export function parseExperimentJson(text: string): ParseResult {
 export function parseExperiment(value: unknown): ParseResult {
 	const migrated = migrate(value);
 	if (!migrated.ok)
-		return { ok: false, issues: [{ path: "", message: migrated.message }] };
+		return { ok: false, issues: [issue("", migrated.key, migrated.params)] };
 
 	const parsed = experimentSchema.safeParse(migrated.value);
-	if (!parsed.success) {
+	if (!parsed.success)
 		return {
 			ok: false,
-			issues: parsed.error.issues.map((issue) => ({
-				path: formatPath(issue.path),
-				message: issue.message,
+			issues: parsed.error.issues.map((i) => ({
+				path: formatPath(i.path),
+				message: decodeMessage(i.message),
 			})),
 		};
-	}
 
 	const issues = checkExperiment(parsed.data);
 	if (issues.length > 0) return { ok: false, issues };
@@ -79,144 +88,230 @@ export function parseExperiment(value: unknown): ParseResult {
 }
 
 /**
- * Rules that a schema cannot express: the v0.1 topology, references between fields, and the run
+ * Rules that a schema cannot express: the graph shape, references between fields, and the run
  * budget. Also used by the editor to show hints next to the fields they concern.
  */
 export function checkExperiment(experiment: Experiment): ValidationIssue[] {
 	const issues: ValidationIssue[] = [];
 	const { nodes, links } = experiment.model;
+	const byId = new Map(nodes.map((n) => [n.id, n]));
+	const labelOf = (id: string) => byId.get(id)?.label ?? id;
 
 	const seen = new Set<string>();
 	nodes.forEach((node, i) => {
 		if (seen.has(node.id))
-			issues.push({
-				path: `model.nodes[${i}].id`,
-				message: `Two components use the id "${node.id}". Ids must be unique.`,
-			});
+			issues.push(
+				issue(`model.nodes[${i}].id`, "graph.duplicateNodeId", { id: node.id }),
+			);
 		seen.add(node.id);
 	});
 
 	const clients = nodes.filter((n) => n.kind === "client");
-	const balancers = nodes.filter((n) => n.kind === "load-balancer");
-	const servers = nodes.filter((n): n is ServerNode => n.kind === "server");
-
 	if (clients.length !== 1)
-		issues.push({
-			path: "model.nodes",
-			message: `v0.1 needs exactly one client; this experiment has ${clients.length}.`,
-		});
-	if (balancers.length !== 1)
-		issues.push({
-			path: "model.nodes",
-			message: `v0.1 needs exactly one load balancer; this experiment has ${balancers.length}.`,
-		});
-	if (servers.length < 1 || servers.length > LIMITS.maxServers)
-		issues.push({
-			path: "model.nodes",
-			message: `Add between 1 and ${LIMITS.maxServers} servers; this experiment has ${servers.length}.`,
-		});
-
+		issues.push(
+			issue("model.nodes", "graph.oneClient", { count: clients.length }),
+		);
 	const client = clients[0];
-	const lb = balancers[0];
-	const byId = new Map(nodes.map((n) => [n.id, n]));
-	const linkKeys = new Set<string>();
 
+	const outgoing = new Map<string, string[]>();
+	const incoming = new Map<string, string[]>();
+	const linkKeys = new Set<string>();
+	const linkIds = new Set<string>();
 	links.forEach((link, i) => {
-		const key = `${link.source}->${link.target}`;
 		const path = `model.links[${i}]`;
+		if (linkIds.has(link.id))
+			issues.push(
+				issue(`${path}.id`, "graph.duplicateLinkId", { id: link.id }),
+			);
+		linkIds.add(link.id);
 		const source = byId.get(link.source);
 		const target = byId.get(link.target);
 		if (!source || !target) {
-			issues.push({
-				path,
-				message: `The link ${link.source} → ${link.target} points to a component that does not exist.`,
-			});
+			issues.push(
+				issue(path, "graph.danglingLink", {
+					source: link.source,
+					target: link.target,
+				}),
+			);
 			return;
 		}
+		if (link.source === link.target)
+			issues.push(
+				issue(path, "graph.selfLink", { node: labelOf(link.source) }),
+			);
+		const key = `${link.source}->${link.target}`;
 		if (linkKeys.has(key))
-			issues.push({ path, message: `The link ${key} is listed twice.` });
+			issues.push(
+				issue(path, "graph.duplicateLink", {
+					source: labelOf(link.source),
+					target: labelOf(link.target),
+				}),
+			);
 		linkKeys.add(key);
-		const supported =
-			(source.kind === "client" && target.kind === "load-balancer") ||
-			(source.kind === "load-balancer" && target.kind === "server");
-		if (!supported)
-			issues.push({
-				path,
-				message: `The link ${link.source} → ${link.target} is not supported. In v0.1 traffic flows client → load balancer → servers.`,
-			});
+		if (target.kind === "client")
+			issues.push(
+				issue(path, "graph.intoClient", { source: labelOf(link.source) }),
+			);
+		if (source.kind === "load-balancer" && target.kind === "load-balancer")
+			issues.push(
+				issue(path, "graph.balancerToBalancer", {
+					source: labelOf(link.source),
+					target: labelOf(link.target),
+				}),
+			);
+		outgoing.set(link.source, [
+			...(outgoing.get(link.source) ?? []),
+			link.target,
+		]);
+		incoming.set(link.target, [
+			...(incoming.get(link.target) ?? []),
+			link.source,
+		]);
 	});
 
-	if (client && lb && !linkKeys.has(`${client.id}->${lb.id}`))
-		issues.push({
-			path: "model.links",
-			message: `Connect the client (${client.id}) to the load balancer (${lb.id}).`,
-		});
-	if (lb)
-		for (const server of servers)
-			if (!linkKeys.has(`${lb.id}->${server.id}`))
-				issues.push({
-					path: "model.links",
-					message: `Server "${server.label ?? server.id}" is not connected to the load balancer, so it would never receive traffic.`,
-				});
+	if (client) {
+		const out = outgoing.get(client.id) ?? [];
+		if (out.length !== 1)
+			issues.push(
+				issue("model.links", "graph.clientOneLink", { count: out.length }),
+			);
+	}
+	for (const node of nodes) {
+		const out = outgoing.get(node.id) ?? [];
+		if (node.kind === "load-balancer" && out.length === 0)
+			issues.push(
+				issue("model.links", "graph.balancerNeedsBackend", {
+					node: labelOf(node.id),
+				}),
+			);
+		if (node.kind === "cache" && out.length > 1)
+			issues.push(
+				issue("model.links", "graph.cacheOneDownstream", {
+					node: labelOf(node.id),
+				}),
+			);
+		if (node.kind !== "client" && (incoming.get(node.id) ?? []).length === 0)
+			issues.push(
+				issue("model.links", "graph.unreachable", { node: labelOf(node.id) }),
+			);
+	}
 
-	const serverIds = new Set(servers.map((s) => s.id));
+	// Cycles: a request must never be able to call itself.
+	const state = new Map<string, "visiting" | "done">();
+	let cycle: string | null = null;
+	const visit = (id: string, trail: string[]) => {
+		if (cycle) return;
+		const s = state.get(id);
+		if (s === "done") return;
+		if (s === "visiting") {
+			cycle = [...trail.slice(trail.indexOf(id)), id].map(labelOf).join(" → ");
+			return;
+		}
+		state.set(id, "visiting");
+		for (const next of outgoing.get(id) ?? []) visit(next, [...trail, id]);
+		state.set(id, "done");
+	};
+	for (const node of nodes) visit(node.id, []);
+	if (cycle) issues.push(issue("model.links", "graph.cycle", { cycle }));
+
+	// Faults
 	const faultIds = new Set<string>();
-	const windows = new Map<
+	const crashWindows = new Map<
 		string,
 		Array<{ from: number; to: number; i: number }>
 	>();
 	experiment.faults.forEach((fault, i) => {
 		const path = `faults[${i}]`;
 		if (faultIds.has(fault.id))
-			issues.push({
-				path: `${path}.id`,
-				message: `Two faults use the id "${fault.id}".`,
-			});
+			issues.push(issue(`${path}.id`, "fault.duplicateId", { id: fault.id }));
 		faultIds.add(fault.id);
-		if (!serverIds.has(fault.target))
-			issues.push({
-				path: `${path}.target`,
-				message: `Fault "${fault.id}" targets "${fault.target}", which is not a server. Only servers can fail in v0.1.`,
+		if (LINK_FAULT_KINDS.includes(fault.kind)) {
+			if (!linkIds.has(fault.target))
+				issues.push(
+					issue(`${path}.target`, "fault.targetNotLink", {
+						id: fault.id,
+						target: fault.target,
+					}),
+				);
+		} else {
+			const node = byId.get(fault.target);
+			if (!node || !isWorker(node))
+				issues.push(
+					issue(`${path}.target`, "fault.targetNotWorker", {
+						id: fault.id,
+						target: fault.target,
+					}),
+				);
+			else if (fault.kind === "cache-flush" && node.kind !== "cache")
+				issues.push(
+					issue(`${path}.target`, "fault.flushNeedsCache", {
+						id: fault.id,
+						target: labelOf(fault.target),
+					}),
+				);
+			else if (
+				fault.kind === "capacity" &&
+				fault.capacity > node.config.capacity
+			)
+				issues.push(
+					issue(`${path}.capacity`, "fault.capacityAboveNode", {
+						capacity: fault.capacity,
+						node: labelOf(fault.target),
+						nodeCapacity: node.config.capacity,
+					}),
+				);
+		}
+		const end =
+			fault.kind === "node-failure" ? fault.recoverAtMs : fault.untilMs;
+		if (end !== null && end <= fault.atMs)
+			issues.push(
+				issue(
+					`${path}.${fault.kind === "node-failure" ? "recoverAtMs" : "untilMs"}`,
+					"fault.endBeforeStart",
+					{ end, start: fault.atMs },
+				),
+			);
+		if (fault.kind === "node-failure") {
+			const list = crashWindows.get(fault.target) ?? [];
+			list.push({
+				from: fault.atMs,
+				to: fault.recoverAtMs ?? Number.POSITIVE_INFINITY,
+				i,
 			});
-		if (fault.recoverAtMs !== null && fault.recoverAtMs <= fault.atMs)
-			issues.push({
-				path: `${path}.recoverAtMs`,
-				message: `Recovery (${fault.recoverAtMs} ms) must come after the failure (${fault.atMs} ms).`,
-			});
-		const list = windows.get(fault.target) ?? [];
-		list.push({
-			from: fault.atMs,
-			to: fault.recoverAtMs ?? Number.POSITIVE_INFINITY,
-			i,
-		});
-		windows.set(fault.target, list);
+			crashWindows.set(fault.target, list);
+		}
 	});
-	for (const [target, list] of windows) {
+	for (const [target, list] of crashWindows) {
 		const sorted = [...list].sort((a, b) => a.from - b.from);
 		for (let k = 1; k < sorted.length; k++) {
 			const prev = sorted[k - 1];
 			const cur = sorted[k];
 			if (prev && cur && cur.from < prev.to)
-				issues.push({
-					path: `faults[${cur.i}].atMs`,
-					message: `Two failures of "${target}" overlap. Let the first one recover before the next starts.`,
-				});
+				issues.push(
+					issue(`faults[${cur.i}].atMs`, "fault.overlappingCrash", {
+						node: labelOf(target),
+					}),
+				);
 		}
 	}
 
 	const horizonMs = effectiveHorizonMs(experiment);
 	if (horizonMs > LIMITS.maxHorizonMs)
-		issues.push({
-			path: "run.horizonMs",
-			message: `The run would cover ${formatMinutes(horizonMs)}; the limit is ${formatMinutes(LIMITS.maxHorizonMs)}. Shorten the traffic or set a smaller horizon.`,
-		});
+		issues.push(
+			issue("run.horizonMs", "budget.horizon", {
+				minutes: Math.round((horizonMs / 60_000) * 10) / 10,
+				limitMinutes: LIMITS.maxHorizonMs / 60_000,
+			}),
+		);
 
 	const offered = estimateOfferedRequests(experiment);
 	if (offered > LIMITS.maxOfferedRequests)
-		issues.push({
-			path: "workload.offeredRps",
-			message: `This would offer about ${Math.round(offered).toLocaleString("en-US")} requests; the limit is ${LIMITS.maxOfferedRequests.toLocaleString("en-US")}. Lower the rate or shorten the duration.`,
-		});
+		issues.push(
+			issue("workload.offeredRps", "budget.requests", {
+				requests: Math.round(offered),
+				limit: LIMITS.maxOfferedRequests,
+			}),
+		);
 
 	return issues;
 }
@@ -227,9 +322,4 @@ export function estimateOfferedRequests(experiment: Experiment): number {
 		(sum, p) => sum + ((p.endUs - p.startUs) / 1_000_000) * p.rps,
 		0,
 	);
-}
-
-function formatMinutes(ms: number): string {
-	const minutes = ms / 60_000;
-	return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)} min`;
 }

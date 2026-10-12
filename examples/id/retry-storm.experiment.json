@@ -1,0 +1,115 @@
+{
+	"schemaVersion": "0.2.0",
+	"experimentId": "retry-storm",
+	"title": "Badai retry: percobaan ulang yang memperparah",
+	"question": "Apa jadinya kalau API mencoba ulang tiap panggilan database yang gagal sampai tiga kali?",
+	"description": "Database melambat 50 kali di detik 20 sampai 40. API punya 100 slot, memberi timeout 300 ms ke database, dan mencoba ulang sampai tiga kali. Saat database melambat, tiap request klien bisa menjadi empat panggilan database, sehingga beban database berlipat tepat ketika ia paling tidak sanggup.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 100,
+					"serviceTimeMs": 20,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-db",
+				"source": "api",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": 300,
+				"retries": 3,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "db-slowdown",
+			"kind": "slowdown",
+			"target": "db",
+			"atMs": 20000,
+			"untilMs": 40000,
+			"factor": 50,
+			"addMs": 0
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Probe health check melewati antrean dan dijawab seketika saat komponen hidup.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah; pekerjaan tetap diselesaikan dan jawabannya dibuang.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Jumlah panggilan ke database melonjak jauh melebihi jumlah request klien selama database lambat.",
+		"Hampir semua percobaan ulang ikut gagal, jadi retry tidak menolong dan hanya menambah beban.",
+		"Setelah database pulih, antrean percobaan ulang masih harus dihabiskan dulu."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"db": {
+			"x": 600,
+			"y": 0
+		}
+	}
+}

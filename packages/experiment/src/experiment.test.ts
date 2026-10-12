@@ -10,20 +10,26 @@ import {
 import { semanticDiff } from "./diff.ts";
 import {
 	addFault,
-	addServer,
+	addLink,
+	addNode,
 	cloneExperiment,
-	removeServer,
+	removeLink,
+	removeNode,
 	uniqueId,
 } from "./edit.ts";
 import {
-	BUILT_IN_EXPERIMENTS,
+	builtInExperiments,
+	EXAMPLE_IDS,
 	findBuiltIn,
+	LOCALES,
 	STARTER_COMPARISON,
 } from "./examples.ts";
 import proposal from "./fixtures/proposal-0.1.0.json";
+import v1 from "./fixtures/v0.1.0.json";
 import { parseImportJson } from "./import.ts";
 import type { Experiment } from "./schema.ts";
 import { sha256Hex } from "./sha256.ts";
+import { TEMPLATE_IDS, templateExperiment } from "./templates.ts";
 import {
 	checkExperiment,
 	parseExperiment,
@@ -32,130 +38,215 @@ import {
 
 const base = (): Experiment =>
 	structuredClone(findBuiltIn(STARTER_COMPARISON.a) as Experiment);
+const linkAt = (e: Experiment, i: number) =>
+	e.model.links[i] as Experiment["model"]["links"][number];
+const chain = (): Experiment =>
+	structuredClone(findBuiltIn("cascading-failure") as Experiment);
 
-function issuesOf(value: unknown) {
+function keysOf(value: unknown) {
 	const result = parseExperiment(value);
-	return result.ok ? [] : result.issues;
+	return result.ok
+		? []
+		: result.issues.map((i) => `${i.path}:${i.message.key}`);
 }
 
+const TEXT = {
+	client: "Client",
+	balancer: "Load balancer",
+	api: "API",
+	database: "Database",
+	cache: "Cache",
+	queue: "Queue",
+	auth: "Auth",
+	worker: "Worker",
+	server: (l: string) => `Server ${l}`,
+	assumptions: ["abstract model"],
+};
+
 describe("built-in experiments", () => {
-	it("all validate and have unique ids", () => {
-		expect(BUILT_IN_EXPERIMENTS.length).toBeGreaterThanOrEqual(5);
-		const ids = BUILT_IN_EXPERIMENTS.map((e) => e.experimentId);
-		expect(new Set(ids).size).toBe(ids.length);
+	it("validate in every language with the same ids", () => {
+		for (const locale of LOCALES) {
+			const list = builtInExperiments(locale);
+			expect(list.map((e) => e.experimentId)).toEqual(EXAMPLE_IDS);
+		}
+		// Translations never change behavior.
+		for (const id of EXAMPLE_IDS)
+			expect(runKey(findBuiltIn(id, "id") as Experiment)).toBe(
+				runKey(findBuiltIn(id, "en") as Experiment),
+			);
 	});
 
 	it("the starter pair differs in exactly one behavioral variable", () => {
 		const a = findBuiltIn(STARTER_COMPARISON.a) as Experiment;
 		const b = findBuiltIn(STARTER_COMPARISON.b) as Experiment;
-		expect(semanticDiff(a, b)).toEqual([
-			expect.objectContaining({
-				key: "lb.healthCheck.enabled",
-				before: "off",
-				after: "on",
-			}),
+		expect(semanticDiff(a, b)).toMatchObject([
+			{
+				key: "node.lb.hc.enabled",
+				before: false,
+				after: true,
+				field: "healthCheck.enabled",
+			},
 		]);
+	});
+
+	it("templates are valid experiments", () => {
+		for (const id of TEMPLATE_IDS) {
+			const e = templateExperiment(id, `t-${id}`, "Template", TEXT);
+			const issues = checkExperiment(e).filter(
+				(i) => i.message.key !== "graph.clientOneLink",
+			);
+			expect(issues, id).toEqual([]);
+			if (id !== "blank") expect(checkExperiment(e)).toEqual([]);
+		}
 	});
 });
 
-describe("parseExperiment", () => {
-	it("migrates the 0.1.0-proposal example", () => {
-		const result = parseExperiment(proposal);
-		expect(result.ok).toBe(true);
-		if (!result.ok) return;
-		expect(result.migratedFrom).toBe("0.1.0-proposal");
-		const lb = result.experiment.model.nodes.find(
-			(n) => n.kind === "load-balancer",
+describe("migrations", () => {
+	it("upgrades 0.1.0-proposal and 0.1.0 files to the current schema", () => {
+		const p = parseExperiment(proposal);
+		expect(p.ok && p.migratedFrom).toBe("0.1.0-proposal");
+		const v = parseExperiment(v1);
+		expect(v.ok && v.migratedFrom).toBe("0.1.0");
+		if (!v.ok) return;
+		expect(v.experiment.model.nodes.map((n) => n.kind)).toEqual([
+			"client",
+			"load-balancer",
+			"service",
+			"service",
+		]);
+		expect(v.experiment.model.links[0]).toMatchObject({
+			id: "client-lb",
+			latencyMs: 0,
+			timeoutMs: null,
+			retries: 0,
+		});
+		// A migrated v1 file behaves exactly like the current example.
+		expect(runKey(v.experiment)).toBe(
+			runKey(findBuiltIn(STARTER_COMPARISON.b) as Experiment),
 		);
-		expect(
-			lb?.kind === "load-balancer" && lb.config.healthCheck.unhealthyThreshold,
-		).toBe(1);
-		expect(result.experiment.faults[0]?.behavior).toBe("refuse");
 	});
 
-	it("rejects unknown schema versions with an explanation", () => {
-		const issues = issuesOf({ ...base(), schemaVersion: "2.0.0" });
-		expect(issues[0]?.message).toMatch(/schema version 2\.0\.0/);
+	it("rejects unknown schema versions with a translatable message", () => {
+		const issues = parseExperiment({ ...base(), schemaVersion: "9.0.0" });
+		expect(issues.ok).toBe(false);
+		if (!issues.ok)
+			expect(issues.issues[0]?.message).toMatchObject({
+				key: "import.unknownVersion",
+				params: { version: "9.0.0" },
+			});
 	});
+});
 
-	it("rejects negative service time with a path to the field", () => {
+describe("validation", () => {
+	it("reports field problems with a path, a key and the field name", () => {
 		const e = base();
 		const server = e.model.nodes[2];
-		if (server?.kind === "server") server.config.serviceTimeMs = -5;
-		const issues = issuesOf(e);
-		expect(issues).toContainEqual({
-			path: "model.nodes[2].config.serviceTimeMs",
-			message: "Service time must be greater than 0 ms",
-		});
+		if (server?.kind === "service") server.config.serviceTimeMs = -5;
+		const result = parseExperiment(e);
+		expect(result.ok).toBe(false);
+		if (!result.ok)
+			expect(result.issues).toContainEqual({
+				path: "model.nodes[2].config.serviceTimeMs",
+				message: {
+					key: "validation.gt",
+					params: { field: "worker.serviceTimeMs", unit: "ms", value: 0 },
+				},
+			});
 	});
 
 	it("rejects unknown fields instead of ignoring them", () => {
-		const issues = issuesOf({ ...base(), script: "alert(1)" });
-		expect(issues.length).toBeGreaterThan(0);
+		expect(keysOf({ ...base(), script: "alert(1)" }).length).toBeGreaterThan(0);
 	});
 
-	it("rejects unsupported links with an actionable message", () => {
-		const e = base();
-		e.model.links.push({ source: "server-a", target: "client" });
+	it("checks the graph: cycles, dangling links, client links, unreachable nodes", () => {
+		const e = chain();
+		e.model.links.push({
+			...linkAt(e, 1),
+			id: "back",
+			source: "db",
+			target: "api",
+		});
+		expect(keysOf(e)).toContain("model.links:graph.cycle");
+
+		const dangling = chain();
+		linkAt(dangling, 1).target = "nowhere";
+		expect(keysOf(dangling)).toContain("model.links[1]:graph.danglingLink");
+
+		const twoClientLinks = chain();
+		twoClientLinks.model.links.push({
+			...linkAt(twoClientLinks, 0),
+			id: "c2",
+			target: "db",
+		});
+		expect(keysOf(twoClientLinks)).toContain("model.links:graph.clientOneLink");
+
+		const unreachable = chain();
+		unreachable.model.links = unreachable.model.links.filter(
+			(l) => l.id !== "api-db",
+		);
+		expect(keysOf(unreachable)).toContain("model.links:graph.unreachable");
+
+		const cache = structuredClone(findBuiltIn("cache-stampede") as Experiment);
+		cache.model.links.push({
+			...linkAt(cache, 2),
+			id: "cache-api",
+			source: "cache",
+			target: "api",
+		});
 		expect(
-			issuesOf(e)
-				.map((i) => i.message)
-				.join(" "),
-		).toMatch(/client → load balancer → servers/);
+			keysOf(cache).some(
+				(k) =>
+					k.endsWith("graph.cacheOneDownstream") || k.endsWith("graph.cycle"),
+			),
+		).toBe(true);
 	});
 
-	it("rejects a server that is not connected", () => {
-		const e = base();
-		e.model.links = e.model.links.filter((l) => l.target !== "server-b");
-		expect(
-			issuesOf(e)
-				.map((i) => i.message)
-				.join(" "),
-		).toMatch(/Server B" is not connected/);
-	});
-
-	it("rejects faults on non-servers, recovery before failure and overlapping faults", () => {
-		const e = base();
+	it("checks fault targets and windows", () => {
+		const e = chain();
 		e.faults = [
 			{
 				id: "a",
 				kind: "node-failure",
-				target: "lb",
+				target: "client",
 				atMs: 10,
 				recoverAtMs: 20,
 				behavior: "refuse",
 			},
-			{
-				id: "b",
-				kind: "node-failure",
-				target: "server-a",
-				atMs: 50,
-				recoverAtMs: 40,
-				behavior: "refuse",
-			},
+			{ id: "b", kind: "cache-flush", target: "api", atMs: 10, untilMs: 20 },
 			{
 				id: "c",
-				kind: "node-failure",
-				target: "server-b",
-				atMs: 0,
-				recoverAtMs: 100,
-				behavior: "refuse",
+				kind: "link-loss",
+				target: "api",
+				atMs: 10,
+				untilMs: 20,
+				rate: 0.5,
 			},
 			{
 				id: "d",
-				kind: "node-failure",
-				target: "server-b",
+				kind: "slowdown",
+				target: "db",
 				atMs: 50,
-				recoverAtMs: null,
-				behavior: "hang",
+				untilMs: 40,
+				factor: 2,
+				addMs: 0,
+			},
+			{
+				id: "e",
+				kind: "capacity",
+				target: "db",
+				atMs: 0,
+				untilMs: null,
+				capacity: 999,
 			},
 		];
-		const paths = issuesOf(e).map((i) => i.path);
-		expect(paths).toEqual(
+		const keys = keysOf(e);
+		expect(keys).toEqual(
 			expect.arrayContaining([
-				"faults[0].target",
-				"faults[1].recoverAtMs",
-				"faults[3].atMs",
+				"faults[0].target:fault.targetNotWorker",
+				"faults[1].target:fault.flushNeedsCache",
+				"faults[2].target:fault.targetNotLink",
+				"faults[3].untilMs:fault.endBeforeStart",
+				"faults[4].capacity:fault.capacityAboveNode",
 			]),
 		);
 	});
@@ -164,15 +255,16 @@ describe("parseExperiment", () => {
 		const e = base();
 		e.workload.offeredRps = 5000;
 		e.workload.durationMs = 600_000;
-		expect(issuesOf(e).map((i) => i.path)).toContain("workload.offeredRps");
+		expect(keysOf(e)).toContain("workload.offeredRps:budget.requests");
 	});
 
 	it("explains broken JSON and oversized files", () => {
 		const broken = parseExperimentJson("{ nope");
-		expect(broken.ok).toBe(false);
-		if (!broken.ok) expect(broken.issues[0]?.message).toMatch(/not valid JSON/);
+		expect(!broken.ok && broken.issues[0]?.message.key).toBe(
+			"import.invalidJson",
+		);
 		const huge = parseExperimentJson(`"${"x".repeat(600 * 1024)}"`);
-		if (!huge.ok) expect(huge.issues[0]?.message).toMatch(/limited to 512 KB/);
+		expect(!huge.ok && huge.issues[0]?.message.key).toBe("import.tooLarge");
 	});
 });
 
@@ -197,18 +289,23 @@ describe("compile", () => {
 		expect(effectiveHorizonMs(base())).toBe(61_000);
 	});
 
-	it("converts milliseconds to integer microseconds and keeps server order", () => {
-		const compiled = compileExperiment(base());
-		expect(compiled.engine.servers.map((s) => s.id)).toEqual([
-			"server-a",
-			"server-b",
-		]);
-		expect(compiled.engine.servers[0]?.serviceTimeUs).toBe(100_000);
-		expect(compiled.engine.faults[0]).toMatchObject({
-			server: 1,
-			atUs: 20_000_000,
+	it("maps nodes, links and faults to engine indexes", () => {
+		const compiled = compileExperiment(
+			structuredClone(findBuiltIn("circuit-breaker") as Experiment),
+		);
+		expect(compiled.topology.nodeIds).toEqual(["client", "api", "db"]);
+		expect(compiled.engine.edges[1]).toMatchObject({
+			source: 1,
+			target: 2,
+			timeoutUs: 300_000,
+			circuitBreaker: { failureThreshold: 5, openUs: 5_000_000 },
 		});
-		expect(compiled.engine.healthCheck).toBeNull();
+		expect(compiled.engine.faults[0]).toMatchObject({
+			kind: "slowdown",
+			node: 2,
+			atUs: 20_000_000,
+			factor: 50,
+		});
 	});
 });
 
@@ -219,8 +316,9 @@ describe("canonical form and digests", () => {
 		);
 		fc.assert(
 			fc.property(fc.dictionary(fc.string(), fc.integer()), (obj) => {
-				const reversed = Object.fromEntries(Object.entries(obj).reverse());
-				expect(canonicalJson(reversed)).toBe(canonicalJson(obj));
+				expect(
+					canonicalJson(Object.fromEntries(Object.entries(obj).reverse())),
+				).toBe(canonicalJson(obj));
 			}),
 		);
 	});
@@ -235,7 +333,7 @@ describe("canonical form and digests", () => {
 		);
 	});
 
-	it("ignores layout in the input digest and labels in the run key", () => {
+	it("ignores layout in the input digest and names in the run key", () => {
 		const a = base();
 		const b = structuredClone(a);
 		b.layout = { client: { x: 999, y: 1 } };
@@ -251,29 +349,60 @@ describe("canonical form and digests", () => {
 });
 
 describe("editing helpers", () => {
-	it("adds a wired server that copies the last server", () => {
-		const { experiment, id } = addServer(base());
-		expect(id).toBe("server-c");
+	it("adds a node linked from another, copying a sibling's settings", () => {
+		const { experiment, id } = addNode(base(), "service", { from: "lb" });
+		expect(id).toBe("service-3");
 		expect(checkExperiment(experiment)).toEqual([]);
-		expect(experiment.model.links).toContainEqual({
+		const added = experiment.model.nodes.find((n) => n.id === id);
+		expect(added?.kind === "service" && added.config.serviceTimeMs).toBe(100);
+		expect(experiment.model.links.at(-1)).toMatchObject({
 			source: "lb",
-			target: "server-c",
+			target: id,
 		});
 	});
 
-	it("removes a server with its links and faults", () => {
-		const { experiment, removedFaults } = removeServer(base(), "server-b");
+	it("removes a node with its links and faults", () => {
+		const { experiment, removedFaults } = removeNode(base(), "server-b");
 		expect(removedFaults).toBe(1);
 		expect(checkExperiment(experiment)).toEqual([]);
 	});
 
-	it("adds a valid fault and clones under a fresh id", () => {
-		const { experiment } = addFault(base());
-		expect(checkExperiment(experiment).length).toBeGreaterThan(0); // overlaps the existing crash
-		const clone = cloneExperiment(base(), [
-			"lb-failure-no-health-checks-variant",
-		]);
+	it("adds and removes links, refusing duplicates and self links", () => {
+		const e = chain();
+		expect(addLink(e, "api", "db").id).toBeNull();
+		expect(addLink(e, "api", "api").id).toBeNull();
+		const { experiment, id } = addLink(e, "client", "db");
+		expect(id).toBe("client-db");
+		expect(removeLink(experiment, id as string).model.links).toHaveLength(2);
+	});
+
+	it("adds faults of every kind with valid defaults", () => {
+		const e = structuredClone(findBuiltIn("cache-stampede") as Experiment);
+		e.faults = [];
+		for (const kind of [
+			"node-failure",
+			"slowdown",
+			"error-rate",
+			"capacity",
+			"link-latency",
+			"link-loss",
+			"cache-flush",
+		] as const) {
+			const added = addFault(e, kind);
+			expect(added, kind).not.toBeNull();
+			if (added) expect(checkExperiment(added.experiment), kind).toEqual([]);
+		}
+	});
+
+	it("clones under a fresh id without the original's hypotheses", () => {
+		const clone = cloneExperiment(
+			base(),
+			["lb-failure-no-health-checks-variant"],
+			"variant",
+			"Describe the change.",
+		);
 		expect(clone.experimentId).toBe("lb-failure-no-health-checks-variant-2");
+		expect(clone.expectedObservations).toEqual([]);
 		expect(semanticDiff(base(), clone)).toEqual([]);
 	});
 
@@ -286,7 +415,7 @@ describe("editing helpers", () => {
 describe("parseImportJson", () => {
 	const result = (experiment: unknown) => ({
 		resultSchemaVersion: "0.1.0",
-		engineVersion: "0.1.0",
+		engineVersion: "0.2.0",
 		behaviorDigest: "sha256:abc",
 		traceDigest: "fnv1a32x2:0011",
 		metrics: { offered: 6000, failed: 1005 },
@@ -294,8 +423,7 @@ describe("parseImportJson", () => {
 	});
 
 	it("imports the experiment embedded in a result file, with its claimed digests", () => {
-		const parsed = parseImportJson(JSON.stringify(result(base())));
-		expect(parsed).toMatchObject({
+		expect(parseImportJson(JSON.stringify(result(base())))).toMatchObject({
 			ok: true,
 			kind: "result",
 			claimed: { behaviorDigest: "abc", traceDigest: "0011", failed: 1005 },
@@ -303,39 +431,20 @@ describe("parseImportJson", () => {
 	});
 
 	it("imports both sides of a comparison bundle", () => {
-		const other = findBuiltIn(STARTER_COMPARISON.b);
 		const parsed = parseImportJson(
 			JSON.stringify({
 				comparisonSchemaVersion: "0.1.0",
 				a: result(base()),
-				b: result(other),
+				b: result(findBuiltIn(STARTER_COMPARISON.b)),
 			}),
 		);
 		expect(parsed.ok && parsed.kind).toBe("comparison");
-	});
-
-	it("explains a result file without an experiment instead of blaming the export", () => {
-		const parsed = parseImportJson(
-			JSON.stringify({ resultSchemaVersion: "0.1.0" }),
-		);
-		expect(parsed.ok).toBe(false);
-		if (!parsed.ok) expect(parsed.issues[0]?.message).toMatch(/result file/);
 	});
 
 	it("still validates the embedded experiment", () => {
 		const broken = base();
 		broken.seed = -1;
 		const parsed = parseImportJson(JSON.stringify(result(broken)));
-		expect(parsed.ok).toBe(false);
-		if (!parsed.ok) expect(parsed.issues[0]?.path).toBe("experiment.seed");
-	});
-});
-
-describe("variants", () => {
-	it("start without the original's hypotheses so exports never carry stale claims", () => {
-		const variant = cloneExperiment(base(), []);
-		expect(variant.expectedObservations).toEqual([]);
-		expect(variant.description).toMatch(/^Variant of/);
-		expect(variant.question).toBe(base().question);
+		expect(!parsed.ok && parsed.issues[0]?.path).toBe("experiment.seed");
 	});
 });

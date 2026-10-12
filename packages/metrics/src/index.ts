@@ -1,10 +1,5 @@
 export { type ComparisonRow, compareSummaries } from "./compare.ts";
-export {
-	explainRun,
-	FAILURE_REASON_INFO,
-	formatMs,
-	type Insight,
-} from "./explain.ts";
+export { explainRun, type Insight } from "./explain.ts";
 export {
 	EVENT_KIND_INDEX,
 	type EventLogData,

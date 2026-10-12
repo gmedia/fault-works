@@ -1,0 +1,115 @@
+{
+	"schemaVersion": "0.2.0",
+	"experimentId": "cascading-failure",
+	"title": "Cascading failure: a slow database takes the API down",
+	"question": "How does a slow database make a healthy API fail?",
+	"description": "The client calls the API, the API calls the database. From 20 s to 40 s the database is 50 times slower. The API uses no timeout towards the database, so every API slot sits waiting, its queue fills, and clients start getting rejections and timeouts from the API even though the API itself is fine.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 50,
+					"serviceTimeMs": 20,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-db",
+				"source": "api",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "db-slowdown",
+			"kind": "slowdown",
+			"target": "db",
+			"atMs": 20000,
+			"untilMs": 40000,
+			"factor": 50,
+			"addMs": 0
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Health probes bypass the request queue and answer instantly when the component is up.",
+		"Components do not know when their caller gave up; they finish the work and the answer is discarded.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"The API's slots run out within seconds of the slowdown, because each request holds a slot while it waits for the database.",
+		"Failures seen by the client originate at the API (queue full) and as timeouts, not at the database directly.",
+		"After the database recovers, the API needs time to drain its queue."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"db": {
+			"x": 600,
+			"y": 0
+		}
+	}
+}

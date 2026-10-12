@@ -1,233 +1,348 @@
 import { effectiveHorizonMs } from "./compile.ts";
-import {
-	ARRIVAL_LABELS,
-	BEHAVIOR_LABELS,
-	BURST_FIELDS,
-	DISTRIBUTION_LABELS,
-	FAULT_FIELDS,
-	type FieldInfo,
-	formatValue,
-	HEALTH_CHECK_FIELDS,
-	RUN_FIELDS,
-	SERVER_FIELDS,
-	WORKLOAD_FIELDS,
-} from "./fields.ts";
-import type { Experiment, ServerNode } from "./schema.ts";
+import { FIELDS, type FieldKey, formatValue } from "./fields.ts";
+import type { Experiment } from "./schema.ts";
 
 export interface SemanticChange {
 	key: string;
-	/** What the setting belongs to: "Traffic", "Load balancer", "Server B", "Fault b-down"... */
-	scope: string;
-	field: string;
-	before: string | null;
-	after: string | null;
+	/** What the setting belongs to; `scopeLabel` is the user's own label (node id, fault id...). */
+	scope: "run" | "traffic" | "burst" | "node" | "link" | "fault";
+	scopeLabel: string;
+	/** Translation key of the field, or null for presence changes. */
+	field: FieldKey | "presence" | "order";
+	/** Raw values and a locale-neutral rendering; `null` means not present on that side. */
+	before: unknown;
+	after: unknown;
+	beforeText: string | null;
+	afterText: string | null;
 }
 
 interface Entry {
-	scope: string;
-	field: string;
-	display: string;
+	scope: SemanticChange["scope"];
+	scopeLabel: string;
+	field: SemanticChange["field"];
+	value: unknown;
+	text: string;
 }
 
 function put(
 	map: Map<string, Entry>,
 	key: string,
-	scope: string,
-	info: Pick<FieldInfo, "label" | "unit">,
+	scope: Entry["scope"],
+	scopeLabel: string,
+	field: Entry["field"],
 	value: unknown,
-	display?: string,
+	text?: string,
 ) {
+	const unit =
+		field === "presence" || field === "order" ? null : FIELDS[field].unit;
 	map.set(key, {
 		scope,
-		field: info.label,
-		display: display ?? formatValue(value, info.unit),
+		scopeLabel,
+		field,
+		value,
+		text: text ?? formatValue(value, unit),
 	});
 }
 
 /**
- * Everything that can change simulated behavior, keyed by stable identity (node and fault ids,
- * burst position). Titles, notes, labels and layout are deliberately absent.
+ * Everything that can change simulated behavior, keyed by stable identity (node, link and fault
+ * ids, burst position). Titles, notes, labels and layout are deliberately absent.
  */
 function flatten(experiment: Experiment): Map<string, Entry> {
 	const map = new Map<string, Entry>();
-	const run = "Run";
-	put(map, "seed", run, RUN_FIELDS.seed, experiment.seed);
+	put(map, "seed", "run", "", "run.seed", experiment.seed);
 	put(
 		map,
 		"run.horizonMs",
-		run,
-		RUN_FIELDS.horizonMs,
-		null,
+		"run",
+		"",
+		"run.horizonMs",
+		experiment.run.horizonMs ?? null,
 		experiment.run.horizonMs === undefined
 			? `auto (${formatValue(effectiveHorizonMs(experiment), "ms")})`
-			: formatValue(experiment.run.horizonMs, "ms"),
+			: undefined,
 	);
 
-	const traffic = "Traffic";
 	const w = experiment.workload;
-	put(
-		map,
-		"workload.arrival",
-		traffic,
-		WORKLOAD_FIELDS.arrival,
-		null,
-		ARRIVAL_LABELS[w.arrival],
-	);
+	put(map, "workload.arrival", "traffic", "", "workload.arrival", w.arrival);
 	put(
 		map,
 		"workload.offeredRps",
-		traffic,
-		WORKLOAD_FIELDS.offeredRps,
+		"traffic",
+		"",
+		"workload.offeredRps",
 		w.offeredRps,
 	);
-	put(map, "workload.startMs", traffic, WORKLOAD_FIELDS.startMs, w.startMs);
+	put(map, "workload.startMs", "traffic", "", "workload.startMs", w.startMs);
 	put(
 		map,
 		"workload.durationMs",
-		traffic,
-		WORKLOAD_FIELDS.durationMs,
+		"traffic",
+		"",
+		"workload.durationMs",
 		w.durationMs,
 	);
 	put(
 		map,
 		"workload.timeoutMs",
-		traffic,
-		WORKLOAD_FIELDS.timeoutMs,
+		"traffic",
+		"",
+		"workload.timeoutMs",
 		w.timeoutMs,
 	);
 	w.bursts.forEach((b, i) => {
-		const scope = `Burst ${i + 1}`;
-		put(map, `burst.${i}.atMs`, scope, BURST_FIELDS.atMs, b.atMs);
+		const label = String(i + 1);
+		put(
+			map,
+			`burst.${i}.presence`,
+			"burst",
+			label,
+			"presence",
+			true,
+			"present",
+		);
+		put(map, `burst.${i}.atMs`, "burst", label, "burst.atMs", b.atMs);
 		put(
 			map,
 			`burst.${i}.durationMs`,
-			scope,
-			BURST_FIELDS.durationMs,
+			"burst",
+			label,
+			"burst.durationMs",
 			b.durationMs,
 		);
-		put(map, `burst.${i}.extraRps`, scope, BURST_FIELDS.extraRps, b.extraRps);
+		put(
+			map,
+			`burst.${i}.extraRps`,
+			"burst",
+			label,
+			"burst.extraRps",
+			b.extraRps,
+		);
 	});
 
-	const servers = experiment.model.nodes.filter(
-		(n): n is ServerNode => n.kind === "server",
-	);
-	put(
-		map,
-		"servers.order",
-		"Load balancer",
-		{ label: "Round-robin order", unit: null },
-		null,
-		servers.map((s) => s.id).join(", "),
-	);
 	for (const node of experiment.model.nodes) {
+		const label = node.label ?? node.id;
+		const base = `node.${node.id}`;
+		put(
+			map,
+			`${base}.presence`,
+			"node",
+			label,
+			"presence",
+			node.kind,
+			node.kind,
+		);
 		if (node.kind === "load-balancer") {
-			const scope = node.label ?? "Load balancer";
+			put(
+				map,
+				`${base}.algorithm`,
+				"node",
+				label,
+				"balancer.algorithm",
+				node.config.algorithm,
+			);
+			put(
+				map,
+				`${base}.retries`,
+				"node",
+				label,
+				"balancer.retries",
+				node.config.retries,
+			);
 			const hc = node.config.healthCheck;
 			put(
 				map,
-				"lb.healthCheck.enabled",
-				scope,
-				HEALTH_CHECK_FIELDS.enabled,
+				`${base}.hc.enabled`,
+				"node",
+				label,
+				"healthCheck.enabled",
 				hc.enabled,
 			);
-			// Probe settings only matter while checks are on; the caller drops them when both sides
-			// have checks off.
 			put(
 				map,
-				"lb.healthCheck.intervalMs",
-				scope,
-				HEALTH_CHECK_FIELDS.intervalMs,
+				`${base}.hc.intervalMs`,
+				"node",
+				label,
+				"healthCheck.intervalMs",
 				hc.intervalMs,
 			);
 			put(
 				map,
-				"lb.healthCheck.probeTimeoutMs",
-				scope,
-				HEALTH_CHECK_FIELDS.probeTimeoutMs,
+				`${base}.hc.probeTimeoutMs`,
+				"node",
+				label,
+				"healthCheck.probeTimeoutMs",
 				hc.probeTimeoutMs,
 			);
 			put(
 				map,
-				"lb.healthCheck.unhealthyThreshold",
-				scope,
-				HEALTH_CHECK_FIELDS.unhealthyThreshold,
+				`${base}.hc.unhealthyThreshold`,
+				"node",
+				label,
+				"healthCheck.unhealthyThreshold",
 				hc.unhealthyThreshold,
 			);
 			put(
 				map,
-				"lb.healthCheck.healthyThreshold",
-				scope,
-				HEALTH_CHECK_FIELDS.healthyThreshold,
+				`${base}.hc.healthyThreshold`,
+				"node",
+				label,
+				"healthCheck.healthyThreshold",
 				hc.healthyThreshold,
 			);
-		}
-		if (node.kind === "server") {
-			const scope = node.label ?? node.id;
-			const c = node.config;
-			const base = `server.${node.id}`;
+			// Downstream order is round-robin order.
 			put(
 				map,
-				`${base}.present`,
-				scope,
-				{ label: "Server", unit: null },
-				null,
-				"present",
+				`${base}.order`,
+				"node",
+				label,
+				"order",
+				experiment.model.links
+					.filter((l) => l.source === node.id)
+					.map((l) => l.target),
+				experiment.model.links
+					.filter((l) => l.source === node.id)
+					.map((l) => l.target)
+					.join(", "),
 			);
-			put(map, `${base}.capacity`, scope, SERVER_FIELDS.capacity, c.capacity);
+		} else if (node.kind !== "client") {
+			const c = node.config;
+			put(
+				map,
+				`${base}.capacity`,
+				"node",
+				label,
+				node.kind === "queue" ? "queue.consumers" : "worker.capacity",
+				c.capacity,
+			);
 			put(
 				map,
 				`${base}.queueCapacity`,
-				scope,
-				SERVER_FIELDS.queueCapacity,
+				"node",
+				label,
+				node.kind === "queue" ? "queue.backlog" : "worker.queueCapacity",
 				c.queueCapacity,
 			);
 			put(
 				map,
 				`${base}.serviceTimeMs`,
-				scope,
-				SERVER_FIELDS.serviceTimeMs,
+				"node",
+				label,
+				"worker.serviceTimeMs",
 				c.serviceTimeMs,
 			);
 			put(
 				map,
-				`${base}.serviceTimeDistribution`,
-				scope,
-				SERVER_FIELDS.serviceTimeDistribution,
-				null,
-				DISTRIBUTION_LABELS[c.serviceTimeDistribution],
+				`${base}.distribution`,
+				"node",
+				label,
+				"worker.serviceTimeDistribution",
+				c.serviceTimeDistribution,
 			);
+			if (node.kind === "cache")
+				put(
+					map,
+					`${base}.hitRatio`,
+					"node",
+					label,
+					"cache.hitRatio",
+					node.config.hitRatio,
+				);
 		}
 	}
 
+	for (const link of experiment.model.links) {
+		const label = `${link.source} → ${link.target}`;
+		const base = `link.${link.id}`;
+		put(map, `${base}.presence`, "link", label, "presence", true, "present");
+		put(
+			map,
+			`${base}.latencyMs`,
+			"link",
+			label,
+			"link.latencyMs",
+			link.latencyMs,
+		);
+		put(
+			map,
+			`${base}.timeoutMs`,
+			"link",
+			label,
+			"link.timeoutMs",
+			link.timeoutMs,
+			link.timeoutMs === null ? "none" : undefined,
+		);
+		put(map, `${base}.retries`, "link", label, "link.retries", link.retries);
+		put(
+			map,
+			`${base}.breaker.enabled`,
+			"link",
+			label,
+			"breaker.enabled",
+			link.circuitBreaker.enabled,
+		);
+		put(
+			map,
+			`${base}.breaker.failureThreshold`,
+			"link",
+			label,
+			"breaker.failureThreshold",
+			link.circuitBreaker.failureThreshold,
+		);
+		put(
+			map,
+			`${base}.breaker.openMs`,
+			"link",
+			label,
+			"breaker.openMs",
+			link.circuitBreaker.openMs,
+		);
+	}
+
 	for (const f of experiment.faults) {
-		const scope = `Fault ${f.id}`;
 		const base = `fault.${f.id}`;
-		put(
-			map,
-			`${base}.present`,
-			scope,
-			{ label: "Fault", unit: null },
-			null,
-			"present",
-		);
-		put(map, `${base}.target`, scope, FAULT_FIELDS.target, f.target);
-		put(map, `${base}.atMs`, scope, FAULT_FIELDS.atMs, f.atMs);
-		put(
-			map,
-			`${base}.recoverAtMs`,
-			scope,
-			FAULT_FIELDS.recoverAtMs,
-			f.recoverAtMs,
-			f.recoverAtMs === null ? "never" : undefined,
-		);
-		put(
-			map,
-			`${base}.behavior`,
-			scope,
-			FAULT_FIELDS.behavior,
-			null,
-			BEHAVIOR_LABELS[f.behavior],
-		);
+		put(map, `${base}.presence`, "fault", f.id, "presence", f.kind, f.kind);
+		put(map, `${base}.kind`, "fault", f.id, "fault.kind", f.kind);
+		put(map, `${base}.target`, "fault", f.id, "fault.target", f.target);
+		put(map, `${base}.atMs`, "fault", f.id, "fault.atMs", f.atMs);
+		if (f.kind === "node-failure") {
+			put(
+				map,
+				`${base}.recoverAtMs`,
+				"fault",
+				f.id,
+				"fault.recoverAtMs",
+				f.recoverAtMs,
+				f.recoverAtMs === null ? "never" : undefined,
+			);
+			put(map, `${base}.behavior`, "fault", f.id, "fault.behavior", f.behavior);
+		} else {
+			put(
+				map,
+				`${base}.untilMs`,
+				"fault",
+				f.id,
+				"fault.untilMs",
+				f.untilMs,
+				f.untilMs === null ? "never" : undefined,
+			);
+			if (f.kind === "slowdown") {
+				put(map, `${base}.factor`, "fault", f.id, "fault.factor", f.factor);
+				put(map, `${base}.addMs`, "fault", f.id, "fault.addMs", f.addMs);
+			} else if (f.kind === "error-rate" || f.kind === "link-loss")
+				put(map, `${base}.rate`, "fault", f.id, "fault.rate", f.rate);
+			else if (f.kind === "capacity")
+				put(
+					map,
+					`${base}.capacity`,
+					"fault",
+					f.id,
+					"fault.capacity",
+					f.capacity,
+				);
+			else if (f.kind === "link-latency")
+				put(map, `${base}.addMs`, "fault", f.id, "fault.addMs", f.addMs);
+		}
 	}
 	return map;
 }
@@ -236,38 +351,44 @@ function flatten(experiment: Experiment): Map<string, Entry> {
 export function semanticDiff(a: Experiment, b: Experiment): SemanticChange[] {
 	const left = flatten(a);
 	const right = flatten(b);
-	const hcOff =
-		left.get("lb.healthCheck.enabled")?.display === "off" &&
-		right.get("lb.healthCheck.enabled")?.display === "off";
-
 	const keys = [
 		...left.keys(),
 		...[...right.keys()].filter((k) => !left.has(k)),
 	];
 	const changes: SemanticChange[] = [];
+	const skipped = new Set<string>();
+
 	for (const key of keys) {
-		if (
-			hcOff &&
-			key.startsWith("lb.healthCheck.") &&
-			key !== "lb.healthCheck.enabled"
-		)
-			continue;
-		// A server or fault that exists on one side only is reported once, by its presence entry.
-		const entity = /^(server|fault)\.([^.]+)\./.exec(key);
-		if (entity && !key.endsWith(".present")) {
-			const presence = `${entity[1]}.${entity[2]}.present`;
-			if (!left.has(presence) || !right.has(presence)) continue;
-		}
 		const l = left.get(key);
 		const r = right.get(key);
-		if (l?.display === r?.display) continue;
+		// Settings that only matter while a switch is on are ignored when it is off on both sides.
+		const gate = key
+			.replace(/\.hc\.(?!enabled).*$/, ".hc.enabled")
+			.replace(/\.breaker\.(?!enabled).*$/, ".breaker.enabled");
+		if (
+			gate !== key &&
+			left.get(gate)?.value === false &&
+			right.get(gate)?.value === false
+		)
+			continue;
+		// A node, link, burst or fault present on one side only is reported once, by its presence entry.
+		const entity = /^((?:node|link|fault|burst)\.[^.]+)\./.exec(key);
+		if (entity && !key.endsWith(".presence")) {
+			const presence = `${entity[1]}.presence`;
+			if (!left.has(presence) || !right.has(presence) || skipped.has(presence))
+				continue;
+		}
+		if (l?.text === r?.text) continue;
 		const meta = (r ?? l) as Entry;
 		changes.push({
 			key,
 			scope: meta.scope,
+			scopeLabel: meta.scopeLabel,
 			field: meta.field,
-			before: l?.display ?? null,
-			after: r?.display ?? null,
+			before: l?.value ?? null,
+			after: r?.value ?? null,
+			beforeText: l?.text ?? null,
+			afterText: r?.text ?? null,
 		});
 	}
 	return changes;

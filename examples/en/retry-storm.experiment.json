@@ -1,0 +1,115 @@
+{
+	"schemaVersion": "0.2.0",
+	"experimentId": "retry-storm",
+	"title": "Retry storm: retries that make it worse",
+	"question": "What happens when the API retries every failed database call up to three times?",
+	"description": "The database slows down 50 times from 20 s to 40 s. The API has 100 slots, gives the database a 300 ms timeout and retries up to three times. When the database slows down, every client request can become four database calls, so the database's load multiplies exactly when it can least cope.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 100,
+					"serviceTimeMs": 20,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-db",
+				"source": "api",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": 300,
+				"retries": 3,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "db-slowdown",
+			"kind": "slowdown",
+			"target": "db",
+			"atMs": 20000,
+			"untilMs": 40000,
+			"factor": 50,
+			"addMs": 0
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Health probes bypass the request queue and answer instantly when the component is up.",
+		"Components do not know when their caller gave up; they finish the work and the answer is discarded.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"Calls to the database far exceed client requests while the database is slow.",
+		"Almost every retry fails too, so retries do not help and only add load.",
+		"After the database recovers, the backlog of retries still has to drain."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"db": {
+			"x": 600,
+			"y": 0
+		}
+	}
+}

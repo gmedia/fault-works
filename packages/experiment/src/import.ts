@@ -39,9 +39,13 @@ const str = (v: unknown, prefix?: string) =>
 const num = (v: unknown) =>
 	typeof v === "number" && Number.isFinite(v) ? v : null;
 
-const fail = (message: string, path = ""): ImportResult => ({
+const fail = (
+	key: string,
+	params?: Record<string, string | number>,
+	path = "",
+): ImportResult => ({
 	ok: false,
-	issues: [{ path, message }],
+	issues: [{ path, message: params ? { key, params } : { key } }],
 });
 
 function fromResult(
@@ -49,13 +53,7 @@ function fromResult(
 	path: string,
 ): ImportedRun | ValidationIssue[] {
 	if (!isObject(value.experiment))
-		return [
-			{
-				path,
-				message:
-					"This is a FaultWorks result file, but it does not contain its experiment, so it cannot be re-run.",
-			},
-		];
+		return [{ path, message: { key: "import.resultWithoutExperiment" } }];
 	const parsed = parseExperiment(value.experiment);
 	if (!parsed.ok)
 		return parsed.issues.map((i) => ({
@@ -84,25 +82,20 @@ function fromResult(
 export function parseImportJson(text: string): ImportResult {
 	const bytes = new TextEncoder().encode(text).length;
 	if (bytes > MAX_BUNDLE_BYTES)
-		return fail(
-			`The file is ${Math.ceil(bytes / 1024)} KB, which is more than FaultWorks ever exports.`,
-		);
+		return fail("import.tooLargeBundle", { kb: Math.ceil(bytes / 1024) });
 	let value: unknown;
 	try {
 		value = JSON.parse(text);
 	} catch (error) {
-		return fail(
-			`This is not valid JSON (${error instanceof Error ? error.message : "parse error"}).`,
-		);
+		return fail("import.invalidJson", {
+			detail: error instanceof Error ? error.message : "parse error",
+		});
 	}
-	if (!isObject(value))
-		return fail(
-			"An experiment must be a JSON object with a schemaVersion field.",
-		);
+	if (!isObject(value)) return fail("import.notObject");
 
 	if (typeof value.comparisonSchemaVersion === "string") {
 		if (!isObject(value.a) || !isObject(value.b))
-			return fail("This comparison file is missing its A or B result.");
+			return fail("import.comparisonIncomplete");
 		const a = fromResult(value.a, "a");
 		const b = fromResult(value.b, "b");
 		const issues = [
@@ -120,9 +113,10 @@ export function parseImportJson(text: string): ImportResult {
 	}
 
 	if (bytes > LIMITS.maxImportBytes)
-		return fail(
-			`The file is ${Math.ceil(bytes / 1024)} KB; experiments are limited to ${LIMITS.maxImportBytes / 1024} KB.`,
-		);
+		return fail("import.tooLarge", {
+			kb: Math.ceil(bytes / 1024),
+			limitKb: LIMITS.maxImportBytes / 1024,
+		});
 	const parsed = parseExperiment(value);
 	if (!parsed.ok) return parsed;
 	return {

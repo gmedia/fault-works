@@ -1,13 +1,13 @@
 import { z } from "zod";
+import { msg } from "./messages.ts";
 
-export const SCHEMA_VERSION = "0.1.0";
+export const SCHEMA_VERSION = "0.2.0";
 
 /** Product limits. They keep a run inside a browser tab's budget and are part of the contract. */
 export const LIMITS = {
-	maxNodes: 10,
-	maxServers: 8,
-	maxLinks: 20,
-	maxFaults: 10,
+	maxNodes: 12,
+	maxLinks: 24,
+	maxFaults: 12,
 	maxBursts: 10,
 	maxHorizonMs: 15 * 60 * 1000,
 	maxOfferedRequests: 250_000,
@@ -18,141 +18,238 @@ export const LIMITS = {
 
 const idPattern = /^[a-z0-9][a-z0-9-]{0,47}$/;
 
-export const nodeIdSchema = z
-	.string()
-	.regex(
-		idPattern,
-		"Use 1–48 lowercase letters, digits or hyphens, starting with a letter or digit",
-	);
+export const idSchema = z.string().regex(idPattern, msg("validation.id"));
 
 const label = z.string().trim().min(1).max(40).optional();
 
-const intMs = (min: number, max: number, what: string) =>
-	z
-		.number({ error: `${what} must be a number of milliseconds` })
-		.int(`${what} must be a whole number of milliseconds`)
-		.min(min, `${what} must be at least ${min} ms`)
-		.max(max, `${what} must be at most ${max} ms`);
+/** Field keys name the translation of a setting's label; messages refer to them. */
+const num = (
+	field: string,
+	opts: {
+		int?: boolean;
+		min?: number;
+		max?: number;
+		gt?: number;
+		unit?: string;
+	},
+) => {
+	const p = { field, unit: opts.unit ?? null };
+	let s = z.number({ error: msg("validation.number", p) });
+	if (opts.int) s = s.int(msg("validation.integer", p));
+	if (opts.gt !== undefined)
+		s = s.gt(opts.gt, msg("validation.gt", { ...p, value: opts.gt }));
+	if (opts.min !== undefined)
+		s = s.min(opts.min, msg("validation.min", { ...p, value: opts.min }));
+	if (opts.max !== undefined)
+		s = s.max(opts.max, msg("validation.max", { ...p, value: opts.max }));
+	return s;
+};
+const ms = (field: string, min: number, max: number) =>
+	num(field, { int: true, min, max, unit: "ms" });
+const rate = (field: string) => num(field, { min: 0, max: 1 });
 
 export const healthCheckSchema = z.strictObject({
 	enabled: z.boolean(),
-	intervalMs: intMs(100, 60_000, "Probe interval"),
-	probeTimeoutMs: intMs(10, 30_000, "Probe timeout"),
-	unhealthyThreshold: z
-		.number()
-		.int()
-		.min(1, "Unhealthy threshold must be at least 1 probe")
-		.max(10, "Unhealthy threshold must be at most 10 probes"),
-	healthyThreshold: z
-		.number()
-		.int()
-		.min(1, "Healthy threshold must be at least 1 probe")
-		.max(10, "Healthy threshold must be at most 10 probes"),
+	intervalMs: ms("healthCheck.intervalMs", 100, 60_000),
+	probeTimeoutMs: ms("healthCheck.probeTimeoutMs", 10, 30_000),
+	unhealthyThreshold: num("healthCheck.unhealthyThreshold", {
+		int: true,
+		min: 1,
+		max: 10,
+		unit: "probes",
+	}),
+	healthyThreshold: num("healthCheck.healthyThreshold", {
+		int: true,
+		min: 1,
+		max: 10,
+		unit: "probes",
+	}),
+});
+
+export const workerConfigSchema = z.strictObject({
+	capacity: num("worker.capacity", {
+		int: true,
+		min: 1,
+		max: 1000,
+		unit: "slots",
+	}),
+	queueCapacity: num("worker.queueCapacity", {
+		int: true,
+		min: 0,
+		max: 10_000,
+		unit: "requests",
+	}),
+	serviceTimeMs: num("worker.serviceTimeMs", {
+		gt: 0,
+		max: 60_000,
+		unit: "ms",
+	}),
+	serviceTimeDistribution: z.enum(["fixed", "exponential"]),
 });
 
 export const clientNodeSchema = z.strictObject({
-	id: nodeIdSchema,
+	id: idSchema,
 	kind: z.literal("client"),
 	label,
 });
 
 export const loadBalancerNodeSchema = z.strictObject({
-	id: nodeIdSchema,
+	id: idSchema,
 	kind: z.literal("load-balancer"),
 	label,
 	config: z.strictObject({
-		algorithm: z.literal("round-robin", {
-			error: "Only round-robin balancing is modeled in v0.1",
+		algorithm: z.enum(["round-robin", "least-connections", "random"]),
+		retries: num("balancer.retries", {
+			int: true,
+			min: 0,
+			max: 5,
+			unit: "attempts",
 		}),
 		healthCheck: healthCheckSchema,
 	}),
 });
 
-export const serverNodeSchema = z.strictObject({
-	id: nodeIdSchema,
-	kind: z.literal("server"),
+export const serviceNodeSchema = z.strictObject({
+	id: idSchema,
+	kind: z.enum(["service", "database"]),
 	label,
-	config: z.strictObject({
-		capacity: z
-			.number()
-			.int("Concurrency must be a whole number of slots")
-			.min(1, "Concurrency must be at least 1 slot")
-			.max(1000, "Concurrency must be at most 1000 slots"),
-		queueCapacity: z
-			.number()
-			.int("Queue size must be a whole number of requests")
-			.min(0, "Queue size cannot be negative")
-			.max(10_000, "Queue size must be at most 10000 requests"),
-		serviceTimeMs: z
-			.number({ error: "Service time must be a number of milliseconds" })
-			.min(0.001, "Service time must be greater than 0 ms")
-			.max(60_000, "Service time must be at most 60000 ms"),
-		serviceTimeDistribution: z.enum(["fixed", "exponential"]),
-	}),
+	config: workerConfigSchema,
 });
 
-export const nodeSchema = z.discriminatedUnion("kind", [
+export const cacheNodeSchema = z.strictObject({
+	id: idSchema,
+	kind: z.literal("cache"),
+	label,
+	config: workerConfigSchema.extend({ hitRatio: rate("cache.hitRatio") }),
+});
+
+export const queueNodeSchema = z.strictObject({
+	id: idSchema,
+	kind: z.literal("queue"),
+	label,
+	config: workerConfigSchema,
+});
+
+export const nodeSchema = z.union([
 	clientNodeSchema,
 	loadBalancerNodeSchema,
-	serverNodeSchema,
+	serviceNodeSchema,
+	cacheNodeSchema,
+	queueNodeSchema,
 ]);
 
-export const linkSchema = z.strictObject({
-	source: nodeIdSchema,
-	target: nodeIdSchema,
+export const circuitBreakerSchema = z.strictObject({
+	enabled: z.boolean(),
+	failureThreshold: num("breaker.failureThreshold", {
+		int: true,
+		min: 1,
+		max: 100,
+		unit: "calls",
+	}),
+	openMs: ms("breaker.openMs", 10, 600_000),
 });
 
-const rps = (what: string) =>
-	z
-		.number({ error: `${what} must be a number of requests per second` })
-		.gt(0, `${what} must be greater than 0 req/s`)
-		.max(LIMITS.maxRps, `${what} must be at most ${LIMITS.maxRps} req/s`);
+export const linkSchema = z.strictObject({
+	id: idSchema,
+	source: idSchema,
+	target: idSchema,
+	latencyMs: num("link.latencyMs", { min: 0, max: 10_000, unit: "ms" }),
+	timeoutMs: ms("link.timeoutMs", 1, 300_000).nullable(),
+	retries: num("link.retries", {
+		int: true,
+		min: 0,
+		max: 10,
+		unit: "attempts",
+	}),
+	circuitBreaker: circuitBreakerSchema,
+});
+
+const rps = (field: string) =>
+	num(field, { gt: 0, max: LIMITS.maxRps, unit: "req/s" });
 
 export const burstSchema = z.strictObject({
-	atMs: intMs(0, LIMITS.maxHorizonMs, "Burst start"),
-	durationMs: intMs(1, LIMITS.maxHorizonMs, "Burst length"),
-	extraRps: rps("Extra burst rate"),
+	atMs: ms("burst.atMs", 0, LIMITS.maxHorizonMs),
+	durationMs: ms("burst.durationMs", 1, LIMITS.maxHorizonMs),
+	extraRps: rps("burst.extraRps"),
 });
 
 export const workloadSchema = z.strictObject({
 	arrival: z.enum(["constant", "poisson"]),
-	offeredRps: rps("Offered rate"),
-	startMs: intMs(0, LIMITS.maxHorizonMs, "Traffic start"),
-	durationMs: intMs(1, LIMITS.maxHorizonMs, "Traffic duration"),
-	timeoutMs: intMs(1, 300_000, "Client timeout"),
+	offeredRps: rps("workload.offeredRps"),
+	startMs: ms("workload.startMs", 0, LIMITS.maxHorizonMs),
+	durationMs: ms("workload.durationMs", 1, LIMITS.maxHorizonMs),
+	timeoutMs: ms("workload.timeoutMs", 1, 300_000),
 	bursts: z.array(burstSchema).max(LIMITS.maxBursts),
 });
 
-export const faultSchema = z.strictObject({
-	id: nodeIdSchema,
-	kind: z.literal("node-failure", {
-		error: "Only node-failure faults are modeled in v0.1",
+const faultBase = {
+	id: idSchema,
+	target: idSchema,
+	atMs: ms("fault.atMs", 0, LIMITS.maxHorizonMs),
+};
+const untilMs = ms("fault.untilMs", 1, LIMITS.maxHorizonMs).nullable();
+
+export const faultSchema = z.discriminatedUnion("kind", [
+	z.strictObject({
+		...faultBase,
+		kind: z.literal("node-failure"),
+		recoverAtMs: ms("fault.recoverAtMs", 1, LIMITS.maxHorizonMs).nullable(),
+		behavior: z.enum(["refuse", "hang"]),
 	}),
-	target: nodeIdSchema,
-	atMs: intMs(0, LIMITS.maxHorizonMs, "Failure time"),
-	recoverAtMs: intMs(1, LIMITS.maxHorizonMs, "Recovery time").nullable(),
-	behavior: z.enum(["refuse", "hang"]),
-});
+	z.strictObject({
+		...faultBase,
+		kind: z.literal("slowdown"),
+		untilMs,
+		factor: num("fault.factor", { min: 1, max: 100 }),
+		addMs: num("fault.addMs", { min: 0, max: 60_000, unit: "ms" }),
+	}),
+	z.strictObject({
+		...faultBase,
+		kind: z.literal("error-rate"),
+		untilMs,
+		rate: rate("fault.rate"),
+	}),
+	z.strictObject({
+		...faultBase,
+		kind: z.literal("capacity"),
+		untilMs,
+		capacity: num("fault.capacity", {
+			int: true,
+			min: 0,
+			max: 1000,
+			unit: "slots",
+		}),
+	}),
+	z.strictObject({
+		...faultBase,
+		kind: z.literal("link-latency"),
+		untilMs,
+		addMs: num("fault.addMs", { min: 0, max: 60_000, unit: "ms" }),
+	}),
+	z.strictObject({
+		...faultBase,
+		kind: z.literal("link-loss"),
+		untilMs,
+		rate: rate("fault.rate"),
+	}),
+	z.strictObject({ ...faultBase, kind: z.literal("cache-flush"), untilMs }),
+]);
 
 export const runSettingsSchema = z.strictObject({
 	/** Omitted: traffic end plus one client timeout, so late requests can finish. */
-	horizonMs: intMs(1, LIMITS.maxHorizonMs, "Horizon").optional(),
-	sampleWindowMs: intMs(100, 60_000, "Sample window"),
+	horizonMs: ms("run.horizonMs", 1, LIMITS.maxHorizonMs).optional(),
+	sampleWindowMs: ms("run.sampleWindowMs", 100, 60_000),
 });
 
 const text = (max: number) => z.string().max(max);
 
 export const experimentSchema = z.strictObject({
 	schemaVersion: z.literal(SCHEMA_VERSION),
-	experimentId: nodeIdSchema,
-	title: z.string().trim().min(1, "Give the experiment a title").max(120),
+	experimentId: idSchema,
+	title: z.string().trim().min(1, msg("validation.title")).max(120),
 	question: text(300),
 	description: text(2000),
-	seed: z
-		.number({ error: "Seed must be a whole number" })
-		.int("Seed must be a whole number")
-		.min(0, "Seed cannot be negative")
-		.max(4_294_967_295, "Seed must fit in 32 bits (max 4294967295)"),
+	seed: num("run.seed", { int: true, min: 0, max: 4_294_967_295 }),
 	model: z.strictObject({
 		nodes: z.array(nodeSchema).max(LIMITS.maxNodes),
 		links: z.array(linkSchema).max(LIMITS.maxLinks),
@@ -172,12 +269,41 @@ export const experimentSchema = z.strictObject({
 
 export type Experiment = z.infer<typeof experimentSchema>;
 export type ExperimentNode = z.infer<typeof nodeSchema>;
+export type NodeKind = ExperimentNode["kind"];
 export type ClientNode = z.infer<typeof clientNodeSchema>;
 export type LoadBalancerNode = z.infer<typeof loadBalancerNodeSchema>;
-export type ServerNode = z.infer<typeof serverNodeSchema>;
+export type ServiceNode = z.infer<typeof serviceNodeSchema>;
+export type CacheNode = z.infer<typeof cacheNodeSchema>;
+export type QueueNode = z.infer<typeof queueNodeSchema>;
+export type WorkerNode = ServiceNode | CacheNode | QueueNode;
+export type WorkerConfig = z.infer<typeof workerConfigSchema>;
 export type HealthCheck = z.infer<typeof healthCheckSchema>;
+export type CircuitBreaker = z.infer<typeof circuitBreakerSchema>;
+export type Link = z.infer<typeof linkSchema>;
 export type Workload = z.infer<typeof workloadSchema>;
 export type Burst = z.infer<typeof burstSchema>;
 export type Fault = z.infer<typeof faultSchema>;
-export type Link = z.infer<typeof linkSchema>;
+export type FaultKind = Fault["kind"];
 export type RunSettings = z.infer<typeof runSettingsSchema>;
+
+export const WORKER_KINDS: readonly NodeKind[] = [
+	"service",
+	"database",
+	"cache",
+	"queue",
+];
+export const NODE_FAULT_KINDS: readonly FaultKind[] = [
+	"node-failure",
+	"slowdown",
+	"error-rate",
+	"capacity",
+	"cache-flush",
+];
+export const LINK_FAULT_KINDS: readonly FaultKind[] = [
+	"link-latency",
+	"link-loss",
+];
+
+export function isWorker(node: ExperimentNode): node is WorkerNode {
+	return WORKER_KINDS.includes(node.kind);
+}

@@ -1,0 +1,139 @@
+{
+	"schemaVersion": "0.2.0",
+	"experimentId": "worker-queue-backlog",
+	"title": "Antrean kerja: cepat menjawab, lambat mengerjakan",
+	"question": "Berapa lama backlog antrean pulih setelah lonjakan trafik?",
+	"description": "API menerima permintaan lalu menaruhnya di antrean kerja dan langsung menjawab klien. Empat worker mengerjakan tiap pekerjaan sekitar 50 ms. Di detik 20 ada lonjakan 100 req/s tambahan selama 15 detik, lebih dari yang sanggup diproses worker.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 50,
+					"queueCapacity": 100,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "queue",
+				"kind": "queue",
+				"label": "Antrean kerja",
+				"config": {
+					"capacity": 4,
+					"queueCapacity": 5000,
+					"serviceTimeMs": 50,
+					"serviceTimeDistribution": "exponential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-queue",
+				"source": "api",
+				"target": "queue",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "queue-db",
+				"source": "queue",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 50,
+		"startMs": 0,
+		"durationMs": 90000,
+		"timeoutMs": 1000,
+		"bursts": [
+			{
+				"atMs": 20000,
+				"durationMs": 15000,
+				"extraRps": 100
+			}
+		]
+	},
+	"faults": [],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Probe health check melewati antrean dan dijawab seketika saat komponen hidup.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah; pekerjaan tetap diselesaikan dan jawabannya dibuang.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Klien hampir tidak pernah gagal: antrean selalu menjawab cepat.",
+		"Backlog antrean tumbuh selama lonjakan dan baru habis beberapa belas detik setelah lonjakan berhenti.",
+		"Pekerjaan yang selesai paling lambat menunggu puluhan detik di antrean meski klien sudah dijawab sejak awal."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"queue": {
+			"x": 600,
+			"y": 0
+		},
+		"db": {
+			"x": 900,
+			"y": 0
+		}
+	}
+}

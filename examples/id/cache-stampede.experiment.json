@@ -1,0 +1,142 @@
+{
+	"schemaVersion": "0.2.0",
+	"experimentId": "cache-stampede",
+	"title": "Cache stampede: saat cache kosong mendadak",
+	"question": "Apa yang terjadi pada database ketika cache yang biasanya menyerap 90% permintaan tiba-tiba kosong?",
+	"description": "API membaca lewat cache dengan rasio hit 90%, sehingga database hanya melihat sepersepuluh trafik. Di detik 20 sampai 25 cache dikosongkan (restart atau flush). Semua permintaan tembus ke database yang hanya disiapkan untuk sepersepuluh beban.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 100,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "cache",
+				"kind": "cache",
+				"label": "Cache",
+				"config": {
+					"capacity": 200,
+					"queueCapacity": 0,
+					"serviceTimeMs": 2,
+					"serviceTimeDistribution": "fixed",
+					"hitRatio": 0.9
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 5,
+					"queueCapacity": 20,
+					"serviceTimeMs": 40,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-cache",
+				"source": "api",
+				"target": "cache",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "cache-db",
+				"source": "cache",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 300,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "cache-cache-flush",
+			"kind": "cache-flush",
+			"target": "cache",
+			"atMs": 20000,
+			"untilMs": 25000
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Probe health check melewati antrean dan dijawab seketika saat komponen hidup.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah; pekerjaan tetap diselesaikan dan jawabannya dibuang.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Selama cache kosong, antrean database penuh dan latensi melonjak.",
+		"Kegagalan berasal dari database (antrean penuh) dan timeout, bukan dari cache.",
+		"Setelah cache hangat lagi, beban database turun ke tingkat semula."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"cache": {
+			"x": 600,
+			"y": 0
+		},
+		"db": {
+			"x": 900,
+			"y": 0
+		}
+	}
+}

@@ -1,0 +1,172 @@
+{
+	"schemaVersion": "0.2.0",
+	"experimentId": "random-traffic-burst",
+	"title": "Trafik acak dengan lonjakan",
+	"question": "Seberapa besar variasi yang muncul dari keacakan saja, dan apa dampak lonjakan terhadap antrean?",
+	"description": "Tiga server sehat, kedatangan Poisson dan waktu layanan eksponensial. Lonjakan 10 detik menambah 120 req/s di detik 30. Tidak ada fault: ini acuan seperti apa variasi normal. Ubah seed saja untuk melihat hasil acak yang berbeda.",
+	"seed": 7,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"label": "Load balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"retries": 0,
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 5000,
+						"probeTimeoutMs": 1000,
+						"unhealthyThreshold": 2,
+						"healthyThreshold": 2
+					}
+				}
+			},
+			{
+				"id": "server-a",
+				"kind": "service",
+				"label": "Server A",
+				"config": {
+					"capacity": 8,
+					"queueCapacity": 20,
+					"serviceTimeMs": 80,
+					"serviceTimeDistribution": "exponential"
+				}
+			},
+			{
+				"id": "server-b",
+				"kind": "service",
+				"label": "Server B",
+				"config": {
+					"capacity": 8,
+					"queueCapacity": 20,
+					"serviceTimeMs": 80,
+					"serviceTimeDistribution": "exponential"
+				}
+			},
+			{
+				"id": "server-c",
+				"kind": "service",
+				"label": "Server C",
+				"config": {
+					"capacity": 8,
+					"queueCapacity": 20,
+					"serviceTimeMs": 80,
+					"serviceTimeDistribution": "exponential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-lb",
+				"source": "client",
+				"target": "lb",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-server-a",
+				"source": "lb",
+				"target": "server-a",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-server-b",
+				"source": "lb",
+				"target": "server-b",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-server-c",
+				"source": "lb",
+				"target": "server-c",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "poisson",
+		"offeredRps": 150,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": [
+			{
+				"atMs": 30000,
+				"durationMs": 10000,
+				"extraRps": 120
+			}
+		]
+	},
+	"faults": [],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Probe health check melewati antrean dan dijawab seketika saat komponen hidup.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah; pekerjaan tetap diselesaikan dan jawabannya dibuang.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Latensi berbeda dari request ke request meski tidak ada kegagalan.",
+		"Selama lonjakan, antrean tumbuh dan p95 naik; beberapa request bisa ditolak atau timeout.",
+		"Seed yang berbeda memberi angka yang sedikit berbeda; satu seed adalah demonstrasi, bukan bukti statistik."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"lb": {
+			"x": 300,
+			"y": 0
+		},
+		"server-a": {
+			"x": 620,
+			"y": -150
+		},
+		"server-b": {
+			"x": 620,
+			"y": 0
+		},
+		"server-c": {
+			"x": 620,
+			"y": 150
+		}
+	}
+}

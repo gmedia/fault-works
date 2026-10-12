@@ -1,0 +1,139 @@
+{
+	"schemaVersion": "0.2.0",
+	"experimentId": "worker-queue-backlog",
+	"title": "Worker queue: fast to answer, slow to finish",
+	"question": "How long does a queue backlog take to recover after a traffic spike?",
+	"description": "The API accepts requests, stores them in a worker queue and answers the client at once. Four workers take about 50 ms per job. At 20 s a spike adds 100 req/s for 15 s, more than the workers can process.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 50,
+					"queueCapacity": 100,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "queue",
+				"kind": "queue",
+				"label": "Worker queue",
+				"config": {
+					"capacity": 4,
+					"queueCapacity": 5000,
+					"serviceTimeMs": 50,
+					"serviceTimeDistribution": "exponential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-queue",
+				"source": "api",
+				"target": "queue",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "queue-db",
+				"source": "queue",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 50,
+		"startMs": 0,
+		"durationMs": 90000,
+		"timeoutMs": 1000,
+		"bursts": [
+			{
+				"atMs": 20000,
+				"durationMs": 15000,
+				"extraRps": 100
+			}
+		]
+	},
+	"faults": [],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Health probes bypass the request queue and answer instantly when the component is up.",
+		"Components do not know when their caller gave up; they finish the work and the answer is discarded.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"Clients almost never fail: the queue always answers quickly.",
+		"The backlog grows during the spike and drains only well after the spike ends.",
+		"The slowest jobs wait tens of seconds in the queue although their clients were answered immediately."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"queue": {
+			"x": 600,
+			"y": 0
+		},
+		"db": {
+			"x": 900,
+			"y": 0
+		}
+	}
+}

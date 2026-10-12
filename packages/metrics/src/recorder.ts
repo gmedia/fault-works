@@ -10,8 +10,9 @@ import { latencyStats, nearestRank, SampleBuffer } from "./percentile.ts";
 import type {
 	FaultSummary,
 	InvariantCheck,
+	LinkSummary,
+	NodeSummary,
 	RunMetrics,
-	ServerSummary,
 	TimeSeries,
 	Transition,
 } from "./types.ts";
@@ -23,7 +24,7 @@ const zeroReasons = (): Record<FailureReason, number> =>
 	>;
 
 export interface RecorderOptions {
-	/** Display labels in server order. */
+	/** Display labels in node order. */
 	labels: string[];
 	windowMs: number;
 }
@@ -42,14 +43,15 @@ export function createRunRecorder(
 	input: EngineInput,
 	options: RecorderOptions,
 ): RunRecorder {
-	const serverCount = input.servers.length;
+	const nodeCount = input.nodes.length;
+	const edgeCount = input.edges.length;
 	const windowUs = options.windowMs * 1000;
 	const windowCount = Math.max(1, Math.ceil(input.horizonUs / windowUs));
 	const windowOf = (t: number) =>
 		Math.min(windowCount - 1, Math.floor(t / windowUs));
 
 	const perWindow = () => new Array<number>(windowCount).fill(0);
-	const perServerWindow = () => Array.from({ length: serverCount }, perWindow);
+	const perNodeWindow = () => Array.from({ length: nodeCount }, perWindow);
 	const series: TimeSeries = {
 		windowMs: options.windowMs,
 		startMs: Array.from(
@@ -67,15 +69,17 @@ export function createRunRecorder(
 		samples: perWindow(),
 		endedP95Ms: new Array(windowCount).fill(null),
 		inFlight: perWindow(),
-		queueDepth: perServerWindow(),
-		busy: perServerWindow(),
-		routed: perServerWindow(),
-		up: Array.from({ length: serverCount }, () =>
+		queueDepth: perNodeWindow(),
+		busy: perNodeWindow(),
+		calls: perNodeWindow(),
+		nodeFailed: perNodeWindow(),
+		up: Array.from({ length: nodeCount }, () =>
 			new Array(windowCount).fill(true),
 		),
-		healthy: Array.from({ length: serverCount }, () =>
+		healthy: Array.from({ length: nodeCount }, () =>
 			new Array(windowCount).fill(true),
 		),
+		linkCalls: Array.from({ length: edgeCount }, perWindow),
 	};
 	const windowSamples: number[][] = Array.from(
 		{ length: windowCount },
@@ -85,29 +89,31 @@ export function createRunRecorder(
 
 	// Per-request state, indexed by request id (ids are dense and increasing).
 	const arrivalUs: number[] = [];
-	const routedAtUs: number[] = [];
 	const terminalCount: number[] = [];
-	const evictedBy: number[] = [];
+	// Per-call state.
+	const callStartUs: number[] = [];
+	const callDeliveredAt = new Map<number, number>();
 	const waiting = new Set<number>();
 
 	let offered = 0;
-	let admitted = 0;
 	let succeeded = 0;
 	let failed = 0;
 	let lateResponses = 0;
 	let probes = 0;
 	let inFlight = 0;
+	let failedWaitUs = 0;
 	const failedByReason = zeroReasons();
+	const failedByOrigin = new Map<number, number>();
 	const successSamples = new SampleBuffer();
 	const completedSamples = new SampleBuffer();
-	let failedWaitUs = 0;
 
-	const servers = input.servers.map((s, i) => ({
-		id: s.id,
-		label: options.labels[i] ?? s.id,
-		capacity: s.capacity,
-		queueCapacity: s.queueCapacity,
-		routed: 0,
+	const nodes = input.nodes.map((n, i) => ({
+		id: n.id,
+		kind: n.kind,
+		label: options.labels[i] ?? n.id,
+		capacity: "capacity" in n ? n.capacity : 0,
+		queueCapacity: "queueCapacity" in n ? n.queueCapacity : 0,
+		calls: 0,
 		succeeded: 0,
 		failed: 0,
 		failedByReason: zeroReasons(),
@@ -120,48 +126,74 @@ export function createRunRecorder(
 		lastChangeUs: 0,
 		up: true,
 		healthy: true,
-		activeFault: -1,
-		lastFault: -1,
+		activeCrash: -1,
+		lastCrash: -1,
+		callLatency: new SampleBuffer(),
+		hits: 0,
+		lookups: 0,
+		jobsDone: 0,
+		jobsFailed: 0,
+		jobWaitUs: [] as number[],
+		activeJobs: new Set<number>(),
+	}));
+	const links = input.edges.map((e) => ({
+		id: e.id,
+		source: e.source,
+		target: e.target,
+		calls: 0,
+		retries: 0,
+		failed: 0,
+		breakerOpens: 0,
 	}));
 
 	const faults = input.faults.map((f) => ({
 		id: f.id,
-		server: f.server,
-		behavior: f.behavior,
-		failedAtUs: null as number | null,
-		recoveredAtUs: null as number | null,
+		kind: f.kind,
+		node: "node" in f ? f.node : -1,
+		edge: "edge" in f ? f.edge : -1,
+		behavior: f.kind === "node-failure" ? f.behavior : null,
+		startedAtUs: null as number | null,
+		endedAtUs: null as number | null,
 		detectedAtUs: null as number | null,
 		restoredAtUs: null as number | null,
 		failedWhileUndetected: 0,
 	}));
 	const transitions: Transition[] = [];
+	const balancerWatching = new Map<number, number[]>();
+	input.edges.forEach((e) => {
+		const src = input.nodes[e.source];
+		if (src?.kind === "load-balancer" && src.healthCheck)
+			balancerWatching.set(e.target, [
+				...(balancerWatching.get(e.target) ?? []),
+				e.source,
+			]);
+	});
 
-	const violations = {
-		conservation: [] as string[],
-		"single-terminal": [] as string[],
-		capacity: [] as string[],
-		"queue-bounds": [] as string[],
-		"monotonic-time": [] as string[],
+	const violations: Record<InvariantCheck["id"], string[]> = {
+		conservation: [],
+		"single-terminal": [],
+		capacity: [],
+		"queue-bounds": [],
+		"monotonic-time": [],
 	};
-	const violate = (id: keyof typeof violations, message: string) => {
+	const violate = (id: InvariantCheck["id"], message: string) => {
 		if (violations[id].length < 5) violations[id].push(message);
 	};
 
-	// Window bookkeeping: carry the current level into windows with no events.
 	let currentWindow = 0;
 	const touchLevels = (w: number) => {
-		servers.forEach((s, i) => {
+		nodes.forEach((n, i) => {
 			const q = series.queueDepth[i] as number[];
 			const b = series.busy[i] as number[];
-			q[w] = Math.max(q[w] as number, s.queue);
-			b[w] = Math.max(b[w] as number, s.busy);
+			q[w] = Math.max(q[w] as number, n.queue);
+			b[w] = Math.max(b[w] as number, n.busy);
 		});
 	};
 	const closeWindow = (w: number) => {
 		series.inFlight[w] = inFlight;
-		servers.forEach((s, i) => {
-			(series.up[i] as boolean[])[w] = s.up;
-			(series.healthy[i] as boolean[])[w] = s.healthy;
+		nodes.forEach((n, i) => {
+			(series.up[i] as boolean[])[w] = n.up;
+			(series.healthy[i] as boolean[])[w] = n.healthy;
 		});
 	};
 	const advanceTo = (t: number) => {
@@ -174,9 +206,9 @@ export function createRunRecorder(
 	};
 	touchLevels(0);
 
-	const accrueBusy = (s: (typeof servers)[number], t: number) => {
-		s.busyArea += s.busy * (t - s.lastChangeUs);
-		s.lastChangeUs = t;
+	const accrueBusy = (n: (typeof nodes)[number], t: number) => {
+		n.busyArea += n.busy * (t - n.lastChangeUs);
+		n.lastChangeUs = t;
 	};
 
 	// Trace fingerprint: two FNV-1a lanes over 32-bit words.
@@ -206,6 +238,31 @@ export function createRunRecorder(
 		else inFlight--;
 	};
 
+	const bump = (rows: number[][], i: number, w: number) => {
+		const r = rows[i];
+		if (r) r[w] = (r[w] as number) + 1;
+	};
+
+	/** A crash counts a failure when the request reached the node after it died and before detection or recovery. */
+	const attributeToCrash = (node: number, t: number) => {
+		for (const f of faults) {
+			if (
+				f.kind !== "node-failure" ||
+				f.node !== node ||
+				f.startedAtUs === null
+			)
+				continue;
+			const end = Math.min(
+				f.endedAtUs ?? Number.POSITIVE_INFINITY,
+				f.detectedAtUs ?? Number.POSITIVE_INFINITY,
+			);
+			if (t >= f.startedAtUs && (t < end || t === f.startedAtUs)) {
+				f.failedWhileUndetected++;
+				return;
+			}
+		}
+	};
+
 	const push = (e: SimEvent) => {
 		eventCount++;
 		if (e.t < lastT)
@@ -217,7 +274,9 @@ export function createRunRecorder(
 		mix(EVENT_KIND_INDEX[e.kind]);
 		mix(e.t);
 		if ("req" in e) mix(e.req);
-		if ("server" in e) mix(e.server);
+		if ("node" in e) mix(e.node);
+		if ("edge" in e) mix(e.edge);
+		if ("call" in e) mix(e.call);
 
 		switch (e.kind) {
 			case "arrival":
@@ -226,73 +285,7 @@ export function createRunRecorder(
 				arrivalUs[e.req] = e.t;
 				series.offered[w] = (series.offered[w] as number) + 1;
 				break;
-			case "routed": {
-				routedAtUs[e.req] = e.t;
-				const s = servers[e.server];
-				if (s) s.routed++;
-				const r = series.routed[e.server];
-				if (r) r[w] = (r[w] as number) + 1;
-				break;
-			}
-			case "enqueued": {
-				mix(e.depth);
-				const s = servers[e.server];
-				if (!s) break;
-				admitted++;
-				waiting.add(e.req);
-				s.queue++;
-				if (s.queue !== e.depth)
-					violate(
-						"queue-bounds",
-						`queue depth mismatch on ${s.id} at ${e.t / 1000} ms`,
-					);
-				if (s.queue > s.queueCapacity)
-					violate(
-						"queue-bounds",
-						`${s.id} queue ${s.queue} > ${s.queueCapacity}`,
-					);
-				s.peakQueue = Math.max(s.peakQueue, s.queue);
-				touchLevels(w);
-				break;
-			}
-			case "service-start": {
-				mix(e.queuedUs);
-				const s = servers[e.server];
-				if (!s) break;
-				if (waiting.delete(e.req)) s.queue--;
-				else admitted++;
-				if (s.queue < 0) violate("queue-bounds", `${s.id} queue went negative`);
-				accrueBusy(s, e.t);
-				s.busy++;
-				if (s.busy > s.capacity)
-					violate(
-						"capacity",
-						`${s.id} had ${s.busy} busy slots of ${s.capacity}`,
-					);
-				s.peakBusy = Math.max(s.peakBusy, s.busy);
-				touchLevels(w);
-				break;
-			}
-			case "service-end": {
-				const s = servers[e.server];
-				if (!s) break;
-				accrueBusy(s, e.t);
-				s.busy--;
-				if (s.busy < 0) violate("capacity", `${s.id} busy slots went negative`);
-				break;
-			}
-			case "evicted": {
-				mix(e.from === "queue" ? 0 : 1);
-				const s = servers[e.server];
-				if (!s) break;
-				evictedBy[e.req] = s.activeFault;
-				if (e.from === "service") {
-					accrueBusy(s, e.t);
-					s.busy--;
-				} else if (waiting.delete(e.req)) s.queue--;
-				break;
-			}
-			case "succeeded": {
+			case "succeeded":
 				mix(e.latencyUs);
 				terminal(e.req, e.t);
 				succeeded++;
@@ -301,10 +294,7 @@ export function createRunRecorder(
 				(windowSamples[w] as number[]).push(e.latencyUs);
 				(windowEnded[w] as number[]).push(e.latencyUs);
 				series.succeeded[w] = (series.succeeded[w] as number) + 1;
-				const s = servers[e.server];
-				if (s) s.succeeded++;
 				break;
-			}
 			case "failed": {
 				mix(FAILURE_REASONS.indexOf(e.reason));
 				mix(e.latencyUs);
@@ -312,132 +302,274 @@ export function createRunRecorder(
 				failed++;
 				failedByReason[e.reason]++;
 				failedWaitUs += e.latencyUs;
+				failedByOrigin.set(e.node, (failedByOrigin.get(e.node) ?? 0) + 1);
 				completedSamples.push(e.latencyUs);
 				(windowEnded[w] as number[]).push(e.latencyUs);
 				series.failed[w] = (series.failed[w] as number) + 1;
-				const byReason = series.failedByReason[e.reason];
-				byReason[w] = (byReason[w] as number) + 1;
-				const s = servers[e.server];
-				if (s) {
-					s.failed++;
-					s.failedByReason[e.reason]++;
-					attributeToFault(e.req, e.server);
+				bump([series.failedByReason[e.reason]], 0, w);
+				const n = nodes[e.node];
+				if (n) {
+					n.failed++;
+					n.failedByReason[e.reason]++;
+					bump(series.nodeFailed, e.node, w);
+					// A refusal or a crash loss happens the moment the node is reached; a timeout means the
+					// request reached the hung node roughly when it was routed, one timeout earlier.
+					if (e.reason === "refused" || e.reason === "lost-in-crash")
+						attributeToCrash(e.node, e.t);
+					else if (e.reason === "timeout")
+						attributeToCrash(e.node, e.t - e.latencyUs);
 				}
 				break;
 			}
-			case "late-response": {
-				if ((terminalCount[e.req] ?? 0) !== 1)
-					violate(
-						"single-terminal",
-						`late response for request ${e.req} that had not ended`,
-					);
+			case "late-response":
 				lateResponses++;
-				const s = servers[e.server];
-				if (s) s.lateResponses++;
+				{
+					const n = nodes[e.node];
+					if (n) n.lateResponses++;
+				}
+				break;
+			case "call-start": {
+				mix(e.attempt);
+				callStartUs[e.call] = e.t;
+				const l = links[e.edge];
+				if (l) {
+					l.calls++;
+					if (e.attempt > 1) l.retries++;
+				}
+				bump(series.linkCalls, e.edge, w);
+				break;
+			}
+			case "call-end": {
+				mix(e.ok ? 1 : 0);
+				mix(e.latencyUs);
+				const edge = input.edges[e.edge];
+				const l = links[e.edge];
+				if (l && !e.ok) l.failed++;
+				const target = edge ? nodes[edge.target] : undefined;
+				if (target) {
+					target.callLatency.push(e.latencyUs);
+					if (e.ok) target.succeeded++;
+				}
+				break;
+			}
+			case "routed":
+				mix(e.to);
+				break;
+			case "enqueued": {
+				mix(e.depth);
+				const n = nodes[e.node];
+				if (!n) break;
+				if (!callDeliveredAt.has(e.call)) {
+					callDeliveredAt.set(e.call, e.t);
+					n.calls++;
+					bump(series.calls, e.node, w);
+				}
+				if (n.kind !== "queue") waiting.add(e.call);
+				n.queue++;
+				if (n.queue !== e.depth)
+					violate(
+						"queue-bounds",
+						`queue depth mismatch on ${n.id} at ${e.t / 1000} ms`,
+					);
+				if (n.queue > n.queueCapacity)
+					violate(
+						"queue-bounds",
+						`${n.id} queue ${n.queue} > ${n.queueCapacity}`,
+					);
+				n.peakQueue = Math.max(n.peakQueue, n.queue);
+				touchLevels(w);
+				break;
+			}
+			case "service-start": {
+				mix(e.queuedUs);
+				const n = nodes[e.node];
+				if (!n) break;
+				if (!callDeliveredAt.has(e.call)) {
+					callDeliveredAt.set(e.call, e.t);
+					n.calls++;
+					bump(series.calls, e.node, w);
+				}
+				if (waiting.delete(e.call)) n.queue--;
+				if (n.queue < 0) violate("queue-bounds", `${n.id} queue went negative`);
+				accrueBusy(n, e.t);
+				n.busy++;
+				if (n.busy > n.capacity)
+					violate(
+						"capacity",
+						`${n.id} had ${n.busy} busy slots of ${n.capacity}`,
+					);
+				n.peakBusy = Math.max(n.peakBusy, n.busy);
+				touchLevels(w);
+				break;
+			}
+			case "service-end": {
+				const n = nodes[e.node];
+				if (!n) break;
+				accrueBusy(n, e.t);
+				n.busy--;
+				if (n.busy < 0) violate("capacity", `${n.id} busy slots went negative`);
+				break;
+			}
+			case "evicted": {
+				mix(e.from === "queue" ? 0 : 1);
+				const n = nodes[e.node];
+				if (!n) break;
+				if (e.from === "service") {
+					accrueBusy(n, e.t);
+					n.busy--;
+				} else if (waiting.delete(e.call)) n.queue--;
+				break;
+			}
+			case "cache-hit": {
+				mix(e.hit ? 1 : 0);
+				const n = nodes[e.node];
+				if (!n) break;
+				n.lookups++;
+				if (e.hit) n.hits++;
+				break;
+			}
+			case "job-start": {
+				mix(e.waitedUs);
+				const n = nodes[e.node];
+				if (!n) break;
+				if (e.waitedUs > 0) n.queue = Math.max(0, n.queue - 1);
+				n.jobWaitUs.push(e.waitedUs);
+				n.activeJobs.add(e.job);
+				accrueBusy(n, e.t);
+				n.busy++;
+				if (n.busy > n.capacity)
+					violate(
+						"capacity",
+						`${n.id} had ${n.busy} busy consumers of ${n.capacity}`,
+					);
+				n.peakBusy = Math.max(n.peakBusy, n.busy);
+				touchLevels(w);
+				break;
+			}
+			case "job-done": {
+				mix(e.ok ? 1 : 0);
+				mix(e.job);
+				const n = nodes[e.node];
+				if (!n) break;
+				if (e.ok) n.jobsDone++;
+				else n.jobsFailed++;
+				if (n.activeJobs.delete(e.job)) {
+					accrueBusy(n, e.t);
+					n.busy--;
+				} else n.queue = Math.max(0, n.queue - 1); // dropped from the backlog by a crash
 				break;
 			}
 			case "node-down": {
 				mix(e.fault);
-				const s = servers[e.server];
+				const n = nodes[e.node];
 				const f = faults[e.fault];
-				if (!s || !f) break;
-				s.up = false;
-				s.activeFault = e.fault;
-				s.lastFault = e.fault;
-				f.failedAtUs = e.t;
+				if (!n || !f) break;
+				n.up = false;
+				n.activeCrash = e.fault;
+				n.lastCrash = e.fault;
+				f.startedAtUs = e.t;
+				// The engine follows with `evicted` and `job-done` events for the work it drops.
 				transitions.push({
 					tMs: e.t / 1000,
-					server: e.server,
 					kind: "down",
+					node: e.node,
 					fault: e.fault,
 				});
 				break;
 			}
 			case "node-up": {
 				mix(e.fault);
-				const s = servers[e.server];
+				const n = nodes[e.node];
 				const f = faults[e.fault];
-				if (!s || !f) break;
-				s.up = true;
-				s.activeFault = -1;
-				f.recoveredAtUs = e.t;
-				// Without health checks the load balancer never stopped routing here.
-				if (input.healthCheck === null) f.restoredAtUs = e.t;
+				if (!n || !f) break;
+				n.up = true;
+				n.activeCrash = -1;
+				f.endedAtUs = e.t;
+				if (!balancerWatching.has(e.node)) f.restoredAtUs = e.t;
 				transitions.push({
 					tMs: e.t / 1000,
-					server: e.server,
 					kind: "up",
+					node: e.node,
+					fault: e.fault,
+				});
+				break;
+			}
+			case "fault-start": {
+				mix(e.fault);
+				const f = faults[e.fault];
+				if (f) f.startedAtUs = e.t;
+				transitions.push({
+					tMs: e.t / 1000,
+					kind: "fault-start",
+					fault: e.fault,
+				});
+				break;
+			}
+			case "fault-end": {
+				mix(e.fault);
+				const f = faults[e.fault];
+				if (f) f.endedAtUs = e.t;
+				transitions.push({
+					tMs: e.t / 1000,
+					kind: "fault-end",
 					fault: e.fault,
 				});
 				break;
 			}
 			case "probe":
 				mix(e.ok ? 1 : 0);
+				mix(e.from);
 				probes++;
 				break;
 			case "health-changed": {
 				mix(e.healthy ? 1 : 0);
 				mix(e.fault);
-				const s = servers[e.server];
-				if (!s) break;
-				s.healthy = e.healthy;
-				const faultIndex = e.fault !== -1 ? e.fault : s.lastFault;
-				const f = faults[faultIndex];
+				mix(e.from);
+				const n = nodes[e.node];
+				if (!n) break;
+				n.healthy = e.healthy;
+				const f = faults[e.fault !== -1 ? e.fault : n.lastCrash];
 				if (f) {
 					if (!e.healthy && f.detectedAtUs === null && e.fault !== -1)
 						f.detectedAtUs = e.t;
-					if (e.healthy && f.recoveredAtUs !== null && f.restoredAtUs === null)
+					if (e.healthy && f.endedAtUs !== null && f.restoredAtUs === null)
 						f.restoredAtUs = e.t;
 				}
 				transitions.push({
 					tMs: e.t / 1000,
-					server: e.server,
 					kind: e.healthy ? "healthy" : "unhealthy",
-					fault: faultIndex,
+					node: e.node,
+					fault: e.fault !== -1 ? e.fault : n.lastCrash,
+				});
+				break;
+			}
+			case "breaker": {
+				mix(e.state === "open" ? 0 : e.state === "half-open" ? 1 : 2);
+				const l = links[e.edge];
+				if (l && e.state === "open") l.breakerOpens++;
+				transitions.push({
+					tMs: e.t / 1000,
+					kind: "breaker",
+					edge: e.edge,
+					state: e.state,
 				});
 				break;
 			}
 		}
 	};
 
-	/**
-	 * A failure counts against a fault when the request was lost in that crash, or was routed to the
-	 * server while it was down and the load balancer had not yet noticed.
-	 */
-	function attributeToFault(req: number, server: number) {
-		const evicted = evictedBy[req];
-		if (evicted !== undefined && evicted !== -1) {
-			const f = faults[evicted];
-			if (f) f.failedWhileUndetected++;
-			return;
-		}
-		const routedAt = routedAtUs[req];
-		if (routedAt === undefined) return;
-		for (const f of faults) {
-			if (f.server !== server || f.failedAtUs === null) continue;
-			const end = Math.min(
-				f.recoveredAtUs ?? Number.POSITIVE_INFINITY,
-				f.detectedAtUs ?? Number.POSITIVE_INFINITY,
-			);
-			if (routedAt >= f.failedAtUs && routedAt < end) {
-				f.failedWhileUndetected++;
-				return;
-			}
-		}
-	}
-
-	/**
-	 * Probes run every interval from time 0. A crash just after a probe waits almost a full
-	 * interval for the first failed probe; one exactly on a tick is probed at once. A hanging server
-	 * adds one probe timeout before each probe counts as failed.
-	 */
-	const possibleDetection = (behavior: "refuse" | "hang") => {
-		const hc = input.healthCheck;
-		if (!hc) return null;
+	const possibleDetection = (node: number, behavior: "refuse" | "hang") => {
+		const lbs = balancerWatching.get(node) ?? [];
+		const lb = lbs[0];
+		if (lb === undefined) return null;
+		const cfg = input.nodes[lb];
+		if (cfg?.kind !== "load-balancer" || !cfg.healthCheck) return null;
+		const hc = cfg.healthCheck;
 		const extra = behavior === "hang" ? hc.probeTimeoutUs : 0;
 		return {
 			min: ((hc.unhealthyThreshold - 1) * hc.intervalUs + extra) / 1000,
 			max: (hc.unhealthyThreshold * hc.intervalUs + extra) / 1000,
+			intervalUs: hc.intervalUs,
 		};
 	};
 
@@ -448,7 +580,7 @@ export function createRunRecorder(
 			if (w > currentWindow) touchLevels(w);
 			closeWindow(w);
 		}
-		for (const s of servers) accrueBusy(s, endUs);
+		for (const n of nodes) accrueBusy(n, endUs);
 
 		windowSamples.forEach((samples, w) => {
 			series.samples[w] = samples.length;
@@ -459,8 +591,8 @@ export function createRunRecorder(
 		});
 		windowEnded.forEach((samples, w) => {
 			if (samples.length === 0) return;
-			const sorted = Float64Array.from(samples).sort();
-			series.endedP95Ms[w] = nearestRank(sorted, 95) / 1000;
+			series.endedP95Ms[w] =
+				nearestRank(Float64Array.from(samples).sort(), 95) / 1000;
 		});
 
 		let stillOpen = 0;
@@ -482,95 +614,113 @@ export function createRunRecorder(
 				`engine created ${result.requests} requests, saw ${offered} arrivals`,
 			);
 
-		const measuredMs = endUs / 1000;
 		const seconds = endUs / 1_000_000;
-
-		const serverSummaries: ServerSummary[] = servers.map((s) => ({
-			id: s.id,
-			label: s.label,
-			routed: s.routed,
-			succeeded: s.succeeded,
-			failed: s.failed,
-			failedByReason: s.failedByReason,
-			lateResponses: s.lateResponses,
-			peakQueue: s.peakQueue,
-			peakBusy: s.peakBusy,
-			capacity: s.capacity,
-			queueCapacity: s.queueCapacity,
-			utilization: endUs > 0 ? s.busyArea / (s.capacity * endUs) : 0,
+		const nodeSummaries: NodeSummary[] = nodes.map((n) => ({
+			id: n.id,
+			label: n.label,
+			kind: n.kind,
+			calls: n.calls,
+			succeeded: n.succeeded,
+			failed: n.failed,
+			failedByReason: n.failedByReason,
+			lateResponses: n.lateResponses,
+			peakQueue: n.peakQueue,
+			peakBusy: n.peakBusy,
+			capacity: n.capacity,
+			queueCapacity: n.queueCapacity,
+			utilization:
+				endUs > 0 && n.capacity > 0 ? n.busyArea / (n.capacity * endUs) : 0,
+			callLatency: latencyStats(n.callLatency.view()),
+			hitRatio:
+				n.kind === "cache" ? (n.lookups > 0 ? n.hits / n.lookups : 0) : null,
+			jobs:
+				n.kind === "queue"
+					? {
+							done: n.jobsDone,
+							failed: n.jobsFailed,
+							maxWaitMs: n.jobWaitUs.length
+								? Math.max(...n.jobWaitUs) / 1000
+								: 0,
+							meanWaitMs: n.jobWaitUs.length
+								? n.jobWaitUs.reduce((a, b) => a + b, 0) /
+									n.jobWaitUs.length /
+									1000
+								: 0,
+						}
+					: null,
 		}));
+		const linkSummaries: LinkSummary[] = links.map((l) => ({ ...l }));
 
 		const faultSummaries: FaultSummary[] = faults
-			.filter((f) => f.failedAtUs !== null)
+			.filter((f) => f.startedAtUs !== null)
 			.map((f) => {
-				const s = servers[f.server];
-				const failedAtMs = (f.failedAtUs as number) / 1000;
+				const startedAtMs = (f.startedAtUs as number) / 1000;
 				const detectedAtMs =
 					f.detectedAtUs === null ? null : f.detectedAtUs / 1000;
+				const range =
+					f.kind === "node-failure"
+						? possibleDetection(f.node, f.behavior as "refuse" | "hang")
+						: null;
 				return {
 					id: f.id,
-					serverId: s?.id ?? "",
-					serverLabel: s?.label ?? "",
+					kind: f.kind,
+					node: f.node,
+					nodeLabel:
+						f.node === -1
+							? links[f.edge]
+								? `${nodes[links[f.edge]?.source ?? 0]?.label} → ${nodes[links[f.edge]?.target ?? 0]?.label}`
+								: ""
+							: (nodes[f.node]?.label ?? ""),
+					edge: f.edge,
+					startedAtMs,
+					endedAtMs: f.endedAtUs === null ? null : f.endedAtUs / 1000,
 					behavior: f.behavior,
-					failedAtMs,
-					recoveredAtMs:
-						f.recoveredAtUs === null ? null : f.recoveredAtUs / 1000,
 					detectedAtMs,
 					detectionDelayMs:
-						detectedAtMs === null ? null : detectedAtMs - failedAtMs,
+						detectedAtMs === null ? null : detectedAtMs - startedAtMs,
 					restoredAtMs: f.restoredAtUs === null ? null : f.restoredAtUs / 1000,
 					failedWhileUndetected: f.failedWhileUndetected,
-					possibleDetectionMs: possibleDetection(f.behavior),
+					possibleDetectionMs: range
+						? { min: range.min, max: range.max }
+						: null,
 					crashOnProbeTick:
-						input.healthCheck !== null &&
-						(f.failedAtUs as number) % input.healthCheck.intervalUs === 0,
+						range !== null &&
+						(f.startedAtUs as number) % range.intervalUs === 0,
 				};
 			});
 
-		const checkDefs: Array<[InvariantCheck["id"], string, string]> = [
+		const checks: InvariantCheck[] = (
 			[
 				"conservation",
-				"Every request is accounted for",
-				"offered = succeeded + failed + in flight",
-			],
-			[
 				"single-terminal",
-				"Each request ends exactly once",
-				"no double outcomes, late responses discarded",
-			],
-			[
 				"capacity",
-				"Busy slots never exceed concurrency",
-				"per server, at every event",
-			],
-			[
 				"queue-bounds",
-				"Queues stay between 0 and their size",
-				"per server, at every event",
-			],
-			[
 				"monotonic-time",
-				"Simulated time never goes backwards",
-				"event timestamps are non-decreasing",
-			],
-		];
-		const checks: InvariantCheck[] = checkDefs.map(([id, label, detail]) => ({
+			] as const
+		).map((id) => ({
 			id,
-			label,
 			passed: violations[id].length === 0,
-			detail: violations[id].length === 0 ? detail : violations[id].join("; "),
+			detail:
+				violations[id].length === 0
+					? { key: `checks.${id}.ok` }
+					: {
+							key: "checks.failed",
+							params: { detail: violations[id].join("; ") },
+						},
 		}));
 
 		const hex = (v: number) => (v >>> 0).toString(16).padStart(8, "0");
 		return {
 			summary: {
 				status: result.status,
-				measuredMs,
+				measuredMs: endUs / 1000,
 				offered,
-				admitted,
 				succeeded,
 				failed,
 				failedByReason,
+				failedByOrigin: [...failedByOrigin.entries()]
+					.map(([node, count]) => ({ node, count }))
+					.sort((a, b) => b.count - a.count),
 				inFlight: stillOpen,
 				lateResponses,
 				successLatency: latencyStats(successSamples.view()),
@@ -578,7 +728,8 @@ export function createRunRecorder(
 				failedWaitMs: failedWaitUs / 1000,
 				throughputRps: seconds > 0 ? (succeeded + failed) / seconds : 0,
 				successRateRps: seconds > 0 ? succeeded / seconds : 0,
-				servers: serverSummaries,
+				nodes: nodeSummaries,
+				links: linkSummaries,
 				faults: faultSummaries,
 				probes,
 			},

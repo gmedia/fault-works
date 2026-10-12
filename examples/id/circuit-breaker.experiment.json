@@ -1,0 +1,115 @@
+{
+	"schemaVersion": "0.2.0",
+	"experimentId": "circuit-breaker",
+	"title": "Circuit breaker: gagal cepat daripada menunggu",
+	"question": "Bisakah circuit breaker menyelamatkan API saat database melambat?",
+	"description": "Database melambat 50 kali di detik 20 sampai 40. API punya 100 slot dan panggilannya ke database punya timeout 300 ms serta circuit breaker: setelah 5 kegagalan berturut-turut, panggilan langsung ditolak selama 5 detik sebelum satu panggilan percobaan dilepas. Request yang kena breaker tetap gagal, tetapi gagalnya dalam hitungan milidetik, bukan setelah menunggu.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 100,
+					"serviceTimeMs": 20,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-db",
+				"source": "api",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": 300,
+				"retries": 0,
+				"circuitBreaker": {
+					"enabled": true,
+					"failureThreshold": 5,
+					"openMs": 5000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "db-slowdown",
+			"kind": "slowdown",
+			"target": "db",
+			"atMs": 20000,
+			"untilMs": 40000,
+			"factor": 50,
+			"addMs": 0
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Probe health check melewati antrean dan dijawab seketika saat komponen hidup.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah; pekerjaan tetap diselesaikan dan jawabannya dibuang.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Selama database lambat, sebagian besar kegagalan beralasan circuit open, dan terjadi dalam hitungan milidetik.",
+		"Antrean database tidak terus penuh, karena breaker berhenti mengirim panggilan selagi terbuka.",
+		"Setelah database pulih, panggilan percobaan berhasil dan breaker menutup kembali."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"db": {
+			"x": 600,
+			"y": 0
+		}
+	}
+}
