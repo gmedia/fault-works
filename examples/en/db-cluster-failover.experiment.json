@@ -1,0 +1,227 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "db-cluster-failover",
+	"title": "Database cluster failover",
+	"question": "When the primary dies, how long do writes fail and are reads affected?",
+	"description": "The API calls a PostgreSQL cluster with one primary and two replicas. 20% of calls are writes and go to the primary; reads are spread over the replicas. The primary dies at 20 seconds. The failover system (Patroni, for example) needs 15 seconds to notice and promote a replica.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 200,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "pg-cluster",
+				"kind": "db-cluster",
+				"label": "PostgreSQL cluster",
+				"config": {
+					"writeRatio": 0.2,
+					"failoverMs": 15000
+				}
+			},
+			{
+				"id": "primary",
+				"kind": "database",
+				"label": "Primary",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 0,
+					"serviceTimeMs": 4,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "replica-1",
+				"kind": "database",
+				"label": "Replica 1",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 0,
+					"serviceTimeMs": 4,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "replica-2",
+				"kind": "database",
+				"label": "Replica 2",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 0,
+					"serviceTimeMs": 4,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-pg-cluster",
+				"source": "api",
+				"target": "pg-cluster",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "pg-cluster-primary",
+				"source": "pg-cluster",
+				"target": "primary",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "pg-cluster-replica-1",
+				"source": "pg-cluster",
+				"target": "replica-1",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "pg-cluster-replica-2",
+				"source": "pg-cluster",
+				"target": "replica-2",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 500,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": false,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "primary-crash",
+			"target": "primary",
+			"atMs": 20000,
+			"kind": "node-failure",
+			"recoverAtMs": null,
+			"behavior": "refuse"
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Components do not know when their caller gave up, unless deadline propagation is on.",
+		"Numbers are scenario inputs, not measured performance of any product.",
+		"Replication is treated as instant; there is no lag and no data loss at promotion."
+	],
+	"expectedObservations": [
+		"For 15 seconds every write fails because it still goes to the dead primary; reads keep working.",
+		"After promotion, Replica 1 takes every write and Replica 2 carries all reads alone."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"pg-cluster": {
+			"x": 600,
+			"y": 0
+		},
+		"primary": {
+			"x": 900,
+			"y": -170
+		},
+		"replica-1": {
+			"x": 900,
+			"y": 0
+		},
+		"replica-2": {
+			"x": 900,
+			"y": 170
+		}
+	}
+}

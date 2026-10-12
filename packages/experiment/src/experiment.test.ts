@@ -13,6 +13,7 @@ import {
 	addLink,
 	addNode,
 	cloneExperiment,
+	linkProblem,
 	removeLink,
 	removeNode,
 	uniqueId,
@@ -27,6 +28,7 @@ import {
 import proposal from "./fixtures/proposal-0.1.0.json";
 import v1 from "./fixtures/v0.1.0.json";
 import { parseImportJson } from "./import.ts";
+import { CATALOG } from "./presets.ts";
 import type { Experiment } from "./schema.ts";
 import { sha256Hex } from "./sha256.ts";
 import { TEMPLATE_IDS, templateExperiment } from "./templates.ts";
@@ -60,6 +62,13 @@ const TEXT = {
 	auth: "Auth",
 	worker: "Worker",
 	server: (l: string) => `Server ${l}`,
+	pooler: "PgBouncer",
+	cluster: "Cluster",
+	primary: "Primary",
+	replica: (n: number) => `Replica ${n}`,
+	cdn: "CDN",
+	webServer: (l: string) => `Web ${l}`,
+	gateway: "Gateway",
 	assumptions: ["abstract model"],
 };
 
@@ -229,6 +238,7 @@ describe("validation", () => {
 				untilMs: 40,
 				factor: 2,
 				addMs: 0,
+				ramp: false,
 			},
 			{
 				id: "e",
@@ -276,6 +286,7 @@ describe("compile", () => {
 			startMs: 0,
 			durationMs: 10_000,
 			timeoutMs: 1000,
+			propagateDeadline: false,
 			bursts: [{ atMs: 2000, durationMs: 1000, extraRps: 50 }],
 		});
 		expect(phases).toEqual([
@@ -371,8 +382,15 @@ describe("editing helpers", () => {
 		const e = chain();
 		expect(addLink(e, "api", "db").id).toBeNull();
 		expect(addLink(e, "api", "api").id).toBeNull();
-		const { experiment, id } = addLink(e, "client", "db");
-		expect(id).toBe("client-db");
+		// The client already calls the api; a second entry point is refused up front.
+		expect(addLink(e, "client", "db").id).toBeNull();
+		const withCache = addNode(e, "cache", {});
+		const { experiment, id } = addLink(
+			withCache.experiment,
+			"api",
+			withCache.id,
+		);
+		expect(id).toBe(`api-${withCache.id}`);
 		expect(removeLink(experiment, id as string).model.links).toHaveLength(2);
 	});
 
@@ -446,5 +464,156 @@ describe("parseImportJson", () => {
 		broken.seed = -1;
 		const parsed = parseImportJson(JSON.stringify(result(broken)));
 		expect(!parsed.ok && parsed.issues[0]?.path).toBe("experiment.seed");
+	});
+});
+
+describe("v0.3 contract", () => {
+	const lb = () =>
+		templateExperiment("load-balanced", "t", "T", TEXT) as Experiment;
+
+	it("migrates 0.2.0 files with every new switch off", () => {
+		const old = structuredClone(
+			findBuiltIn("retry-storm") as Experiment,
+		) as unknown as {
+			schemaVersion: string;
+			model: {
+				nodes: Array<{ config?: Record<string, unknown> }>;
+				links: Array<Record<string, unknown>>;
+			};
+			workload: Record<string, unknown>;
+			faults: Array<Record<string, unknown>>;
+		};
+		old.schemaVersion = "0.2.0";
+		for (const n of old.model.nodes)
+			if (n.config)
+				for (const k of [
+					"contention",
+					"coherency",
+					"queueTimeoutMs",
+					"callMode",
+				])
+					delete n.config[k];
+		for (const l of old.model.links)
+			for (const k of ["retryBackoffMs", "retryJitter", "retryBudget"])
+				delete l[k];
+		delete old.workload.propagateDeadline;
+		for (const f of old.faults) delete f.ramp;
+		const parsed = parseExperiment(old);
+		expect(parsed.ok && parsed.migratedFrom).toBe("0.2.0");
+		if (!parsed.ok) return;
+		const original = findBuiltIn("retry-storm") as Experiment;
+		expect(runKey(parsed.experiment)).toBe(runKey(original));
+	});
+
+	it("refuses links that could never be valid, before they are made", () => {
+		const e = lb();
+		const [client, balancer, a] = e.model.nodes.map((n) => n.id) as [
+			string,
+			string,
+			string,
+		];
+		expect(linkProblem(e, a, a)?.key).toBe("graph.selfLink");
+		expect(linkProblem(e, balancer, a)?.key).toBe("graph.duplicateLink");
+		expect(linkProblem(e, a, client)?.key).toBe("graph.intoClient");
+		expect(linkProblem(e, a, balancer)?.key).toBe("graph.cycle");
+		expect(linkProblem(e, client, a)?.key).toBe("graph.clientOneLink");
+		const withDb = addNode(e, "database", { from: a }).experiment;
+		const db = withDb.model.nodes.at(-1)?.id as string;
+		const b = e.model.nodes[3]?.id as string;
+		expect(linkProblem(withDb, b, db)).toBeNull();
+		expect(addLink(withDb, a, client).id).toBeNull();
+		expect(addLink(withDb, b, db).id).not.toBeNull();
+	});
+
+	it("lets a pooler and a rate limiter have exactly one downstream", () => {
+		let e = lb();
+		const a = e.model.nodes[2]?.id as string;
+		const pooled = addNode(e, "pooler", { from: a });
+		e = pooled.experiment;
+		e = addNode(e, "database", { from: pooled.id }).experiment;
+		const other = addNode(e, "database", {});
+		expect(linkProblem(other.experiment, pooled.id, other.id)?.key).toBe(
+			"graph.oneDownstream",
+		);
+	});
+
+	it("builds every catalog component as a valid node", () => {
+		for (const entry of CATALOG) {
+			let e = lb();
+			const a = e.model.nodes[2]?.id as string;
+			const r = addNode(e, entry.kind, { from: a, preset: entry.id });
+			e = r.experiment;
+			// Routers need something behind them to be valid.
+			if (
+				["pooler", "rate-limiter", "load-balancer", "db-cluster"].includes(
+					entry.kind,
+				)
+			) {
+				e = addNode(e, "database", { from: r.id }).experiment;
+				if (entry.kind === "db-cluster")
+					e = addNode(e, "database", { from: r.id }).experiment;
+			}
+			const node = e.model.nodes.find((n) => n.id === r.id);
+			expect(node?.preset ?? node?.kind, entry.id).toBe(entry.id);
+			expect(checkExperiment(e), entry.id).toEqual([]);
+			const parsed = parseExperiment(e);
+			expect(parsed.ok, entry.id).toBe(true);
+		}
+	});
+
+	it("rejects a ramp without an end and a cluster with a single node", () => {
+		const e = templateExperiment("db-cluster", "c", "C", TEXT) as Experiment;
+		expect(checkExperiment(e)).toEqual([]);
+		const cluster = e.model.nodes.find((n) => n.kind === "db-cluster")
+			?.id as string;
+		const single = {
+			...e,
+			model: {
+				...e.model,
+				links: e.model.links.filter(
+					(l) =>
+						l.source !== cluster ||
+						l === e.model.links.find((x) => x.source === cluster),
+				),
+			},
+		};
+		expect(checkExperiment(single).map((i) => i.message.key)).toContain(
+			"graph.clusterNeedsNodes",
+		);
+		const db = e.model.nodes.find((n) => n.kind === "database")?.id as string;
+		const ramped = {
+			...e,
+			faults: [
+				{
+					id: "leak",
+					kind: "slowdown" as const,
+					target: db,
+					atMs: 0,
+					untilMs: null,
+					factor: 2,
+					addMs: 0,
+					ramp: true,
+				},
+			],
+		};
+		expect(checkExperiment(ramped).map((i) => i.message.key)).toContain(
+			"fault.rampNeedsEnd",
+		);
+	});
+});
+
+describe("adding components", () => {
+	it("inserts after a component that can only call one other, instead of branching", () => {
+		const e = templateExperiment("api-database", "t", "T", TEXT) as Experiment;
+		const api = e.model.nodes.find((n) => n.kind === "service")?.id as string;
+		// Client → API already exists: a CDN added after the client goes in between.
+		const cdn = addNode(e, "cache", { from: "client", preset: "cdn" });
+		const links = cdn.experiment.model.links.map(
+			(l) => `${l.source}>${l.target}`,
+		);
+		expect(links).toContain(`client>${cdn.id}`);
+		expect(links).toContain(`${cdn.id}>${api}`);
+		expect(links).not.toContain(`client>${api}`);
+		expect(checkExperiment(cdn.experiment)).toEqual([]);
 	});
 });

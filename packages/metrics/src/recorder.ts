@@ -113,6 +113,14 @@ export function createRunRecorder(
 		label: options.labels[i] ?? n.id,
 		capacity: "capacity" in n ? n.capacity : 0,
 		queueCapacity: "queueCapacity" in n ? n.queueCapacity : 0,
+		baseWorkUs: "serviceTimeUs" in n ? n.serviceTimeUs : null,
+		contention: "contention" in n ? n.contention : 0,
+		coherency: "coherency" in n ? n.coherency : 0,
+		workSumUs: 0,
+		workCount: 0,
+		maxWorkUs: 0,
+		abandonedQueue: 0,
+		abandonedDeadline: 0,
 		calls: 0,
 		succeeded: 0,
 		failed: 0,
@@ -159,10 +167,15 @@ export function createRunRecorder(
 		failedWhileUndetected: 0,
 	}));
 	const transitions: Transition[] = [];
+	const promotions: RunMetrics["summary"]["promotions"] = [];
+	/** Nodes whose crashes something detects: balancers with health checks and database clusters. */
 	const balancerWatching = new Map<number, number[]>();
 	input.edges.forEach((e) => {
 		const src = input.nodes[e.source];
-		if (src?.kind === "load-balancer" && src.healthCheck)
+		if (
+			(src?.kind === "load-balancer" && src.healthCheck) ||
+			src?.kind === "db-cluster"
+		)
 			balancerWatching.set(e.target, [
 				...(balancerWatching.get(e.target) ?? []),
 				e.source,
@@ -382,8 +395,12 @@ export function createRunRecorder(
 			}
 			case "service-start": {
 				mix(e.queuedUs);
+				mix(e.workUs);
 				const n = nodes[e.node];
 				if (!n) break;
+				n.workSumUs += e.workUs;
+				n.workCount++;
+				n.maxWorkUs = Math.max(n.maxWorkUs, e.workUs);
 				if (!callDeliveredAt.has(e.call)) {
 					callDeliveredAt.set(e.call, e.t);
 					n.calls++;
@@ -420,6 +437,33 @@ export function createRunRecorder(
 				} else if (waiting.delete(e.call)) n.queue--;
 				break;
 			}
+			case "abandoned": {
+				mix(e.reason === "deadline" ? 1 : 0);
+				const n = nodes[e.node];
+				if (!n) break;
+				if (e.reason === "deadline") n.abandonedDeadline++;
+				else n.abandonedQueue++;
+				if (waiting.delete(e.call)) n.queue--;
+				if (n.queue < 0) violate("queue-bounds", `${n.id} queue went negative`);
+				break;
+			}
+			case "promoted":
+				mix(e.from);
+				mix(e.to);
+				promotions.push({
+					atMs: e.t / 1000,
+					cluster: e.node,
+					from: e.from,
+					to: e.to,
+				});
+				transitions.push({
+					tMs: e.t / 1000,
+					kind: "promoted",
+					node: e.node,
+					from: e.from,
+					to: e.to,
+				});
+				break;
 			case "cache-hit": {
 				mix(e.hit ? 1 : 0);
 				const n = nodes[e.node];
@@ -563,6 +607,12 @@ export function createRunRecorder(
 		const lb = lbs[0];
 		if (lb === undefined) return null;
 		const cfg = input.nodes[lb];
+		if (cfg?.kind === "db-cluster")
+			return {
+				min: cfg.failoverUs / 1000,
+				max: cfg.failoverUs / 1000,
+				intervalUs: 0,
+			};
 		if (cfg?.kind !== "load-balancer" || !cfg.healthCheck) return null;
 		const hc = cfg.healthCheck;
 		const extra = behavior === "hang" ? hc.probeTimeoutUs : 0;
@@ -630,6 +680,15 @@ export function createRunRecorder(
 			queueCapacity: n.queueCapacity,
 			utilization:
 				endUs > 0 && n.capacity > 0 ? n.busyArea / (n.capacity * endUs) : 0,
+			abandoned: {
+				queueTimeout: n.abandonedQueue,
+				deadline: n.abandonedDeadline,
+			},
+			baseWorkMs: n.baseWorkUs === null ? null : n.baseWorkUs / 1000,
+			meanWorkMs: n.workCount > 0 ? n.workSumUs / n.workCount / 1000 : null,
+			maxWorkMs: n.workCount > 0 ? n.maxWorkUs / 1000 : null,
+			contention: n.contention,
+			coherency: n.coherency,
 			callLatency: latencyStats(n.callLatency.view()),
 			hitRatio:
 				n.kind === "cache" ? (n.lookups > 0 ? n.hits / n.lookups : 0) : null,
@@ -685,6 +744,7 @@ export function createRunRecorder(
 						: null,
 					crashOnProbeTick:
 						range !== null &&
+						range.intervalUs > 0 &&
 						(f.startedAtUs as number) % range.intervalUs === 0,
 				};
 			});
@@ -732,6 +792,7 @@ export function createRunRecorder(
 				links: linkSummaries,
 				faults: faultSummaries,
 				probes,
+				promotions,
 			},
 			series,
 			transitions,

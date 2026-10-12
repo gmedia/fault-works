@@ -271,3 +271,89 @@ describe("explanations and comparison", () => {
 		expect(p95?.caution).toBe("fewerSuccesses");
 	});
 });
+
+// Some of these run two simulations of about 90,000 requests each.
+describe("v0.3 scenarios", { timeout: 60_000 }, () => {
+	const succeededAt = (
+		m: ReturnType<typeof runBuiltIn>["metrics"],
+		fromS: number,
+		toS: number,
+	) =>
+		m.series.succeeded.slice(fromS, toS).reduce((a, b) => a + b, 0) /
+		(toS - fromS);
+
+	it("too many connections collapse PostgreSQL and it does not recover after the spike", () => {
+		const { metrics } = runBuiltIn("postgres-too-many-connections");
+		const db = node(metrics, "db");
+		expect(db?.peakBusy).toBe(300);
+		expect((db?.meanWorkMs ?? 0) / (db?.baseWorkMs ?? 1)).toBeGreaterThan(10);
+		expect(succeededAt(metrics, 5, 15)).toBeGreaterThan(1350);
+		// Metastable: after the spike (20–30 s) traffic is back to normal but throughput is not.
+		expect(succeededAt(metrics, 40, 55)).toBeLessThan(700);
+		expect(
+			explainRun(metrics.summary).some((i) => i.key === "insight.contention"),
+		).toBe(true);
+	});
+
+	it("a pooler keeps PostgreSQL near its peak and the system recovers", () => {
+		const { metrics } = runBuiltIn("postgres-with-pooler");
+		expect(node(metrics, "db")?.peakBusy).toBe(40);
+		expect(succeededAt(metrics, 20, 30)).toBeGreaterThan(1800);
+		expect(succeededAt(metrics, 40, 55)).toBeGreaterThan(1350);
+		const without = runBuiltIn("postgres-too-many-connections").metrics.summary;
+		expect(metrics.summary.succeeded).toBeGreaterThan(without.succeeded * 1.5);
+	});
+
+	it("a cluster fails writes until failover, then promotes a replica", () => {
+		const { metrics } = runBuiltIn("db-cluster-failover");
+		const s = metrics.summary;
+		expect(s.promotions).toHaveLength(1);
+		expect(s.promotions[0]?.atMs).toBe(35_000);
+		expect(s.nodes[s.promotions[0]?.to ?? -1]?.id).toBe("replica-1");
+		// About 100 writes per second for 15 seconds.
+		expect(s.failedByReason.refused).toBeGreaterThan(1400);
+		expect(s.failedByReason.refused).toBeLessThan(1700);
+		expect(metrics.checks.every((c) => c.passed)).toBe(true);
+	});
+
+	it("a rate limit turns a flash sale from slow for everyone into fast for most", () => {
+		const open = runBuiltIn("flash-sale-no-rate-limit").metrics.summary;
+		const limited = runBuiltIn("flash-sale-with-rate-limit").metrics.summary;
+		expect(limited.failedByReason["rate-limited"]).toBeGreaterThan(0);
+		expect(limited.successLatency?.p50Ms ?? 0).toBeLessThan(
+			(open.successLatency?.p50Ms ?? 0) / 5,
+		);
+	});
+
+	it("backoff, jitter and a budget stop the retry storm", () => {
+		const storm = runBuiltIn("retry-storm").metrics.summary;
+		const fixed = runBuiltIn("retry-with-backoff").metrics.summary;
+		const retries = (s: typeof storm) =>
+			s.links.find((l) => l.id === "api-db")?.retries ?? 0;
+		expect(retries(fixed)).toBeLessThan(retries(storm) / 5);
+	});
+
+	it("deadline propagation skips stale work and cuts late responses", () => {
+		const plain = runBuiltIn("cascading-failure").metrics.summary;
+		const fixed = runBuiltIn("deadline-propagation").metrics.summary;
+		expect(
+			node({ summary: fixed } as never, "api")?.abandoned.deadline,
+		).toBeGreaterThan(1000);
+		expect(fixed.lateResponses).toBeLessThan(plain.lateResponses / 2);
+	});
+
+	it("one slow shard slows every fanned-out request", () => {
+		const { metrics } = runBuiltIn("fan-out-tail-latency");
+		const p95 = metrics.series.p95Ms as number[];
+		const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+		// Waiting for the slowest of five shards already lifts the tail; one slow shard lifts it more.
+		expect(mean(p95.slice(5, 15))).toBeGreaterThan(40);
+		expect(mean(p95.slice(25, 35))).toBeGreaterThan(mean(p95.slice(5, 15)) * 2);
+	});
+
+	it("health checks never notice a memory leak", () => {
+		const { metrics } = runBuiltIn("memory-leak");
+		expect(metrics.transitions.some((t) => t.kind === "unhealthy")).toBe(false);
+		expect(metrics.summary.failedByReason.timeout).toBeGreaterThan(500);
+	});
+});

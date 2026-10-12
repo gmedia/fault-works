@@ -11,18 +11,28 @@ import type {
 
 const MS = 1000;
 
-type Service = Extract<NodeInput, { kind: "service" | "database" }>;
+type Service = Extract<NodeInput, { kind: "service" | "database" | "pooler" }>;
+
+/** The v0.3 worker settings that change nothing: no contention, no queue timeout, sequential. */
+const PLAIN = {
+	contention: 0,
+	coherency: 0,
+	queueTimeoutUs: null,
+	parallel: false,
+} as const;
 type Balancer = Extract<NodeInput, { kind: "load-balancer" }>;
 
-const worker = (id: string, over: Partial<Service> = {}): NodeInput => ({
-	kind: "service",
-	id,
-	capacity: 1,
-	queueCapacity: 0,
-	serviceTimeUs: 50 * MS,
-	distribution: "fixed",
-	...over,
-});
+const worker = (id: string, over: Partial<Service> = {}): NodeInput =>
+	({
+		kind: "service",
+		id,
+		capacity: 1,
+		queueCapacity: 0,
+		serviceTimeUs: 50 * MS,
+		distribution: "fixed",
+		...PLAIN,
+		...over,
+	}) as NodeInput;
 
 const edge = (
 	id: string,
@@ -36,6 +46,9 @@ const edge = (
 	latencyUs: 0,
 	timeoutUs: null,
 	retries: 0,
+	retryBackoffUs: 0,
+	retryJitter: false,
+	retryBudget: null,
 	circuitBreaker: null,
 	...over,
 });
@@ -78,6 +91,7 @@ function lbInput(
 		arrival: "constant",
 		phases: [{ startUs: 0, endUs: 1000 * MS, rps: 10 }],
 		timeoutUs: 1000 * MS,
+		propagateDeadline: false,
 		faults: [],
 		...rest,
 	};
@@ -116,6 +130,7 @@ function chainInput(
 		arrival: "constant",
 		phases: [{ startUs: 0, endUs: 1000 * MS, rps: 20 }],
 		timeoutUs: 500 * MS,
+		propagateDeadline: false,
 		faults: [],
 		...rest,
 	};
@@ -285,6 +300,7 @@ describe("load balancer reference cases (v0.1 semantics)", () => {
 				faults: [
 					{
 						kind: "slowdown",
+						ramp: false,
 						id: "slow-db",
 						node: 2,
 						atUs: 0,
@@ -567,6 +583,7 @@ describe("other components and faults", () => {
 					queueCapacity: 0,
 					serviceTimeUs: 1 * MS,
 					distribution: "fixed",
+					...PLAIN,
 					hitRatio: 0.8,
 				},
 				worker("db", { capacity: 100, serviceTimeUs: 50 * MS }),
@@ -613,6 +630,7 @@ describe("other components and faults", () => {
 					queueCapacity: 5,
 					serviceTimeUs: 100 * MS,
 					distribution: "fixed",
+					...PLAIN,
 				},
 				worker("db", { capacity: 10, serviceTimeUs: 10 * MS }),
 			],
@@ -639,6 +657,7 @@ describe("other components and faults", () => {
 				faults: [
 					{
 						kind: "slowdown",
+						ramp: false,
 						id: "slow",
 						node: 2,
 						atUs: 0,
@@ -810,6 +829,17 @@ const engineInputArb: fc.Arbitrary<EngineInput> = fc
 			{ maxLength: 4 },
 		),
 		extraHorizonMs: fc.integer({ min: 0, max: 1000 }),
+		contention: fc.double({ min: 0, max: 0.3, noNaN: true }),
+		coherency: fc.double({ min: 0, max: 0.02, noNaN: true }),
+		queueTimeoutMs: fc.option(fc.integer({ min: 1, max: 300 }), { nil: null }),
+		parallel: fc.boolean(),
+		backoffMs: fc.integer({ min: 0, max: 50 }),
+		jitter: fc.boolean(),
+		budget: fc.option(fc.double({ min: 0, max: 1, noNaN: true }), {
+			nil: null,
+		}),
+		propagateDeadline: fc.boolean(),
+		ramp: fc.boolean(),
 	})
 	.map((r): EngineInput => {
 		const nodes: NodeInput[] = [{ kind: "client", id: "client" }];
@@ -830,6 +860,11 @@ const engineInputArb: fc.Arbitrary<EngineInput> = fc
 				queueCapacity: r.queueCapacity,
 				serviceTimeUs: r.serviceMs * MS,
 				distribution: r.distribution,
+				contention: r.contention,
+				coherency: r.coherency,
+				queueTimeoutUs:
+					r.queueTimeoutMs === null ? null : r.queueTimeoutMs * MS,
+				parallel: r.parallel,
 			};
 			nodes.push(
 				kind === "cache" ? { kind, hitRatio: 0.5, ...base } : { kind, ...base },
@@ -840,6 +875,9 @@ const engineInputArb: fc.Arbitrary<EngineInput> = fc
 			latencyUs: r.latencyMs * MS,
 			timeoutUs: r.edgeTimeoutMs === null ? null : r.edgeTimeoutMs * MS,
 			retries: r.edgeRetries,
+			retryBackoffUs: r.backoffMs * MS,
+			retryJitter: r.jitter,
+			retryBudget: r.budget,
 			circuitBreaker: r.breaker,
 		};
 		if (r.useLb) {
@@ -847,11 +885,15 @@ const engineInputArb: fc.Arbitrary<EngineInput> = fc
 			for (let i = 0; i < r.workerCount; i++)
 				edges.push(edge(`lb-w${i}`, 1, firstWorker + i, policy));
 		} else edges.push(edge("c-w0", 0, firstWorker, policy));
-		if (r.chain)
+		if (r.chain) {
 			for (let i = 0; i + 1 < r.workerCount; i++)
 				edges.push(
 					edge(`w${i}-w${i + 1}`, firstWorker + i, firstWorker + i + 1, policy),
 				);
+			// A second downstream for the first worker, so parallel fan-out is exercised too.
+			if (r.workerCount > 2 && r.kinds[0] !== "cache")
+				edges.push(edge("w0-w2", firstWorker, firstWorker + 2, policy));
+		}
 		const workerIndex = (t: number) => firstWorker + (t % r.workerCount);
 		const faults: FaultInput[] = r.faults.map((f, i): FaultInput => {
 			const atUs = f.atMs * MS;
@@ -876,6 +918,7 @@ const engineInputArb: fc.Arbitrary<EngineInput> = fc
 						untilUs,
 						factor: f.factor,
 						addUs: f.n * MS,
+						ramp: r.ramp,
 					};
 				case "error-rate":
 					return {
@@ -933,6 +976,7 @@ const engineInputArb: fc.Arbitrary<EngineInput> = fc
 			arrival: r.arrival,
 			phases: [{ startUs: 0, endUs: r.durationMs * MS, rps: r.rps }],
 			timeoutUs: r.timeoutMs * MS,
+			propagateDeadline: r.propagateDeadline,
 			faults,
 		};
 	});
@@ -999,6 +1043,12 @@ describe("invariants (property-based)", () => {
 						case "service-end":
 							busy.set(e.node, (busy.get(e.node) ?? 0) - 1);
 							break;
+						case "abandoned":
+							// A deadline can also turn a call away on arrival, before it ever waited.
+							if (waitingCalls.delete(e.call))
+								queued.set(e.node, (queued.get(e.node) ?? 0) - 1);
+							else expect(e.reason).toBe("deadline");
+							break;
 						case "evicted":
 							if (e.from === "service")
 								busy.set(e.node, (busy.get(e.node) ?? 0) - 1);
@@ -1022,5 +1072,266 @@ describe("invariants (property-based)", () => {
 			}),
 			{ numRuns: 150 },
 		);
+	});
+});
+
+describe("v0.3 reference cases", () => {
+	const starts = (events: SimEvent[], node: number) =>
+		events.filter(
+			(e): e is Extract<SimEvent, { kind: "service-start" }> =>
+				e.kind === "service-start" && e.node === node,
+		);
+	/** client(0) → one target(1). */
+	const direct = (
+		target: NodeInput,
+		over: Partial<EngineInput> = {},
+	): EngineInput => ({
+		...lbInput(),
+		nodes: [{ kind: "client", id: "client" }, target],
+		edges: [edge("c-t", 0, 1)],
+		...over,
+	});
+
+	it("contention makes each extra busy connection slower (Universal Scalability Law)", () => {
+		const { events } = run(
+			direct(
+				worker("db", {
+					capacity: 5,
+					serviceTimeUs: 10 * MS,
+					contention: 0.1,
+					coherency: 0.01,
+				}),
+				{ phases: [{ startUs: 0, endUs: 3 * MS, rps: 1000 }] },
+			),
+		);
+		// n = 1, 2, 3 busy: 10 ms × (1 + 0.1(n−1) + 0.01·n(n−1)).
+		expect(starts(events, 1).map((e) => e.workUs)).toEqual([
+			10 * MS,
+			11.2 * MS,
+			12.6 * MS,
+		]);
+	});
+
+	it("too many connections collapse throughput; a small pool keeps it near the peak", () => {
+		const db = (over: Partial<Service>) =>
+			worker("db", {
+				serviceTimeUs: 10 * MS,
+				contention: 0.02,
+				coherency: 0.002,
+				...over,
+			});
+		const traffic = {
+			phases: [{ startUs: 0, endUs: 1000 * MS, rps: 1200 }],
+			timeoutUs: 500 * MS,
+		};
+		const succeeded = (input: EngineInput) =>
+			outcomes(run(input).events).filter((e) => e.kind === "succeeded").length;
+		// Peak at sqrt(0.98 / 0.002) ≈ 22 busy connections, about 930 req/s.
+		const wide = succeeded(
+			direct(db({ capacity: 200, queueCapacity: 0 }), traffic),
+		);
+		const pooled = succeeded(
+			direct(
+				db({ capacity: 22, queueCapacity: 1000, queueTimeoutUs: 100 * MS }),
+				traffic,
+			),
+		);
+		expect(pooled).toBeGreaterThan(700);
+		expect(wide).toBeLessThan(pooled / 2);
+	});
+
+	it("a waiting call leaves the queue after the queue timeout", () => {
+		const { events } = run({
+			...chainInput({
+				api: {
+					kind: "pooler",
+					capacity: 1,
+					queueCapacity: 10,
+					serviceTimeUs: 1 * MS,
+					queueTimeoutUs: 30 * MS,
+				} as Partial<Service>,
+				db: { capacity: 10, serviceTimeUs: 50 * MS },
+				phases: [{ startUs: 0, endUs: 200 * MS, rps: 100 }],
+			}),
+		});
+		const timedOut = failures(events).filter(
+			(e) => e.reason === "queue-timeout",
+		);
+		expect(timedOut.length).toBeGreaterThan(0);
+		expect(timedOut.every((e) => e.latencyUs === 30 * MS && e.node === 1)).toBe(
+			true,
+		);
+		expect(
+			events.filter(
+				(e) => e.kind === "abandoned" && e.reason === "queue-timeout",
+			).length,
+		).toBe(timedOut.length);
+		expect(outcomes(events).some((e) => e.kind === "succeeded")).toBe(true);
+	});
+
+	it("a token bucket passes its burst, then the refill rate, and rejects the rest", () => {
+		const { events } = run({
+			...lbInput(),
+			nodes: [
+				{ kind: "client", id: "client" },
+				{ kind: "rate-limiter", id: "limit", ratePerSec: 25, burst: 2 },
+				worker("api", { capacity: 100, serviceTimeUs: 1 * MS }),
+			],
+			edges: [edge("c-l", 0, 1), edge("l-api", 1, 2)],
+			phases: [{ startUs: 0, endUs: 1000 * MS, rps: 100 }],
+		});
+		// 2 from the burst, then one token every 40 ms (0.25 per arrival): t = 40 … 960 ms.
+		expect(reasons(events).filter((r) => r === "rate-limited")).toHaveLength(
+			74,
+		);
+		expect(outcomes(events).filter((e) => e.kind === "succeeded")).toHaveLength(
+			26,
+		);
+	});
+
+	it("a database cluster fails writes until it notices the primary is gone, then promotes a replica", () => {
+		const cluster = (writeRatio: number): EngineInput => ({
+			...lbInput(),
+			nodes: [
+				{ kind: "client", id: "client" },
+				{ kind: "db-cluster", id: "pg", writeRatio, failoverUs: 100 * MS },
+				worker("primary", { capacity: 10, serviceTimeUs: 5 * MS }),
+				worker("replica", { capacity: 10, serviceTimeUs: 5 * MS }),
+			],
+			edges: [edge("c-pg", 0, 1), edge("pg-p", 1, 2), edge("pg-r", 1, 3)],
+			phases: [{ startUs: 0, endUs: 1000 * MS, rps: 100 }],
+			faults: [crash(2, { atUs: 500 * MS })],
+		});
+		const writes = run(cluster(1)).events;
+		// Ten writes (500, 510 … 590 ms) reach the dead primary before failover at 600 ms.
+		expect(reasons(writes)).toEqual(new Array(10).fill("refused"));
+		expect(writes.filter((e) => e.kind === "promoted")).toMatchObject([
+			{ t: 600 * MS, node: 1, from: 2, to: 3 },
+		]);
+		// Reads go to the replica and never notice.
+		expect(failures(run(cluster(0)).events)).toHaveLength(0);
+	});
+
+	it("exponential backoff spaces the retries out", () => {
+		const { events } = run(
+			chainInput({
+				phases: [{ startUs: 0, endUs: 1 * MS, rps: 1000 }],
+				apiDb: { retries: 2, retryBackoffUs: 50 * MS },
+				faults: [
+					{
+						kind: "error-rate",
+						id: "broken",
+						node: 2,
+						atUs: 0,
+						untilUs: null,
+						rate: 1,
+					},
+				],
+			}),
+		);
+		// The api calls the db after its own 10 ms; then +50 ms, then +100 ms.
+		expect(
+			events
+				.filter((e) => e.kind === "call-start" && e.edge === 1)
+				.map((e) => e.t),
+		).toEqual([10 * MS, 60 * MS, 160 * MS]);
+	});
+
+	it("a retry budget caps retries at its reserve plus a share of first attempts", () => {
+		const retries = (budget: number | null) =>
+			run(
+				chainInput({
+					api: { capacity: 50, queueCapacity: 0 },
+					phases: [{ startUs: 0, endUs: 1000 * MS, rps: 20 }],
+					apiDb: { retries: 3, retryBudget: budget },
+					faults: [
+						{
+							kind: "error-rate",
+							id: "broken",
+							node: 2,
+							atUs: 0,
+							untilUs: null,
+							rate: 1,
+						},
+					],
+				}),
+			).events.filter(
+				(e) => e.kind === "call-start" && e.edge === 1 && e.attempt > 1,
+			).length;
+		expect(retries(null)).toBe(60);
+		// 10 in reserve, then 0.1 per first attempt: at most 12 for 20 requests.
+		expect(retries(0.1)).toBeGreaterThanOrEqual(10);
+		expect(retries(0.1)).toBeLessThanOrEqual(12);
+	});
+
+	it("parallel fan-out waits for the slowest call instead of the sum", () => {
+		const fanOut = (parallel: boolean): EngineInput => ({
+			...lbInput(),
+			nodes: [
+				{ kind: "client", id: "client" },
+				worker("api", { capacity: 10, serviceTimeUs: 10 * MS, parallel }),
+				worker("a", { capacity: 10, serviceTimeUs: 20 * MS }),
+				worker("b", { capacity: 10, serviceTimeUs: 30 * MS }),
+			],
+			edges: [edge("c-api", 0, 1), edge("api-a", 1, 2), edge("api-b", 1, 3)],
+			phases: [{ startUs: 0, endUs: 1 * MS, rps: 1000 }],
+		});
+		expect(outcomes(run(fanOut(true)).events)).toMatchObject([
+			{ kind: "succeeded", latencyUs: 40 * MS },
+		]);
+		expect(outcomes(run(fanOut(false)).events)).toMatchObject([
+			{ kind: "succeeded", latencyUs: 60 * MS },
+		]);
+	});
+
+	it("with deadline propagation, work for requests the client gave up on is skipped", () => {
+		const late = (propagateDeadline: boolean) => {
+			const { events } = run(
+				chainInput({
+					api: { capacity: 1, queueCapacity: 10, serviceTimeUs: 100 * MS },
+					phases: [{ startUs: 0, endUs: 200 * MS, rps: 50 }],
+					timeoutUs: 150 * MS,
+					propagateDeadline,
+				}),
+			);
+			return {
+				late: events.filter((e) => e.kind === "late-response").length,
+				skipped: events.filter(
+					(e) => e.kind === "abandoned" && e.reason === "deadline",
+				).length,
+			};
+		};
+		const without = late(false);
+		const withDeadline = late(true);
+		expect(without.skipped).toBe(0);
+		expect(withDeadline.skipped).toBeGreaterThan(0);
+		expect(withDeadline.late).toBeLessThan(without.late);
+	});
+
+	it("a ramped slowdown grows linearly over its window", () => {
+		const { events } = run(
+			chainInput({
+				db: { capacity: 50, serviceTimeUs: 20 * MS },
+				phases: [{ startUs: 0, endUs: 1000 * MS, rps: 20 }],
+				faults: [
+					{
+						kind: "slowdown",
+						id: "leak",
+						node: 2,
+						atUs: 0,
+						untilUs: 1000 * MS,
+						factor: 3,
+						addUs: 0,
+						ramp: true,
+					},
+				],
+			}),
+		);
+		const db = starts(events, 2);
+		expect(db.length).toBeGreaterThan(10);
+		for (const e of db)
+			expect(e.workUs).toBe(
+				Math.round(20 * MS * (1 + (2 * e.t) / (1000 * MS))),
+			);
 	});
 });

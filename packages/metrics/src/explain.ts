@@ -135,8 +135,67 @@ export function explainRun(summary: RunSummary): Insight[] {
 		});
 
 	for (const n of summary.nodes) {
-		if (n.kind === "client" || n.kind === "load-balancer") continue;
+		if (
+			n.kind === "client" ||
+			n.kind === "load-balancer" ||
+			n.kind === "db-cluster"
+		)
+			continue;
+		if (n.kind === "rate-limiter") {
+			const limited = n.failedByReason["rate-limited"];
+			if (limited > 0)
+				out.push({
+					id: `limited-${n.id}`,
+					tone: "warning",
+					key: "insight.rateLimited",
+					params: {
+						node: n.label,
+						count: limited,
+						pct: share(limited, summary.offered),
+					},
+				});
+			continue;
+		}
 		const rejected = n.failedByReason["queue-full"];
+		// Contention: own work took clearly longer than at a concurrency of one.
+		if (
+			(n.contention > 0 || n.coherency > 0) &&
+			n.baseWorkMs !== null &&
+			n.meanWorkMs !== null &&
+			n.meanWorkMs >= n.baseWorkMs * 1.3
+		)
+			out.push({
+				id: `contention-${n.id}`,
+				tone: n.meanWorkMs >= n.baseWorkMs * 3 ? "critical" : "warning",
+				key: "insight.contention",
+				params: {
+					node: n.label,
+					factor: Math.round((n.meanWorkMs / n.baseWorkMs) * 10) / 10,
+					peakBusy: n.peakBusy,
+					optimal:
+						n.coherency > 0
+							? Math.max(
+									1,
+									Math.round(Math.sqrt((1 - n.contention) / n.coherency)),
+								)
+							: null,
+				},
+			});
+		const waitedOut = n.failedByReason["queue-timeout"];
+		if (waitedOut > 0)
+			out.push({
+				id: `queue-timeout-${n.id}`,
+				tone: "warning",
+				key: "insight.queueTimeout",
+				params: { node: n.label, count: waitedOut, capacity: n.capacity },
+			});
+		if (n.queueCapacity === 0 && rejected > 0 && n.kind !== "queue")
+			out.push({
+				id: `full-${n.id}`,
+				tone: "critical",
+				key: "insight.noRoom",
+				params: { node: n.label, capacity: n.capacity, rejected },
+			});
 		if (n.queueCapacity > 0 && n.peakQueue >= n.queueCapacity)
 			out.push({
 				id: `saturation-${n.id}`,
@@ -188,6 +247,33 @@ export function explainRun(summary: RunSummary): Insight[] {
 				},
 			});
 	}
+
+	for (const p of summary.promotions)
+		out.push({
+			id: `promoted-${p.cluster}-${p.atMs}`,
+			tone: "warning",
+			key: "insight.failover",
+			params: {
+				cluster: summary.nodes[p.cluster]?.label ?? "",
+				from: summary.nodes[p.from]?.label ?? "",
+				to: summary.nodes[p.to]?.label ?? "",
+				atMs: p.atMs,
+				failed: summary.nodes[p.from]?.failed ?? 0,
+			},
+			atMs: p.atMs,
+		});
+
+	const skipped = summary.nodes.reduce(
+		(sum, n) => sum + n.abandoned.deadline,
+		0,
+	);
+	if (skipped > 0)
+		out.push({
+			id: "deadline",
+			tone: "good",
+			key: "insight.deadlineSkipped",
+			params: { count: skipped },
+		});
 
 	// Retries: calls on a link far above the requests that needed them.
 	for (const l of summary.links) {

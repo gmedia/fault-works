@@ -1,0 +1,227 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "db-cluster-failover",
+	"title": "Failover cluster database",
+	"question": "Saat primary mati, berapa lama tulis gagal dan apakah baca ikut terganggu?",
+	"description": "API memanggil cluster PostgreSQL berisi satu primary dan dua replika. 20% panggilan adalah tulis dan dikirim ke primary; baca dibagi ke replika. Primary mati di detik 20. Sistem failover (misalnya Patroni) butuh 15 detik untuk sadar dan mempromosikan replika.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 200,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "pg-cluster",
+				"kind": "db-cluster",
+				"label": "Cluster PostgreSQL",
+				"config": {
+					"writeRatio": 0.2,
+					"failoverMs": 15000
+				}
+			},
+			{
+				"id": "primary",
+				"kind": "database",
+				"label": "Primary",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 0,
+					"serviceTimeMs": 4,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "replica-1",
+				"kind": "database",
+				"label": "Replika 1",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 0,
+					"serviceTimeMs": 4,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "replica-2",
+				"kind": "database",
+				"label": "Replika 2",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 0,
+					"serviceTimeMs": 4,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-pg-cluster",
+				"source": "api",
+				"target": "pg-cluster",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "pg-cluster-primary",
+				"source": "pg-cluster",
+				"target": "primary",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "pg-cluster-replica-1",
+				"source": "pg-cluster",
+				"target": "replica-1",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "pg-cluster-replica-2",
+				"source": "pg-cluster",
+				"target": "replica-2",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 500,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": false,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "primary-crash",
+			"target": "primary",
+			"atMs": 20000,
+			"kind": "node-failure",
+			"recoverAtMs": null,
+			"behavior": "refuse"
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah, kecuali propagasi deadline dinyalakan.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun.",
+		"Replikasi dianggap seketika; tidak ada lag atau data yang hilang saat promosi."
+	],
+	"expectedObservations": [
+		"Selama 15 detik semua tulis gagal karena masih dikirim ke primary yang mati; baca tetap lancar.",
+		"Setelah promosi, Replika 1 menerima semua tulis dan Replika 2 menanggung semua baca sendirian."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"pg-cluster": {
+			"x": 600,
+			"y": 0
+		},
+		"primary": {
+			"x": 900,
+			"y": -170
+		},
+		"replica-1": {
+			"x": 900,
+			"y": 0
+		},
+		"replica-2": {
+			"x": 900,
+			"y": 170
+		}
+	}
+}

@@ -1,0 +1,129 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "deadline-propagation",
+	"title": "Deadline propagation",
+	"question": "If every component knows the client's deadline, how much wasted work can be saved?",
+	"description": "Same as the cascading failure example, but the client's deadline travels with every call (like gRPC deadlines). The API skips requests whose client already gave up instead of still working on them.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 2000,
+					"serviceTimeMs": 20,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-db",
+				"source": "api",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": true,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "db-slowdown",
+			"target": "db",
+			"atMs": 20000,
+			"kind": "slowdown",
+			"untilMs": 40000,
+			"factor": 50,
+			"addMs": 0,
+			"ramp": false
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Components do not know when their caller gave up, unless deadline propagation is on.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"Late responses almost disappear because work for expired requests is skipped.",
+		"After the database recovers, the API is back to normal sooner because its queue holds no stale work."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"db": {
+			"x": 600,
+			"y": 0
+		}
+	}
+}

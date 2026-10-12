@@ -10,7 +10,7 @@ import { downloadText } from "#/lib/download.ts";
 import { formatLatency, formatUnitValue } from "#/lib/format.ts";
 import type { RunResult } from "#/workers/protocol.ts";
 
-export const RESULT_SCHEMA_VERSION = "0.2.0";
+export const RESULT_SCHEMA_VERSION = "0.3.0";
 export const COMPARISON_SCHEMA_VERSION = "0.2.0";
 
 export function experimentJson(experiment: Experiment): string {

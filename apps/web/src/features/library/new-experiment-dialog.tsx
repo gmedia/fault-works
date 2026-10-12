@@ -54,6 +54,13 @@ export function NewExperimentDialog({
 		auth: t("defaults.auth"),
 		worker: t("defaults.worker"),
 		server: (letter: string) => t("defaults.server", { letter }),
+		pooler: t("defaults.pooler"),
+		cluster: t("defaults.db-cluster"),
+		primary: t("defaults.primary"),
+		replica: (n: number) => t("defaults.replica", { n }),
+		cdn: t("catalog.cdn.label"),
+		webServer: (letter: string) => t("defaults.webServer", { letter }),
+		gateway: t("catalog.api-gateway.label"),
 		assumptions: t("defaults.assumptions", { returnObjects: true }) as string[],
 	};
 

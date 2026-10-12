@@ -142,6 +142,22 @@
 		"microservices": {
 			"title": "Microservice",
 			"description": "Load balancer, dua API, layanan auth bersama, dan database bersama."
+		},
+		"pooled-database": {
+			"title": "Database dengan connection pooler",
+			"description": "API memanggil PostgreSQL lewat PgBouncer."
+		},
+		"db-cluster": {
+			"title": "Cluster database",
+			"description": "API memanggil cluster dengan satu primary dan dua replika."
+		},
+		"cdn-origin": {
+			"title": "CDN di depan server asal",
+			"description": "CDN, load balancer, dua web server, dan database."
+		},
+		"api-gateway": {
+			"title": "API gateway",
+			"description": "Rate limit di pintu masuk, lalu load balancer dan dua server."
 		}
 	},
 	"defaults": {
@@ -161,7 +177,13 @@
 			"Probe health check melewati antrean dan dijawab seketika saat komponen hidup.",
 			"Komponen tidak tahu kalau pemanggilnya sudah menyerah; pekerjaan tetap diselesaikan dan jawabannya dibuang.",
 			"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
-		]
+		],
+		"pooler": "PgBouncer",
+		"db-cluster": "Cluster database",
+		"rate-limiter": "Rate limiter",
+		"primary": "Primary",
+		"replica": "Replika {{n}}",
+		"webServer": "Web server {{letter}}"
 	},
 	"kinds": {
 		"client": "Klien",
@@ -169,14 +191,20 @@
 		"service": "Service",
 		"database": "Database",
 		"cache": "Cache",
-		"queue": "Antrean kerja"
+		"queue": "Antrean kerja",
+		"pooler": "Connection pooler",
+		"db-cluster": "Cluster database",
+		"rate-limiter": "Rate limiter"
 	},
 	"kindHints": {
 		"load-balancer": "membagi trafik ke beberapa backend",
 		"service": "slot, antrean, memanggil komponen lain",
 		"database": "service dengan pool koneksi",
 		"cache": "menjawab sebagian dari memori",
-		"queue": "menjawab cepat, mengerjakan belakangan"
+		"queue": "menjawab cepat, mengerjakan belakangan",
+		"pooler": "membatasi koneksi aktif ke database",
+		"db-cluster": "primary, replika, dan failover",
+		"rate-limiter": "menolak trafik di atas kuota"
 	},
 	"faultKinds": {
 		"node-failure": {
@@ -389,6 +417,74 @@
 			"notNumber": "“{{text}}” bukan angka.",
 			"integer": "Gunakan bilangan bulat.",
 			"requiredUnit": "Isi angkanya dalam {{unit}}."
+		},
+		"worker.contention": {
+			"label": "Kontensi (α)",
+			"help": "Bagian kerja yang harus antre satu per satu, misalnya karena kunci atau log bersama. Setiap koneksi aktif tambahan membuat kerja lebih lambat sebanyak ini. 0 berarti tidak ada efek."
+		},
+		"worker.coherency": {
+			"label": "Koherensi (β)",
+			"help": "Biaya koordinasi antar-koneksi yang tumbuh kuadrat. Inilah yang membuat throughput turun lagi saat koneksi terlalu banyak. 0 berarti tidak ada efek."
+		},
+		"worker.queueTimeoutMs": {
+			"label": "Batas tunggu di antrean",
+			"help": "Request yang sudah menunggu selama ini dikeluarkan dari antrean dan gagal. Kosongkan untuk menunggu tanpa batas."
+		},
+		"worker.callMode": {
+			"label": "Cara memanggil komponen di belakangnya",
+			"help": "Berurutan memanggil satu per satu. Paralel memanggil semuanya sekaligus dan menunggu yang paling lambat."
+		},
+		"pooler.poolSize": {
+			"label": "Ukuran pool",
+			"help": "Koneksi ke database yang dibuka pooler. Hanya sebanyak ini query yang berjalan bersamaan di database."
+		},
+		"pooler.maxWaiting": {
+			"label": "Klien menunggu maksimum",
+			"help": "Request yang boleh menunggu koneksi kosong. Lebih dari ini langsung ditolak."
+		},
+		"pooler.waitTimeoutMs": {
+			"label": "Batas tunggu koneksi",
+			"help": "Seperti query_wait_timeout di PgBouncer: request yang menunggu koneksi selama ini gagal."
+		},
+		"database.maxConnections": {
+			"label": "Koneksi maksimum",
+			"help": "Seperti max_connections. Setiap koneksi adalah satu query yang berjalan; koneksi berikutnya ditolak kalau tidak ada antrean."
+		},
+		"limiter.ratePerSec": {
+			"label": "Batas laju",
+			"help": "Token yang diisi ulang per detik, yaitu laju rata-rata yang diloloskan."
+		},
+		"limiter.burst": {
+			"label": "Burst",
+			"help": "Token maksimum yang bisa ditabung, yaitu berapa banyak request boleh lolos sekaligus setelah sepi."
+		},
+		"cluster.writeRatio": {
+			"label": "Porsi tulis",
+			"help": "Bagian panggilan yang merupakan tulis dan harus ke primary, diundi dari seed. Sisanya baca dan dibagi ke replika."
+		},
+		"cluster.failoverMs": {
+			"label": "Waktu failover",
+			"help": "Waktu dari node mati sampai cluster sadar. Untuk primary, itu juga waktu sampai replika dipromosikan."
+		},
+		"link.retryBackoffMs": {
+			"label": "Backoff awal",
+			"help": "Jeda sebelum retry pertama; berlipat dua tiap retry berikutnya, paling lama 30 detik. 0 berarti retry langsung."
+		},
+		"link.retryJitter": {
+			"label": "Jitter",
+			"help": "Setiap jeda diundi acak antara nol dan backoff, supaya retry dari banyak request tidak datang bersamaan."
+		},
+		"link.retryBudget": {
+			"label": "Retry budget",
+			"help": "Retry dibatasi sebagai persentase dari percobaan pertama, dengan cadangan 10 retry. Kosongkan untuk tanpa batas."
+		},
+		"workload.propagateDeadline": {
+			"label": "Propagasi deadline",
+			"help": "Batas waktu klien ikut terkirim di setiap panggilan, seperti gRPC deadline. Komponen melewati request yang kliennya sudah menyerah."
+		},
+		"fault.ramp": {
+			"label": "Memburuk bertahap",
+			"help": "Efeknya naik pelan-pelan dari nol di awal sampai penuh di akhir jendela, seperti memory leak. Butuh waktu berakhir."
 		}
 	},
 	"options": {
@@ -417,6 +513,10 @@
 			"link-latency": "Latensi link",
 			"link-loss": "Link putus sebagian",
 			"cache-flush": "Cache dikosongkan"
+		},
+		"worker.callMode": {
+			"sequential": "Berurutan",
+			"parallel": "Paralel (fan-out)"
 		}
 	},
 	"inspector": {
@@ -483,7 +583,25 @@
 		"reproducibility": "Reproduksibilitas",
 		"anotherSeed": "Coba seed lain",
 		"seedHint": "Seed hanya berpengaruh pada bagian yang acak: kedatangan Poisson, waktu layanan eksponensial, cache, pemilihan acak, dan fault berbasis persentase. Tanpa itu, semua seed memberi hasil yang sama.",
-		"time": "Waktu"
+		"time": "Waktu",
+		"presetNote": "Ini hanya titik awal; perilakunya sama dengan komponen {{kind}} dan semua angkanya bisa kamu ubah.",
+		"contention": "Perlambatan saat sibuk",
+		"contentionHelp": "Universal Scalability Law: makin banyak kerja bersamaan, tiap kerja makin lambat. Database relasional berperilaku seperti ini.",
+		"contentionNone": "Tanpa perlambatan",
+		"contentionDatabase": "Seperti database relasional",
+		"contentionPeak": "Throughput tertinggi sekitar {{rps}} req/dtk pada {{n}} kerja bersamaan.",
+		"contentionOver": "Dengan {{slots}} slot penuh, throughput turun ke sekitar {{rps}} req/dtk. Batasi konkurensi, misalnya dengan connection pooler.",
+		"capacityContended": "Karena perlambatan saat sibuk, angka itu menjadi sekitar {{rps}} req/dtk saat semua slot terpakai.",
+		"databaseNoQueue": "Tanpa antrean: koneksi di atas batas langsung ditolak, seperti \"too many clients\" di PostgreSQL.",
+		"calls": "Panggilan",
+		"limit": "Batas",
+		"limiterHint": "Meloloskan rata-rata {{rate}} req/dtk dan sampai {{burst}} request sekaligus setelah sepi. Sisanya ditolak seketika dengan 429.",
+		"cluster": "Cluster",
+		"primary": "Primary",
+		"replica": "Replika",
+		"makePrimary": "Jadikan {{node}} primary",
+		"clusterHint": "{{writes}}% panggilan adalah tulis dan ke primary; baca dibagi ke replika. Kalau sebuah node mati, cluster baru sadar setelah {{failover}}; primary yang mati diganti replika pertama yang hidup.",
+		"poolerHint": "Paling banyak {{pool}} query berjalan bersamaan di {{target}}, berapa pun banyaknya request yang datang. Sampai {{waiting}} request lain menunggu di sini, masing-masing paling lama {{wait}}. Kapasitas sebenarnya ditentukan {{target}}, bukan pooler."
 	},
 	"notes": {
 		"title": "Judul",
@@ -522,7 +640,15 @@
 		"edgeBreaker": "breaker",
 		"edgeLatency": "+{{ms}} ms",
 		"breakerOpen": "breaker terbuka",
-		"lost": "{{rps}} req/dtk · hilang"
+		"lost": "{{rps}} req/dtk · hilang",
+		"poolerSpec": "pool {{pool}} · antrean {{waiting}}",
+		"databaseSpec": "maks {{connections}} koneksi · {{time}}",
+		"limiterSpec": "{{rate}} req/dtk · burst {{burst}}",
+		"clusterSpec": "tulis {{writes}}% · failover {{failover}}",
+		"primary": "Primary: {{node}}",
+		"rejecting": "menolak {{rps}} req/dtk",
+		"parallel": "paralel",
+		"edgeBackoff": "backoff"
 	},
 	"stacked": {
 		"layer": "Lapisan {{n}}",
@@ -716,7 +842,9 @@
 		"extra": "Lainnya",
 		"hitRatio": "hit {{pct}}",
 		"jobs": "{{done}} pekerjaan selesai, {{failed}} gagal, tunggu terlama {{wait}}",
-		"note": "“Gagal di sini” menghitung request yang kegagalannya bermula di komponen itu. “Slot sibuk” adalah waktu slot terpakai sepanjang run."
+		"note": "“Gagal di sini” menghitung request yang kegagalannya bermula di komponen itu. “Slot sibuk” adalah waktu slot terpakai sepanjang run.",
+		"slower": "kerja {{factor}}× lebih lambat",
+		"abandoned": "{{queue}} keluar karena menunggu, {{deadline}} dilewati karena deadline"
 	},
 	"perLink": {
 		"title": "Per link",
@@ -852,6 +980,31 @@
 		"eventLimit": {
 			"title": "Run berhenti lebih awal",
 			"body": "Run mencapai batas event pada {{measuredMs}}. Hasil hanya mencakup bagian itu; perpendek trafik atau turunkan lajunya."
+		},
+		"contention": {
+			"title": "{{node}} melambat karena terlalu banyak kerja bersamaan",
+			"body": "Rata-rata setiap kerja di {{node}} butuh {{factor}}× waktu dasarnya, karena sampai {{peakBusy}} kerja berjalan bersamaan dan saling berebut. Dengan pengaturan ini throughput tertinggi dicapai sekitar {{optimal}} kerja bersamaan; di atas itu justru makin lambat. Connection pooler atau batas konkurensi menjaga {{node}} di titik itu.",
+			"body_noOptimal": "Rata-rata setiap kerja di {{node}} butuh {{factor}}× waktu dasarnya, karena sampai {{peakBusy}} kerja berjalan bersamaan dan saling berebut."
+		},
+		"queueTimeout": {
+			"title": "{{count}} request menyerah menunggu di {{node}}",
+			"body": "Request ini menunggu salah satu dari {{capacity}} slot {{node}} terlalu lama dan dikeluarkan dari antrean. Itu kegagalan cepat yang disengaja: lebih baik daripada menunggu sampai klien timeout."
+		},
+		"noRoom": {
+			"title": "{{node}} menolak {{rejected}} request",
+			"body": "{{node}} tidak punya antrean, jadi begitu {{capacity}} slotnya penuh, request berikutnya langsung ditolak, seperti \"too many clients\" di database."
+		},
+		"rateLimited": {
+			"title": "{{node}} menolak {{count}} request",
+			"body": "{{pct}}% dari semua request ditolak seketika oleh {{node}} karena melebihi kuota. Mereka gagal cepat, sementara yang lolos dilayani dengan kapasitas yang cukup."
+		},
+		"failover": {
+			"title": "{{cluster}} mempromosikan {{to}} pada {{atMs}}",
+			"body": "{{from}} mati dan {{cluster}} baru menyadarinya pada {{atMs}}. Sampai saat itu tulis tetap dikirim ke {{from}}, sehingga {{failed}} request gagal di sana. Setelah promosi, {{to}} menerima semua tulis."
+		},
+		"deadlineSkipped": {
+			"title": "{{count}} kerja basi dilewati",
+			"body": "Karena deadline klien ikut terkirim, komponen melewati {{count}} request yang kliennya sudah menyerah. Kapasitas itu dipakai untuk request yang masih ditunggu."
 		}
 	},
 	"reasons": {
@@ -882,6 +1035,14 @@
 		"injected-error": {
 			"label": "Error",
 			"description": "Komponen mengembalikan error karena fault tingkat error."
+		},
+		"rate-limited": {
+			"label": "Kena rate limit",
+			"description": "Rate limiter atau API gateway menolak request karena melebihi kuota (HTTP 429)."
+		},
+		"queue-timeout": {
+			"label": "Terlalu lama antre",
+			"description": "Request menunggu di antrean melewati batas tunggu, misalnya menunggu koneksi dari connection pooler."
 		}
 	},
 	"breaker": {
@@ -923,7 +1084,11 @@
 			"jobFailed": "gagal",
 			"probeFailed": "gagal",
 			"backInRotation": "masuk rotasi lagi",
-			"removedFromRotation": "dikeluarkan dari rotasi"
+			"removedFromRotation": "dikeluarkan dari rotasi",
+			"work": "kerja {{latency}}",
+			"abandonedQueue": "terlalu lama menunggu",
+			"abandonedDeadline": "klien sudah menyerah, kerja dilewati",
+			"promoted": "{{from}} digantikan {{to}}"
 		},
 		"noRequest": "Tidak ada request #{{req}} di run ini.",
 		"noEvents": "Tidak ada event jenis ini di run ini.",
@@ -951,7 +1116,9 @@
 			"fault-end": "Fault berakhir",
 			"probe": "Probe health check",
 			"health-changed": "Status sehat berubah",
-			"breaker": "Circuit breaker"
+			"breaker": "Circuit breaker",
+			"abandoned": "Keluar dari antrean",
+			"promoted": "Primary dipromosikan"
 		},
 		"detailColumn": "Detail"
 	},
@@ -1172,7 +1339,11 @@
 			"balancerNeedsBackend": "Load balancer {{node}} belum punya backend. Hubungkan ke paling tidak satu komponen.",
 			"cacheOneDownstream": "Cache {{node}} hanya boleh memanggil satu komponen di belakangnya.",
 			"unreachable": "{{node}} tidak dipanggil siapa pun, jadi tidak akan pernah menerima trafik. Hubungkan atau hapus.",
-			"cycle": "Panggilan berputar: {{cycle}}. Request tidak boleh bisa memanggil dirinya sendiri."
+			"cycle": "Panggilan berputar: {{cycle}}. Request tidak boleh bisa memanggil dirinya sendiri.",
+			"oneDownstream": "{{node}} hanya boleh memanggil satu komponen; sekarang {{count}}.",
+			"clusterNeedsNodes": "Cluster {{node}} butuh paling tidak dua database: satu primary dan satu replika.",
+			"clusterTargetsWorkers": "Cluster {{node}} hanya bisa mengarah ke database atau service; {{target}} bukan.",
+			"presetKind": "Preset {{preset}} tidak cocok dengan jenis komponen {{node}}."
 		},
 		"fault": {
 			"duplicateId": "Dua fault memakai id “{{id}}”.",
@@ -1181,7 +1352,8 @@
 			"flushNeedsCache": "Fault “{{id}}” hanya berlaku untuk cache; “{{target}}” bukan cache.",
 			"capacityAboveNode": "Kapasitas selama fault ({{capacity}}) lebih besar dari kapasitas {{node}} ({{nodeCapacity}}).",
 			"endBeforeStart": "Akhir ({{end}} ms) harus setelah mulai ({{start}} ms).",
-			"overlappingCrash": "Dua kematian {{node}} tumpang tindih. Biarkan yang pertama pulih sebelum yang berikutnya mulai."
+			"overlappingCrash": "Dua kematian {{node}} tumpang tindih. Biarkan yang pertama pulih sebelum yang berikutnya mulai.",
+			"rampNeedsEnd": "Fault “{{id}}” yang memburuk bertahap butuh waktu berakhir."
 		},
 		"budget": {
 			"horizon": "Run ini akan mencakup {{minutes}} menit; batasnya {{limitMinutes}} menit. Perpendek trafik atau turunkan batas waktu.",
@@ -1229,19 +1401,23 @@
 			"metrics": "Definisi metrik",
 			"reproducibility": "Reproduksibilitas",
 			"checks": "Pemeriksaan kebenaran",
-			"limits": "Batasan dan yang tidak dimodelkan"
+			"limits": "Batasan dan yang tidak dimodelkan",
+			"contention": "Kenapa database makin lambat saat sibuk"
 		},
 		"what": [
-			"Eksperimen adalah graf berarah: satu klien dan sampai 11 komponen lain, dihubungkan oleh link yang mengikuti arah panggilan. Klien memanggil satu komponen; load balancer meneruskan ke salah satu backend-nya; service, database, dan cache mengerjakan pekerjaannya sendiri lalu memanggil setiap komponen di belakangnya secara berurutan; antrean kerja menjawab seketika dan mengerjakannya belakangan.",
+			"Eksperimen adalah graf berarah: satu klien dan sampai 11 komponen lain, dihubungkan oleh link yang mengikuti arah panggilan. Klien memanggil satu komponen; load balancer, rate limiter, dan cluster database meneruskan ke komponen di belakangnya; service, database, connection pooler, dan cache mengerjakan pekerjaannya sendiri lalu memanggil komponen di belakangnya, berurutan atau paralel; antrean kerja menjawab seketika dan mengerjakannya belakangan.",
 			"Waktu disimulasikan dalam mikrodetik bulat dan bergerak dari event ke event; tidak ada yang bergantung pada kecepatan komputermu atau kecepatan replay."
 		],
 		"components": {
 			"client": "Mengirim request dengan laju konstan (jarak persis sama) atau sebagai proses Poisson (jeda acak dari seed), ditambah lonjakan opsional. Setiap request punya tenggat: timeout klien.",
 			"load-balancer": "Memilih backend secara round robin, koneksi tersedikit, atau acak di antara backend yang dianggapnya sehat. Tanpa health check ia menganggap semua backend sehat selamanya. Bisa mencoba ulang ke backend lain saat sebuah backend menggagalkan panggilan.",
-			"service": "Punya sejumlah slot (konkurensi) dan antrean FIFO. Sebuah panggilan menempati slot selama waktu layanannya sendiri ditambah seluruh waktu menunggu komponen di belakangnya.",
-			"database": "Berperilaku seperti service; slotnya mewakili pool koneksi. Dipisahkan hanya supaya rancanganmu mudah dibaca.",
+			"service": "Punya sejumlah slot (konkurensi) dan antrean FIFO. Sebuah panggilan menempati slot selama waktu layanannya sendiri ditambah seluruh waktu menunggu komponen di belakangnya. Komponen di belakangnya dipanggil berurutan, atau sekaligus kalau mode paralel dipilih.",
+			"database": "Berperilaku seperti service, tetapi defaultnya meniru database relasional: slot adalah koneksi, tidak ada antrean, dan kerja melambat saat banyak koneksi aktif (lihat bagian berikutnya).",
 			"cache": "Menjawab sebagian pencarian dari memori sesuai rasio hit (diundi dari seed). Yang luput diteruskan ke satu komponen di belakangnya.",
-			"queue": "Menyimpan pekerjaan dan langsung menjawab pemanggil (atau menolak saat backlog penuh). Sejumlah worker memproses backlog itu, memanggil komponen di belakangnya, dan hasilnya dicatat sebagai pekerjaan, bukan request."
+			"queue": "Menyimpan pekerjaan dan langsung menjawab pemanggil (atau menolak saat backlog penuh). Sejumlah worker memproses backlog itu, memanggil komponen di belakangnya, dan hasilnya dicatat sebagai pekerjaan, bukan request.",
+			"pooler": "Service yang slotnya adalah koneksi ke database. Request menunggu di antreannya sampai ada koneksi kosong, paling lama selama batas tunggu, lalu memegang koneksi hanya selama panggilannya ke database. Ini meniru mode transaction PgBouncer; mode session tidak dimodelkan.",
+			"db-cluster": "Mengarahkan tulis ke primary (link pertama) dan baca bergiliran ke replika (link lainnya), menurut porsi tulis yang diundi dari seed. Node yang mati baru disadari setelah waktu failover; primary yang mati diganti replika pertama yang hidup, dan node yang pulih bergabung lagi sebagai replika. Replikasi dianggap seketika.",
+			"rate-limiter": "Token bucket di depan satu komponen: meloloskan request selama ada token, mengisi ulang token dengan laju tetap sampai batas burst, dan menolak sisanya seketika."
 		},
 		"lifecycle": {
 			"steps": [
@@ -1267,8 +1443,10 @@
 		},
 		"resilience": [
 			"Setiap link bisa punya timeout panggilan, percobaan ulang, dan circuit breaker. Timeout membuat pemanggil menyerah dan melepas slotnya; pekerjaan di komponen yang dipanggil tetap berlanjut dan jawabannya dibuang sebagai jawaban terlambat.",
-			"Percobaan ulang dilakukan seketika, tanpa jeda, ke komponen yang sama. Saat komponen itu sedang lambat, setiap request klien bisa menjadi beberapa panggilan: inilah badai retry.",
-			"Circuit breaker menghitung kegagalan berturut-turut lewat sebuah link. Mencapai ambangnya, breaker terbuka dan langsung menolak panggilan selama jeda tertentu. Setelah itu satu panggilan percobaan dilepas: berhasil menutup breaker, gagal membukanya lagi."
+			"Percobaan ulang bisa langsung atau dengan exponential backoff: jeda mulai dari backoff awal dan berlipat dua tiap retry, paling lama 30 detik. Dengan jitter, setiap jeda diundi acak antara nol dan backoff. Retry budget membatasi retry sebagai persentase dari percobaan pertama dengan cadangan 10 retry, sehingga saat komponen di belakang sakit, retry tidak melipatgandakan bebannya. Selama menunggu backoff, pemanggil tetap memegang slotnya.",
+			"Circuit breaker menghitung kegagalan berturut-turut lewat sebuah link. Mencapai ambangnya, breaker terbuka dan langsung menolak panggilan selama jeda tertentu. Setelah itu satu panggilan percobaan dilepas: berhasil menutup breaker, gagal membukanya lagi.",
+			"Dengan propagasi deadline, batas waktu klien ikut terkirim di setiap panggilan. Komponen melewati request yang kliennya sudah menyerah, baik saat request tiba maupun saat gilirannya di antrean tiba, alih-alih mengerjakannya lalu membuang hasilnya. Pekerjaan yang sudah berjalan tidak dibatalkan di tengah jalan.",
+			"Dalam mode paralel, sebuah komponen memanggil semua komponen di belakangnya sekaligus dan menunggu yang paling lambat; kegagalan pertama langsung menggagalkan panggilannya. Karena itu satu komponen lambat bisa memperlambat setiap request yang menyebar ke banyak komponen."
 		],
 		"metrics": {
 			"offered": {
@@ -1339,15 +1517,107 @@
 		},
 		"limits": {
 			"items": [
-				"Tidak ada TCP, TLS, paket, connection pooling, keep-alive, atau DNS.",
-				"Tidak ada backoff pada percobaan ulang, pembatasan laju, bulkhead, atau autoscaling.",
-				"Tidak ada CPU, memori, garbage collection, atau penjadwalan sistem operasi.",
-				"Tidak ada klaim kesetaraan dengan NGINX, HAProxy, Envoy, Kafka, atau produk mana pun."
+				"Tidak ada TCP, TLS, paket, keep-alive, atau DNS.",
+				"Tidak ada bulkhead, autoscaling, mode session pada connection pooler, atau lag replikasi.",
+				"Tidak ada CPU, memori, garbage collection, atau penjadwalan sistem operasi; perlambatan saat sibuk diwakili oleh koefisien kontensi dan koherensi.",
+				"Tidak ada klaim kesetaraan dengan PostgreSQL, PgBouncer, NGINX, Envoy, Kafka, atau produk mana pun."
 			],
 			"budget": "Run dibatasi {{minutes}} menit waktu simulasi, sekitar {{requests}} request yang dikirim, dan {{nodes}} komponen, supaya tab browser tidak pernah macet.",
 			"note": [
 				"Gunakan hasilnya untuk memahami dan mendiskusikan dinamika kegagalan. Jangan pakai sebagai rencana kapasitas, perkiraan SLA, atau prediksi perilaku produksi."
 			]
+		},
+		"catalog": [
+			"Katalog komponen (CDN, API gateway, web server, search engine, object storage, message broker, API pihak ketiga) hanyalah titik awal di atas jenis-jenis di atas, dengan nilai awal yang masuk akal dan contoh produk. Preset tidak menambah perilaku: CDN adalah cache, API gateway adalah rate limiter. Angkanya ilustrasi, bukan hasil ukur produk mana pun."
+		],
+		"contention": [
+			"Menambah koneksi ke database tidak menambah kapasitas tanpa batas. Setiap query aktif berebut kunci, buffer, log, dan CPU dengan query lain. FaultWorks memodelkan ini dengan Universal Scalability Law: dengan n kerja aktif, setiap kerja butuh waktu dasar dikali 1 + α(n − 1) + β·n(n − 1).",
+			"α (kontensi) adalah bagian kerja yang harus bergantian; β (koherensi) adalah biaya koordinasi yang tumbuh kuadrat. Kalau β di atas nol, throughput mencapai puncak di sekitar √((1 − α) / β) kerja bersamaan lalu turun lagi. Karena itu database dengan max_connections besar bisa runtuh saat lonjakan: koneksi bertambah, setiap query makin lambat, request menumpuk, dan koneksi bertambah lagi.",
+			"Connection pooler memotong lingkaran itu: hanya sedikit koneksi yang benar-benar aktif di database, sisanya menunggu murah di antrean pooler. Koefisien bawaan (α 0,02, β 0,0005) adalah ilustrasi dengan puncak sekitar 44 koneksi, bukan hasil ukur PostgreSQL; ubah sesuai sistemmu."
+		]
+	},
+	"catalog": {
+		"categories": {
+			"edge": "Edge dan jaringan",
+			"compute": "Komputasi",
+			"data": "Data",
+			"messaging": "Pesan dan antrean",
+			"external": "Layanan luar"
+		},
+		"cdn": {
+			"label": "CDN",
+			"hint": "cache di tepi jaringan",
+			"description": "Content delivery network: menjawab sebagian besar request dari cache di dekat pengguna dan hanya meneruskan yang luput ke server asal. Contohnya Cloudflare, CloudFront, atau Fastly."
+		},
+		"load-balancer": {
+			"label": "Load balancer",
+			"hint": "membagi trafik ke beberapa server",
+			"description": "Membagi request ke beberapa backend dan bisa memeriksa kesehatan mereka."
+		},
+		"api-gateway": {
+			"label": "API gateway",
+			"hint": "rate limit di pintu masuk",
+			"description": "Pintu masuk API yang membatasi jumlah request per detik dan langsung menolak kelebihannya dengan 429. Contohnya Kong, NGINX dengan limit_req, atau API Gateway milik cloud."
+		},
+		"rate-limiter": {
+			"label": "Rate limiter",
+			"hint": "token bucket",
+			"description": "Token bucket: meloloskan request selama masih ada token, mengisi ulang token dengan laju tetap."
+		},
+		"service": {
+			"label": "Service",
+			"hint": "slot, antrean, memanggil komponen lain",
+			"description": "Layanan aplikasi biasa dengan slot konkurensi dan antrean."
+		},
+		"web-server": {
+			"label": "Web server",
+			"hint": "worker terbatas, waktu acak",
+			"description": "Server aplikasi web dengan jumlah worker terbatas, misalnya PHP-FPM, Gunicorn, atau Puma."
+		},
+		"database": {
+			"label": "Database relasional",
+			"hint": "makin banyak koneksi, makin lambat",
+			"description": "Database relasional dengan batas koneksi. Setiap koneksi aktif tambahan memperlambat yang lain karena berebut kunci, buffer, dan CPU. Contohnya PostgreSQL atau MySQL."
+		},
+		"pooler": {
+			"label": "Connection pooler",
+			"hint": "membatasi koneksi aktif ke database",
+			"description": "Menampung banyak koneksi klien di antrean dan hanya membuka sedikit koneksi ke database. Contohnya PgBouncer atau ProxySQL dalam mode transaction."
+		},
+		"db-cluster": {
+			"label": "Cluster database",
+			"hint": "primary, replika, dan failover",
+			"description": "Mengarahkan tulis ke primary dan baca ke replika, lalu mempromosikan replika saat primary mati. Contohnya Patroni, RDS Multi-AZ, atau Galera."
+		},
+		"cache": {
+			"label": "Cache",
+			"hint": "menjawab sebagian dari memori",
+			"description": "Cache di memori di depan komponen yang lebih lambat. Contohnya Redis atau Memcached."
+		},
+		"search-engine": {
+			"label": "Search engine",
+			"hint": "kueri berat, ada kontensi",
+			"description": "Mesin pencari dengan kueri yang relatif berat dan sedikit kontensi. Contohnya Elasticsearch atau OpenSearch."
+		},
+		"object-storage": {
+			"label": "Object storage",
+			"hint": "lambat tapi muat banyak",
+			"description": "Penyimpanan objek dengan latensi tinggi tetapi konkurensi besar. Contohnya S3 atau MinIO."
+		},
+		"queue": {
+			"label": "Antrean kerja",
+			"hint": "menjawab cepat, mengerjakan belakangan",
+			"description": "Menyimpan pekerjaan dan memprosesnya dengan sejumlah worker."
+		},
+		"message-broker": {
+			"label": "Message broker",
+			"hint": "backlog besar, consumer sedikit",
+			"description": "Broker pesan dengan backlog sangat besar dan beberapa consumer. Contohnya Kafka atau RabbitMQ."
+		},
+		"external-api": {
+			"label": "API pihak ketiga",
+			"hint": "lambat dan di luar kendalimu",
+			"description": "Layanan pihak ketiga yang lambat dan tidak bisa kamu perbaiki sendiri, misalnya payment gateway atau penyedia SMS."
 		}
 	}
 }

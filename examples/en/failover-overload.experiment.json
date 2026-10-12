@@ -1,5 +1,5 @@
 {
-	"schemaVersion": "0.2.0",
+	"schemaVersion": "0.3.0",
 	"experimentId": "failover-overload",
 	"title": "Failover overload: one server carries everything",
 	"question": "Can Server A absorb all traffic after Server B is removed?",
@@ -36,7 +36,11 @@
 					"capacity": 10,
 					"queueCapacity": 50,
 					"serviceTimeMs": 150,
-					"serviceTimeDistribution": "fixed"
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			},
 			{
@@ -47,7 +51,11 @@
 					"capacity": 10,
 					"queueCapacity": 50,
 					"serviceTimeMs": 150,
-					"serviceTimeDistribution": "fixed"
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			}
 		],
@@ -63,7 +71,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			},
 			{
 				"id": "lb-server-a",
@@ -76,7 +87,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			},
 			{
 				"id": "lb-server-b",
@@ -89,7 +103,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			}
 		]
 	},
@@ -99,7 +116,8 @@
 		"startMs": 0,
 		"durationMs": 60000,
 		"timeoutMs": 1000,
-		"bursts": []
+		"bursts": [],
+		"propagateDeadline": false
 	},
 	"faults": [
 		{

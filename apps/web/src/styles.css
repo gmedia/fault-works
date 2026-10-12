@@ -76,6 +76,9 @@
   --kind-queue: #eb6834;
   --kind-load-balancer: #14171f;
   --kind-client: #596171;
+  --kind-pooler: #6d4fd6;
+  --kind-db-cluster: #4a3aa7;
+  --kind-rate-limiter: #a1661a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -131,6 +134,9 @@
     --kind-queue: #d95926;
     --kind-load-balancer: #eef0f4;
     --kind-client: #a2a9b6;
+    --kind-pooler: #a593f0;
+    --kind-db-cluster: #9085e9;
+    --kind-rate-limiter: #e0a84a;
   }
 }
 
@@ -186,6 +192,9 @@
   --kind-queue: #d95926;
   --kind-load-balancer: #eef0f4;
   --kind-client: #a2a9b6;
+  --kind-pooler: #a593f0;
+  --kind-db-cluster: #9085e9;
+  --kind-rate-limiter: #e0a84a;
 }
 
 @theme inline {

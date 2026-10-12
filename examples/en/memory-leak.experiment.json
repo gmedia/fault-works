@@ -1,0 +1,165 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "memory-leak",
+	"title": "A memory leak that passes health checks",
+	"question": "A server that gets slower bit by bit never crashes. Do health checks save us?",
+	"description": "A load balancer spreads traffic round robin over two servers with active health checks. From 10 seconds, Server B gets gradually slower until it is ten times slower at 50 seconds, like an application with a memory leak.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"label": "Load balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"retries": 0,
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 5000,
+						"probeTimeoutMs": 1000,
+						"unhealthyThreshold": 2,
+						"healthyThreshold": 2
+					}
+				}
+			},
+			{
+				"id": "server-a",
+				"kind": "service",
+				"label": "Server A",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 50,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "server-b",
+				"kind": "service",
+				"label": "Server B",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 50,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-lb",
+				"source": "client",
+				"target": "lb",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-server-a",
+				"source": "lb",
+				"target": "server-a",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-server-b",
+				"source": "lb",
+				"target": "server-b",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 200,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": false,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "server-b-leak",
+			"target": "server-b",
+			"atMs": 10000,
+			"kind": "slowdown",
+			"untilMs": 50000,
+			"factor": 10,
+			"addMs": 0,
+			"ramp": true
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Components do not know when their caller gave up, unless deadline propagation is on.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"Health checks keep passing because Server B still answers probes, so half the traffic keeps going there.",
+		"Requests to Server B start timing out long before anything considers it broken."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"lb": {
+			"x": 300,
+			"y": 0
+		},
+		"server-a": {
+			"x": 620,
+			"y": -80
+		},
+		"server-b": {
+			"x": 620,
+			"y": 80
+		}
+	}
+}

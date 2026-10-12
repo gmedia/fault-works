@@ -143,6 +143,22 @@
 		"microservices": {
 			"title": "Microservices",
 			"description": "Load balancer, two APIs, a shared auth service and a shared database."
+		},
+		"pooled-database": {
+			"title": "Database behind a connection pooler",
+			"description": "The API calls PostgreSQL through PgBouncer."
+		},
+		"db-cluster": {
+			"title": "Database cluster",
+			"description": "The API calls a cluster with one primary and two replicas."
+		},
+		"cdn-origin": {
+			"title": "CDN in front of an origin",
+			"description": "CDN, load balancer, two web servers and a database."
+		},
+		"api-gateway": {
+			"title": "API gateway",
+			"description": "A rate limit at the front door, then a load balancer and two servers."
 		}
 	},
 	"defaults": {
@@ -162,7 +178,13 @@
 			"Health probes bypass the request queue and answer instantly when the component is up.",
 			"Components do not know when their caller gave up; they finish the work and the answer is discarded.",
 			"Numbers are scenario inputs, not measured performance of any product."
-		]
+		],
+		"pooler": "PgBouncer",
+		"db-cluster": "Database cluster",
+		"rate-limiter": "Rate limiter",
+		"primary": "Primary",
+		"replica": "Replica {{n}}",
+		"webServer": "Web server {{letter}}"
 	},
 	"kinds": {
 		"client": "Client",
@@ -170,14 +192,20 @@
 		"service": "Service",
 		"database": "Database",
 		"cache": "Cache",
-		"queue": "Worker queue"
+		"queue": "Worker queue",
+		"pooler": "Connection pooler",
+		"db-cluster": "Database cluster",
+		"rate-limiter": "Rate limiter"
 	},
 	"kindHints": {
 		"load-balancer": "spreads traffic over backends",
 		"service": "slots, a queue, calls other components",
 		"database": "a service with a connection pool",
 		"cache": "answers a share from memory",
-		"queue": "answers at once, works later"
+		"queue": "answers at once, works later",
+		"pooler": "caps active database connections",
+		"db-cluster": "primary, replicas and failover",
+		"rate-limiter": "rejects traffic over a quota"
 	},
 	"faultKinds": {
 		"node-failure": {
@@ -390,6 +418,74 @@
 			"notNumber": "“{{text}}” is not a number.",
 			"integer": "Use a whole number.",
 			"requiredUnit": "Enter a number in {{unit}}."
+		},
+		"worker.contention": {
+			"label": "Contention (α)",
+			"help": "The share of work that has to go one at a time, for example because of locks or a shared log. Every extra active connection makes work this much slower. 0 means no effect."
+		},
+		"worker.coherency": {
+			"label": "Coherency (β)",
+			"help": "Coordination cost between connections that grows quadratically. This is what makes throughput fall again when there are too many connections. 0 means no effect."
+		},
+		"worker.queueTimeoutMs": {
+			"label": "Queue wait limit",
+			"help": "A request that has waited this long is taken out of the queue and fails. Leave empty to wait without a limit."
+		},
+		"worker.callMode": {
+			"label": "How it calls the components behind it",
+			"help": "Sequential calls them one at a time. Parallel calls them all at once and waits for the slowest."
+		},
+		"pooler.poolSize": {
+			"label": "Pool size",
+			"help": "Connections the pooler opens to the database. Only this many queries run on the database at once."
+		},
+		"pooler.maxWaiting": {
+			"label": "Maximum waiting clients",
+			"help": "Requests that may wait for a free connection. More are rejected at once."
+		},
+		"pooler.waitTimeoutMs": {
+			"label": "Connection wait limit",
+			"help": "Like PgBouncer's query_wait_timeout: a request that waits this long for a connection fails."
+		},
+		"database.maxConnections": {
+			"label": "Maximum connections",
+			"help": "Like max_connections. Each connection is one running query; the next one is refused when there is no queue."
+		},
+		"limiter.ratePerSec": {
+			"label": "Rate limit",
+			"help": "Tokens refilled per second, which is the average rate let through."
+		},
+		"limiter.burst": {
+			"label": "Burst",
+			"help": "The most tokens that can be saved up, which is how many requests may go through at once after a quiet spell."
+		},
+		"cluster.writeRatio": {
+			"label": "Write share",
+			"help": "Share of calls that are writes and must go to the primary, drawn from the seed. The rest are reads spread over the replicas."
+		},
+		"cluster.failoverMs": {
+			"label": "Failover time",
+			"help": "Time from a node dying until the cluster notices. For the primary it is also the time until a replica is promoted."
+		},
+		"link.retryBackoffMs": {
+			"label": "Initial backoff",
+			"help": "Wait before the first retry; it doubles for each further retry, up to 30 seconds. 0 retries at once."
+		},
+		"link.retryJitter": {
+			"label": "Jitter",
+			"help": "Each wait is drawn at random between zero and the backoff, so retries from many requests do not arrive together."
+		},
+		"link.retryBudget": {
+			"label": "Retry budget",
+			"help": "Retries are capped as a percentage of first attempts, with a reserve of 10 retries. Leave empty for no cap."
+		},
+		"workload.propagateDeadline": {
+			"label": "Deadline propagation",
+			"help": "The client's deadline travels with every call, like gRPC deadlines. Components skip requests whose client already gave up."
+		},
+		"fault.ramp": {
+			"label": "Gets worse gradually",
+			"help": "The effect grows from nothing at the start to full at the end of the window, like a memory leak. Needs an end time."
 		}
 	},
 	"options": {
@@ -418,6 +514,10 @@
 			"link-latency": "Link latency",
 			"link-loss": "Link loss",
 			"cache-flush": "Cache flush"
+		},
+		"worker.callMode": {
+			"sequential": "Sequential",
+			"parallel": "Parallel (fan-out)"
 		}
 	},
 	"inspector": {
@@ -485,7 +585,25 @@
 		"reproducibility": "Reproducibility",
 		"anotherSeed": "Try another seed",
 		"seedHint": "The seed only matters for the random parts: Poisson arrivals, exponential service times, caches, random routing and share-based faults. Without those, every seed gives the same result.",
-		"time": "Time"
+		"time": "Time",
+		"presetNote": "This is only a starting point; it behaves like a {{kind}} component and you can change every number.",
+		"contention": "Slowdown when busy",
+		"contentionHelp": "Universal Scalability Law: the more work runs at once, the slower each piece gets. Relational databases behave like this.",
+		"contentionNone": "No slowdown",
+		"contentionDatabase": "Like a relational database",
+		"contentionPeak": "Throughput peaks at about {{rps}} req/s with {{n}} pieces of work at once.",
+		"contentionOver": "With all {{slots}} slots busy, throughput falls to about {{rps}} req/s. Cap concurrency, for example with a connection pooler.",
+		"capacityContended": "Because of the slowdown when busy, that becomes about {{rps}} req/s with every slot in use.",
+		"databaseNoQueue": "No queue: connections over the limit are refused at once, like \"too many clients\" in PostgreSQL.",
+		"calls": "Calls",
+		"limit": "Limit",
+		"limiterHint": "Lets through {{rate}} req/s on average and up to {{burst}} requests at once after a quiet spell. The rest is rejected at once with 429.",
+		"cluster": "Cluster",
+		"primary": "Primary",
+		"replica": "Replica",
+		"makePrimary": "Make {{node}} the primary",
+		"clusterHint": "{{writes}}% of calls are writes and go to the primary; reads are spread over the replicas. When a node dies the cluster notices after {{failover}}; a dead primary is replaced by the first replica that is up.",
+		"poolerHint": "At most {{pool}} queries run at once on {{target}}, however many requests arrive. Up to {{waiting}} more wait here, each for at most {{wait}}. The real capacity is set by {{target}}, not by the pooler."
 	},
 	"notes": {
 		"title": "Title",
@@ -524,7 +642,15 @@
 		"edgeBreaker": "breaker",
 		"edgeLatency": "+{{ms}} ms",
 		"breakerOpen": "breaker open",
-		"lost": "{{rps}} req/s · lost"
+		"lost": "{{rps}} req/s · lost",
+		"poolerSpec": "pool {{pool}} · queue {{waiting}}",
+		"databaseSpec": "max {{connections}} connections · {{time}}",
+		"limiterSpec": "{{rate}} req/s · burst {{burst}}",
+		"clusterSpec": "{{writes}}% writes · failover {{failover}}",
+		"primary": "Primary: {{node}}",
+		"rejecting": "rejecting {{rps}} req/s",
+		"parallel": "parallel",
+		"edgeBackoff": "backoff"
 	},
 	"stacked": {
 		"layer": "Layer {{n}}",
@@ -721,7 +847,9 @@
 		"extra": "More",
 		"hitRatio": "{{pct}} hits",
 		"jobs": "{{done}} jobs done, {{failed}} failed, longest wait {{wait}}",
-		"note": "“Failed here” counts requests whose failure originated at that component. “Slots busy” is busy slot-time over the whole run."
+		"note": "“Failed here” counts requests whose failure originated at that component. “Slots busy” is busy slot-time over the whole run.",
+		"slower": "work {{factor}}× slower",
+		"abandoned": "{{queue}} left after waiting, {{deadline}} skipped by deadline"
 	},
 	"perLink": {
 		"title": "Per link",
@@ -857,6 +985,31 @@
 		"eventLimit": {
 			"title": "The run stopped early",
 			"body": "The run hit the event limit at {{measuredMs}}. Results cover only that part; shorten the traffic or lower the rate."
+		},
+		"contention": {
+			"title": "{{node}} slowed down from too much concurrent work",
+			"body": "Each piece of work at {{node}} took {{factor}}× its base time on average, because up to {{peakBusy}} ran at once and fought each other. With these settings throughput peaks at about {{optimal}} at once; beyond that it only gets slower. A connection pooler or a concurrency cap keeps {{node}} at that point.",
+			"body_noOptimal": "Each piece of work at {{node}} took {{factor}}× its base time on average, because up to {{peakBusy}} ran at once and fought each other."
+		},
+		"queueTimeout": {
+			"title": "{{count}} requests gave up waiting at {{node}}",
+			"body": "These requests waited too long for one of {{node}}'s {{capacity}} slots and were taken out of the queue. That is a deliberate fast failure: better than waiting until the client times out."
+		},
+		"noRoom": {
+			"title": "{{node}} refused {{rejected}} requests",
+			"body": "{{node}} has no queue, so once its {{capacity}} slots are full the next request is refused at once, like \"too many clients\" in a database."
+		},
+		"rateLimited": {
+			"title": "{{node}} rejected {{count}} requests",
+			"body": "{{pct}}% of all requests were rejected at once by {{node}} for going over the quota. They failed fast, while the ones let through were served with enough capacity."
+		},
+		"failover": {
+			"title": "{{cluster}} promoted {{to}} at {{atMs}}",
+			"body": "{{from}} died and {{cluster}} only noticed at {{atMs}}. Until then writes kept going to {{from}}, so {{failed}} requests failed there. After the promotion, {{to}} takes every write."
+		},
+		"deadlineSkipped": {
+			"title": "{{count}} pieces of stale work skipped",
+			"body": "Because the client's deadline travels with the calls, components skipped {{count}} requests whose client had already given up. That capacity went to requests someone was still waiting for."
 		}
 	},
 	"reasons": {
@@ -887,6 +1040,14 @@
 		"injected-error": {
 			"label": "Error",
 			"description": "The component returned an error because of an error-rate fault."
+		},
+		"rate-limited": {
+			"label": "Rate limited",
+			"description": "A rate limiter or API gateway rejected the request for going over the quota (HTTP 429)."
+		},
+		"queue-timeout": {
+			"label": "Waited too long",
+			"description": "The request waited in a queue past its wait limit, for example for a connection from a connection pooler."
 		}
 	},
 	"breaker": {
@@ -929,7 +1090,11 @@
 			"jobFailed": "failed",
 			"probeFailed": "failed",
 			"backInRotation": "back in rotation",
-			"removedFromRotation": "removed from rotation"
+			"removedFromRotation": "removed from rotation",
+			"work": "work {{latency}}",
+			"abandonedQueue": "waited too long",
+			"abandonedDeadline": "client already gave up, work skipped",
+			"promoted": "{{to}} replaces {{from}}"
 		},
 		"noRequest": "No request #{{req}} in this run.",
 		"noEvents": "No events of this kind in this run.",
@@ -957,7 +1122,9 @@
 			"fault-end": "Fault ended",
 			"probe": "Health probe",
 			"health-changed": "Health changed",
-			"breaker": "Circuit breaker"
+			"breaker": "Circuit breaker",
+			"abandoned": "Left the queue",
+			"promoted": "Primary promoted"
 		},
 		"detailColumn": "Detail"
 	},
@@ -1179,7 +1346,11 @@
 			"balancerNeedsBackend": "Load balancer {{node}} has no backends. Connect it to at least one component.",
 			"cacheOneDownstream": "Cache {{node}} can only call one component behind it.",
 			"unreachable": "Nothing calls {{node}}, so it would never receive traffic. Connect it or remove it.",
-			"cycle": "Calls go in a circle: {{cycle}}. A request must never be able to call itself."
+			"cycle": "Calls go in a circle: {{cycle}}. A request must never be able to call itself.",
+			"oneDownstream": "{{node}} can only call one component; it calls {{count}}.",
+			"clusterNeedsNodes": "Cluster {{node}} needs at least two databases: a primary and a replica.",
+			"clusterTargetsWorkers": "Cluster {{node}} can only point at databases or services; {{target}} is not one.",
+			"presetKind": "Preset {{preset}} does not fit the kind of component {{node}}."
 		},
 		"fault": {
 			"duplicateId": "Two faults use the id “{{id}}”.",
@@ -1188,7 +1359,8 @@
 			"flushNeedsCache": "Fault “{{id}}” only applies to caches; “{{target}}” is not a cache.",
 			"capacityAboveNode": "The capacity during the fault ({{capacity}}) is above {{node}}'s capacity ({{nodeCapacity}}).",
 			"endBeforeStart": "The end ({{end}} ms) must come after the start ({{start}} ms).",
-			"overlappingCrash": "Two crashes of {{node}} overlap. Let the first one recover before the next starts."
+			"overlappingCrash": "Two crashes of {{node}} overlap. Let the first one recover before the next starts.",
+			"rampNeedsEnd": "Fault “{{id}}” gets worse gradually and needs an end time."
 		},
 		"budget": {
 			"horizon": "The run would cover {{minutes}} min; the limit is {{limitMinutes}} min. Shorten the traffic or set a smaller horizon.",
@@ -1236,19 +1408,23 @@
 			"metrics": "Metric definitions",
 			"reproducibility": "Reproducibility",
 			"checks": "Correctness checks",
-			"limits": "Limits and what is not modeled"
+			"limits": "Limits and what is not modeled",
+			"contention": "Why databases slow down when busy"
 		},
 		"what": [
-			"An experiment is a directed graph: one client and up to 11 other components, connected by links that follow the direction of calls. The client calls one component; a load balancer forwards to one of its backends; services, databases and caches do their own work and then call every component behind them in order; a worker queue answers at once and does the work later.",
+			"An experiment is a directed graph: one client and up to 11 other components, connected by links that follow the direction of calls. The client calls one component; load balancers, rate limiters and database clusters forward to the components behind them; services, databases, connection poolers and caches do their own work and then call the components behind them, one after another or in parallel; a worker queue answers at once and does the work later.",
 			"Time is simulated in whole microseconds and moves from event to event; nothing depends on how fast your computer is or how fast the replay plays."
 		],
 		"components": {
 			"client": "Sends requests at a constant rate (exact intervals) or as a Poisson process (random gaps from the seed), plus optional bursts. Each request has a deadline: the client timeout.",
 			"load-balancer": "Picks a backend by round robin, least connections or at random among the backends it considers healthy. Without health checks it considers every backend healthy forever. It can retry on another backend when a backend fails a call.",
-			"service": "Has a number of slots (concurrency) and a FIFO queue. A call occupies a slot for its own service time plus all the time spent waiting on the components behind it.",
-			"database": "Behaves like a service; its slots stand for a connection pool. Kept separate only so your design reads well.",
+			"service": "Has a number of slots (concurrency) and a FIFO queue. A call occupies a slot for its own service time plus all the time spent waiting on the components behind it. Those are called one after another, or all at once in parallel mode.",
+			"database": "Behaves like a service, but its defaults mimic a relational database: slots are connections, there is no queue, and work slows down as more connections are active (see the next section).",
 			"cache": "Answers a share of lookups from memory according to its hit ratio (drawn from the seed). Misses fall through to the single component behind it.",
-			"queue": "Stores work and answers the caller at once (or rejects it when the backlog is full). A number of workers process the backlog, call the components behind it, and their outcomes are recorded as jobs, not requests."
+			"queue": "Stores work and answers the caller at once (or rejects it when the backlog is full). A number of workers process the backlog, call the components behind it, and their outcomes are recorded as jobs, not requests.",
+			"pooler": "A service whose slots are database connections. Requests wait in its queue for a free connection, up to the wait limit, and hold a connection only while their call to the database runs. This mimics PgBouncer's transaction mode; session mode is not modeled.",
+			"db-cluster": "Sends writes to the primary (the first link) and reads in turn to the replicas (the other links), with the write share drawn from the seed. A dead node is only noticed after the failover time; a dead primary is replaced by the first replica that is up, and a recovered node rejoins as a replica. Replication is treated as instant.",
+			"rate-limiter": "A token bucket in front of one component: lets requests through while tokens are left, refills tokens at a fixed rate up to the burst size, and rejects the rest at once."
 		},
 		"lifecycle": {
 			"steps": [
@@ -1274,8 +1450,10 @@
 		},
 		"resilience": [
 			"Every link can have a call timeout, retries and a circuit breaker. A timeout makes the caller give up and free its slot; the work at the called component continues and its answer is discarded as a late response.",
-			"Retries happen immediately, without backoff, to the same component. While that component is slow, every client request can become several calls: that is a retry storm.",
-			"A circuit breaker counts consecutive failures over a link. At the threshold it opens and rejects calls at once for a while. Then one trial call is let through: success closes the breaker, failure opens it again."
+			"Retries can happen at once or with exponential backoff: the wait starts at the initial backoff and doubles for each retry, up to 30 seconds. With jitter, each wait is drawn at random between zero and the backoff. A retry budget caps retries as a percentage of first attempts with a reserve of 10, so retries do not multiply the load on a sick dependency. While it waits out a backoff, the caller keeps its slot.",
+			"A circuit breaker counts consecutive failures over a link. At the threshold it opens and rejects calls at once for a while. Then one trial call is let through: success closes the breaker, failure opens it again.",
+			"With deadline propagation, the client's deadline travels with every call. Components skip requests whose client already gave up, both when they arrive and when their turn in the queue comes, instead of doing the work and discarding the result. Work already running is not cancelled midway.",
+			"In parallel mode a component calls everything behind it at once and waits for the slowest; the first failure fails its call at once. That is why one slow component can slow down every request that fans out to many."
 		],
 		"metrics": {
 			"offered": {
@@ -1346,15 +1524,107 @@
 		},
 		"limits": {
 			"items": [
-				"No TCP, TLS, packets, connection pooling, keep-alive or DNS.",
-				"No retry backoff, rate limiting, bulkheads or autoscaling.",
-				"No CPU, memory, garbage collection or operating-system scheduling.",
-				"No claim of parity with NGINX, HAProxy, Envoy, Kafka or any product."
+				"No TCP, TLS, packets, keep-alive or DNS.",
+				"No bulkheads, autoscaling, connection-pooler session mode or replication lag.",
+				"No CPU, memory, garbage collection or operating-system scheduling; slowdown under load is represented by the contention and coherency coefficients.",
+				"No claim of parity with PostgreSQL, PgBouncer, NGINX, Envoy, Kafka or any product."
 			],
 			"budget": "Runs are limited to {{minutes}} minutes of simulated time, about {{requests}} offered requests and {{nodes}} components, so a browser tab never locks up.",
 			"note": [
 				"Use the results to understand and discuss failure dynamics. Do not use them as capacity plans, SLA estimates or predictions of production behavior."
 			]
+		},
+		"catalog": [
+			"The component catalog (CDN, API gateway, web server, search engine, object storage, message broker, third-party API) is only a set of starting points on top of the kinds above, with sensible defaults and product examples. A preset adds no behavior: a CDN is a cache, an API gateway is a rate limiter. The numbers are illustrations, not measurements of any product."
+		],
+		"contention": [
+			"Adding connections to a database does not add capacity without limit. Every active query fights the others for locks, buffers, the log and CPU. FaultWorks models this with the Universal Scalability Law: with n pieces of work active, each takes its base time multiplied by 1 + α(n − 1) + β·n(n − 1).",
+			"α (contention) is the share of work that has to take turns; β (coherency) is a coordination cost that grows quadratically. With β above zero, throughput peaks at about √((1 − α) / β) concurrent pieces of work and falls beyond that. That is why a database with a large max_connections can collapse in a spike: connections pile up, every query gets slower, requests back up, and even more connections open.",
+			"A connection pooler breaks that loop: only a few connections are actually active on the database while the rest wait cheaply in the pooler's queue. The default coefficients (α 0.02, β 0.0005) are an illustration with a peak around 44 connections, not measured PostgreSQL numbers; change them to match your system."
+		]
+	},
+	"catalog": {
+		"categories": {
+			"edge": "Edge and network",
+			"compute": "Compute",
+			"data": "Data",
+			"messaging": "Messaging and queues",
+			"external": "External services"
+		},
+		"cdn": {
+			"label": "CDN",
+			"hint": "cache at the network edge",
+			"description": "Content delivery network: answers most requests from a cache close to users and only forwards misses to the origin. Examples are Cloudflare, CloudFront or Fastly."
+		},
+		"load-balancer": {
+			"label": "Load balancer",
+			"hint": "spreads traffic over servers",
+			"description": "Spreads requests over several backends and can check their health."
+		},
+		"api-gateway": {
+			"label": "API gateway",
+			"hint": "rate limit at the front door",
+			"description": "An API entry point that limits requests per second and rejects the excess at once with 429. Examples are Kong, NGINX with limit_req, or a cloud API gateway."
+		},
+		"rate-limiter": {
+			"label": "Rate limiter",
+			"hint": "token bucket",
+			"description": "Token bucket: lets requests through while tokens are left and refills tokens at a fixed rate."
+		},
+		"service": {
+			"label": "Service",
+			"hint": "slots, a queue, calls other components",
+			"description": "A plain application service with concurrency slots and a queue."
+		},
+		"web-server": {
+			"label": "Web server",
+			"hint": "limited workers, random times",
+			"description": "A web application server with a limited number of workers, such as PHP-FPM, Gunicorn or Puma."
+		},
+		"database": {
+			"label": "Relational database",
+			"hint": "more connections, slower queries",
+			"description": "A relational database with a connection limit. Every extra active connection slows the others down as they fight over locks, buffers and CPU. Examples are PostgreSQL or MySQL."
+		},
+		"pooler": {
+			"label": "Connection pooler",
+			"hint": "caps active database connections",
+			"description": "Holds many client connections in a queue and opens only a few connections to the database. Examples are PgBouncer or ProxySQL in transaction mode."
+		},
+		"db-cluster": {
+			"label": "Database cluster",
+			"hint": "primary, replicas and failover",
+			"description": "Sends writes to the primary and reads to replicas, and promotes a replica when the primary dies. Examples are Patroni, RDS Multi-AZ or Galera."
+		},
+		"cache": {
+			"label": "Cache",
+			"hint": "answers a share from memory",
+			"description": "An in-memory cache in front of something slower. Examples are Redis or Memcached."
+		},
+		"search-engine": {
+			"label": "Search engine",
+			"hint": "heavy queries, some contention",
+			"description": "A search engine with fairly heavy queries and some contention. Examples are Elasticsearch or OpenSearch."
+		},
+		"object-storage": {
+			"label": "Object storage",
+			"hint": "slow but huge",
+			"description": "Object storage with high latency but large concurrency. Examples are S3 or MinIO."
+		},
+		"queue": {
+			"label": "Worker queue",
+			"hint": "answers at once, works later",
+			"description": "Stores jobs and processes them with a number of workers."
+		},
+		"message-broker": {
+			"label": "Message broker",
+			"hint": "huge backlog, few consumers",
+			"description": "A message broker with a very large backlog and a few consumers. Examples are Kafka or RabbitMQ."
+		},
+		"external-api": {
+			"label": "Third-party API",
+			"hint": "slow and outside your control",
+			"description": "A third-party service that is slow and that you cannot fix yourself, such as a payment gateway or an SMS provider."
 		}
 	}
 }

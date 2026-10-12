@@ -5,7 +5,7 @@ import type {
 	RunStatus,
 } from "@faultworks/engine";
 
-export const METRIC_DEFINITIONS_VERSION = "0.2.0";
+export const METRIC_DEFINITIONS_VERSION = "0.3.0";
 
 export interface LatencyStats {
 	/** Number of samples behind the percentiles. */
@@ -34,6 +34,15 @@ export interface NodeSummary {
 	queueCapacity: number;
 	/** Busy slot-time divided by capacity × measured time, 0–1. */
 	utilization: number;
+	/** Calls the node gave up on unserved, by why: a queue timeout or an expired client deadline. */
+	abandoned: { queueTimeout: number; deadline: number };
+	/** Own work per call at concurrency one, and the mean and maximum actually taken (ms). */
+	baseWorkMs: number | null;
+	meanWorkMs: number | null;
+	maxWorkMs: number | null;
+	/** Universal Scalability Law coefficients of the node, for explanations. */
+	contention: number;
+	coherency: number;
 	/** Latency of calls answered by this node, measured at its callers. */
 	callLatency: LatencyStats | null;
 	/** Cache only: lookups answered from memory over all lookups. */
@@ -106,6 +115,13 @@ export interface RunSummary {
 	links: LinkSummary[];
 	faults: FaultSummary[];
 	probes: number;
+	/** Database clusters that replaced their primary. */
+	promotions: Array<{
+		atMs: number;
+		cluster: number;
+		from: number;
+		to: number;
+	}>;
 }
 
 export interface TimeSeries {
@@ -144,6 +160,7 @@ export type Transition =
 			fault: number;
 	  }
 	| { tMs: number; kind: "fault-start" | "fault-end"; fault: number }
+	| { tMs: number; kind: "promoted"; node: number; from: number; to: number }
 	| {
 			tMs: number;
 			kind: "breaker";

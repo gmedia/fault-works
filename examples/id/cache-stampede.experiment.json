@@ -1,5 +1,5 @@
 {
-	"schemaVersion": "0.2.0",
+	"schemaVersion": "0.3.0",
 	"experimentId": "cache-stampede",
 	"title": "Cache stampede: saat cache kosong mendadak",
 	"question": "Apa yang terjadi pada database ketika cache yang biasanya menyerap 90% permintaan tiba-tiba kosong?",
@@ -20,7 +20,11 @@
 					"capacity": 100,
 					"queueCapacity": 100,
 					"serviceTimeMs": 5,
-					"serviceTimeDistribution": "fixed"
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			},
 			{
@@ -32,7 +36,11 @@
 					"queueCapacity": 0,
 					"serviceTimeMs": 2,
 					"serviceTimeDistribution": "fixed",
-					"hitRatio": 0.9
+					"hitRatio": 0.9,
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			},
 			{
@@ -43,7 +51,11 @@
 					"capacity": 5,
 					"queueCapacity": 20,
 					"serviceTimeMs": 40,
-					"serviceTimeDistribution": "fixed"
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			}
 		],
@@ -59,7 +71,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			},
 			{
 				"id": "api-cache",
@@ -72,7 +87,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			},
 			{
 				"id": "cache-db",
@@ -85,7 +103,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			}
 		]
 	},
@@ -95,7 +116,8 @@
 		"startMs": 0,
 		"durationMs": 60000,
 		"timeoutMs": 1000,
-		"bursts": []
+		"bursts": [],
+		"propagateDeadline": false
 	},
 	"faults": [
 		{

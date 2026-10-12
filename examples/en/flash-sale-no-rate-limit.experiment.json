@@ -1,0 +1,212 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "flash-sale-no-rate-limit",
+	"title": "Flash sale without a rate limit",
+	"question": "What do all shoppers experience when a flash sale sends six times the traffic?",
+	"description": "An online shop normally gets 300 requests per second. During a flash sale from 20 to 35 seconds, traffic rises to 1,800 requests per second. Two shop servers call a PostgreSQL database.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Shoppers"
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"label": "Load balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"retries": 0,
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 5000,
+						"probeTimeoutMs": 1000,
+						"unhealthyThreshold": 2,
+						"healthyThreshold": 2
+					}
+				}
+			},
+			{
+				"id": "shop-a",
+				"kind": "service",
+				"label": "Shop A",
+				"preset": "web-server",
+				"config": {
+					"capacity": 32,
+					"queueCapacity": 500,
+					"serviceTimeMs": 40,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "shop-b",
+				"kind": "service",
+				"label": "Shop B",
+				"preset": "web-server",
+				"config": {
+					"capacity": 32,
+					"queueCapacity": 500,
+					"serviceTimeMs": 40,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "PostgreSQL",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 0,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-lb",
+				"source": "client",
+				"target": "lb",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-shop-a",
+				"source": "lb",
+				"target": "shop-a",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-shop-b",
+				"source": "lb",
+				"target": "shop-b",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "shop-a-db",
+				"source": "shop-a",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "shop-b-db",
+				"source": "shop-b",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 300,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 3000,
+		"propagateDeadline": false,
+		"bursts": [
+			{
+				"atMs": 20000,
+				"durationMs": 15000,
+				"extraRps": 1500
+			}
+		]
+	},
+	"faults": [],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Components do not know when their caller gave up, unless deadline propagation is on.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"The shop servers are overwhelmed; their queues grow so almost every shopper waits a long time or fails."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"lb": {
+			"x": 300,
+			"y": 0
+		},
+		"shop-a": {
+			"x": 600,
+			"y": -90
+		},
+		"shop-b": {
+			"x": 600,
+			"y": 90
+		},
+		"db": {
+			"x": 900,
+			"y": 0
+		}
+	}
+}

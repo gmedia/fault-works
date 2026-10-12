@@ -1,0 +1,129 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "deadline-propagation",
+	"title": "Propagasi deadline",
+	"question": "Kalau setiap komponen tahu batas waktu klien, berapa banyak kerja sia-sia yang bisa dihemat?",
+	"description": "Sama dengan contoh kegagalan berantai, tetapi deadline klien ikut dikirim di setiap panggilan (seperti gRPC deadline). API melewati request yang kliennya sudah menyerah alih-alih tetap mengerjakannya.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 2000,
+					"serviceTimeMs": 20,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-db",
+				"source": "api",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": true,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "db-slowdown",
+			"target": "db",
+			"atMs": 20000,
+			"kind": "slowdown",
+			"untilMs": 40000,
+			"factor": 50,
+			"addMs": 0,
+			"ramp": false
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah, kecuali propagasi deadline dinyalakan.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Jawaban terlambat hampir hilang karena kerja untuk request kedaluwarsa dilewati.",
+		"Setelah database pulih, API kembali normal lebih cepat karena antreannya tidak berisi kerja basi."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"db": {
+			"x": 600,
+			"y": 0
+		}
+	}
+}

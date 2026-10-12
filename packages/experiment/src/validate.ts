@@ -1,6 +1,7 @@
 import { compilePhases, effectiveHorizonMs } from "./compile.ts";
 import { decodeMessage, type Message } from "./messages.ts";
 import { migrate } from "./migrate.ts";
+import { presetFits } from "./presets.ts";
 import {
 	type Experiment,
 	experimentSchema,
@@ -190,6 +191,41 @@ export function checkExperiment(experiment: Experiment): ValidationIssue[] {
 					node: labelOf(node.id),
 				}),
 			);
+		if (
+			(node.kind === "pooler" || node.kind === "rate-limiter") &&
+			out.length !== 1
+		)
+			issues.push(
+				issue("model.links", "graph.oneDownstream", {
+					node: labelOf(node.id),
+					count: out.length,
+				}),
+			);
+		if (node.kind === "db-cluster") {
+			if (out.length < 2)
+				issues.push(
+					issue("model.links", "graph.clusterNeedsNodes", {
+						node: labelOf(node.id),
+					}),
+				);
+			for (const target of out) {
+				const t = byId.get(target);
+				if (t && !isWorker(t))
+					issues.push(
+						issue("model.links", "graph.clusterTargetsWorkers", {
+							node: labelOf(node.id),
+							target: labelOf(target),
+						}),
+					);
+			}
+		}
+		if (node.preset && !presetFits(node.preset, node.kind))
+			issues.push(
+				issue("model.nodes", "graph.presetKind", {
+					node: labelOf(node.id),
+					preset: node.preset,
+				}),
+			);
 		if (node.kind !== "client" && (incoming.get(node.id) ?? []).length === 0)
 			issues.push(
 				issue("model.links", "graph.unreachable", { node: labelOf(node.id) }),
@@ -261,6 +297,10 @@ export function checkExperiment(experiment: Experiment): ValidationIssue[] {
 					}),
 				);
 		}
+		if (fault.kind === "slowdown" && fault.ramp && fault.untilMs === null)
+			issues.push(
+				issue(`${path}.ramp`, "fault.rampNeedsEnd", { id: fault.id }),
+			);
 		const end =
 			fault.kind === "node-failure" ? fault.recoverAtMs : fault.untilMs;
 		if (end !== null && end <= fault.atMs)

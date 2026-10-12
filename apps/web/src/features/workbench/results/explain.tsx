@@ -29,7 +29,8 @@ export function useInsightText() {
 		for (const [k, v] of Object.entries(insight.params)) {
 			if (v === null || v === undefined) p[k] = null;
 			else if (typeof v === "number") {
-				if (k.endsWith("Ms")) p[k] = formatMs(v);
+				if (k === "factor") p[k] = formatNumber(v, 1);
+				else if (k.endsWith("Ms")) p[k] = formatMs(v);
 				else if (k.endsWith("Pct") || k === "pct") p[k] = formatNumber(v, 1);
 				else p[k] = formatCount(v);
 			} else if (k === "reason" && typeof v === "string")
@@ -75,6 +76,10 @@ function contextOf(insight: Insight): string | undefined {
 	if (insight.key === "insight.saturated")
 		return (p.rejected as number) > 0 ? "rejected" : undefined;
 	if (insight.key === "insight.origin") return p.reason ? "reason" : undefined;
+	if (insight.key === "insight.contention")
+		return p.optimal === null || p.optimal === undefined
+			? "noOptimal"
+			: undefined;
 	return undefined;
 }
 

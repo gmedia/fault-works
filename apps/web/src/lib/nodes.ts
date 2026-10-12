@@ -1,11 +1,27 @@
-import type { NodeKind } from "@faultworks/experiment";
 import {
+	CATALOG,
+	type CatalogEntry,
+	type ExperimentNode,
+	type NodeKind,
+	type PresetId,
+} from "@faultworks/experiment";
+import {
+	Archive,
+	Boxes,
+	Cable,
 	Database,
+	Gauge,
+	Globe,
 	HardDriveDownload,
 	Layers,
 	ListOrdered,
+	MessagesSquare,
+	MonitorCog,
+	Plug,
 	Radio,
+	Search,
 	Server,
+	ShieldCheck,
 	Waypoints,
 } from "lucide-react";
 
@@ -15,9 +31,38 @@ export const NODE_ICONS: Record<NodeKind, typeof Server> = {
 	"load-balancer": Waypoints,
 	service: Server,
 	database: Database,
+	pooler: Cable,
+	"db-cluster": Boxes,
+	"rate-limiter": Gauge,
 	cache: Layers,
 	queue: ListOrdered,
 };
+
+/** Catalog presets get their own icon so a CDN does not look like any other cache. */
+export const PRESET_ICONS: Record<PresetId, typeof Server> = {
+	cdn: Globe,
+	"api-gateway": ShieldCheck,
+	"web-server": MonitorCog,
+	"external-api": Plug,
+	"object-storage": Archive,
+	"search-engine": Search,
+	"message-broker": MessagesSquare,
+};
+
+export function nodeIcon(node: Pick<ExperimentNode, "kind" | "preset">) {
+	return node.preset ? PRESET_ICONS[node.preset] : NODE_ICONS[node.kind];
+}
+
+export function catalogIcon(entry: CatalogEntry) {
+	return entry.id in PRESET_ICONS
+		? PRESET_ICONS[entry.id as PresetId]
+		: NODE_ICONS[entry.kind];
+}
+
+/** Translation key of what a node is: its preset ("CDN") or its kind ("Cache"). */
+export function nodeTypeKey(node: Pick<ExperimentNode, "kind" | "preset">) {
+	return node.preset ? `catalog.${node.preset}.label` : `kinds.${node.kind}`;
+}
 
 export const FAULT_ICON = HardDriveDownload;
 
@@ -26,16 +71,5 @@ export function seriesColor(index: number): string {
 	return `var(--series-${(((index % 8) + 8) % 8) + 1})`;
 }
 
-export const WORKER_KINDS: NodeKind[] = [
-	"service",
-	"database",
-	"cache",
-	"queue",
-];
-export const ADDABLE_KINDS: NodeKind[] = [
-	"load-balancer",
-	"service",
-	"database",
-	"cache",
-	"queue",
-];
+/** The add-component menu: every catalog entry, grouped by category. */
+export const ADDABLE = CATALOG;

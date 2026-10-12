@@ -4,11 +4,13 @@ import type {
 	FaultInput,
 	NodeInput,
 	RatePhase,
+	WorkerInput,
 } from "@faultworks/engine";
 import {
 	type Experiment,
 	type ExperimentNode,
 	LIMITS,
+	type WorkerConfig,
 	type Workload,
 } from "./schema.ts";
 
@@ -79,6 +81,18 @@ export function defaultLabel(node: ExperimentNode): string {
 
 const toUs = (ms: number) => Math.max(1, Math.round(ms * US_PER_MS));
 
+const worker = (c: WorkerConfig): WorkerInput => ({
+	capacity: c.capacity,
+	queueCapacity: c.queueCapacity,
+	serviceTimeUs: toUs(c.serviceTimeMs),
+	distribution: c.serviceTimeDistribution,
+	contention: c.contention,
+	coherency: c.coherency,
+	queueTimeoutUs:
+		c.queueTimeoutMs === null ? null : c.queueTimeoutMs * US_PER_MS,
+	parallel: c.callMode === "parallel",
+});
+
 /** Compiles an experiment that already passed `parseExperiment`/`checkExperiment`. */
 export function compileExperiment(experiment: Experiment): CompiledExperiment {
 	const nodes = experiment.model.nodes;
@@ -109,25 +123,29 @@ export function compileExperiment(experiment: Experiment): CompiledExperiment {
 						: null,
 				};
 			}
+			case "rate-limiter":
+				return {
+					kind: "rate-limiter",
+					id: n.id,
+					ratePerSec: n.config.ratePerSec,
+					burst: n.config.burst,
+				};
+			case "db-cluster":
+				return {
+					kind: "db-cluster",
+					id: n.id,
+					writeRatio: n.config.writeRatio,
+					failoverUs: n.config.failoverMs * US_PER_MS,
+				};
 			case "cache":
 				return {
 					kind: "cache",
 					id: n.id,
-					capacity: n.config.capacity,
-					queueCapacity: n.config.queueCapacity,
-					serviceTimeUs: toUs(n.config.serviceTimeMs),
-					distribution: n.config.serviceTimeDistribution,
+					...worker(n.config),
 					hitRatio: n.config.hitRatio,
 				};
 			default:
-				return {
-					kind: n.kind,
-					id: n.id,
-					capacity: n.config.capacity,
-					queueCapacity: n.config.queueCapacity,
-					serviceTimeUs: toUs(n.config.serviceTimeMs),
-					distribution: n.config.serviceTimeDistribution,
-				};
+				return { kind: n.kind, id: n.id, ...worker(n.config) };
 		}
 	});
 
@@ -145,6 +163,9 @@ export function compileExperiment(experiment: Experiment): CompiledExperiment {
 		latencyUs: Math.round(l.latencyMs * US_PER_MS),
 		timeoutUs: l.timeoutMs === null ? null : l.timeoutMs * US_PER_MS,
 		retries: l.retries,
+		retryBackoffUs: Math.round(l.retryBackoffMs * US_PER_MS),
+		retryJitter: l.retryJitter,
+		retryBudget: l.retryBudget,
 		circuitBreaker: l.circuitBreaker.enabled
 			? {
 					failureThreshold: l.circuitBreaker.failureThreshold,
@@ -175,6 +196,7 @@ export function compileExperiment(experiment: Experiment): CompiledExperiment {
 					untilUs: f.untilMs === null ? null : f.untilMs * US_PER_MS,
 					factor: f.factor,
 					addUs: Math.round(f.addMs * US_PER_MS),
+					ramp: f.ramp,
 				};
 			case "error-rate":
 				return {
@@ -243,6 +265,7 @@ export function compileExperiment(experiment: Experiment): CompiledExperiment {
 			arrival: experiment.workload.arrival,
 			phases: compilePhases(experiment.workload),
 			timeoutUs: experiment.workload.timeoutMs * US_PER_MS,
+			propagateDeadline: experiment.workload.propagateDeadline,
 			faults,
 		},
 		topology: {

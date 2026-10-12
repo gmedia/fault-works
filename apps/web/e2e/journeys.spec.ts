@@ -51,8 +51,8 @@ test("anyone can build a system from a template, break it and run it", async ({ 
 	// Add a cache in front of the database, from the API's settings.
 	await page.getByRole("tab", { name: "Component" }).click();
 	await page.getByRole("button", { name: /^API/ }).first().click();
-	const addRow = page.getByText("Add a component called from here").locator("..");
-	await addRow.getByRole("button", { name: "Cache", exact: true }).click();
+	await page.getByRole("button", { name: "Add a component called from here" }).click();
+	await page.getByRole("menuitem", { name: /^Cache/ }).click();
 	await expect(page.getByLabel("Hit ratio")).toBeVisible();
 
 	// Break the database with a slowdown.
@@ -154,7 +154,7 @@ test("export downloads the experiment and the result artifact", async ({ page })
 	]);
 	expect(download.suggestedFilename()).toBe("hanging-backend.result.json");
 	const artifact = JSON.parse(await readFile((await download.path()) as string, "utf8"));
-	expect(artifact.engineVersion).toBe("0.2.0");
+	expect(artifact.engineVersion).toBe("0.3.0");
 	expect(artifact.inputDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
 	expect(artifact.metrics.failed).toBe(355);
 	expect(artifact.experiment.experimentId).toBe("hanging-backend");

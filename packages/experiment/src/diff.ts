@@ -90,6 +90,14 @@ function flatten(experiment: Experiment): Map<string, Entry> {
 		"workload.timeoutMs",
 		w.timeoutMs,
 	);
+	put(
+		map,
+		"workload.propagateDeadline",
+		"traffic",
+		"",
+		"workload.propagateDeadline",
+		w.propagateDeadline,
+	);
 	w.bursts.forEach((b, i) => {
 		const label = String(i + 1);
 		put(
@@ -205,22 +213,66 @@ function flatten(experiment: Experiment): Map<string, Entry> {
 					.map((l) => l.target)
 					.join(", "),
 			);
-		} else if (node.kind !== "client") {
-			const c = node.config;
+		} else if (node.kind === "rate-limiter") {
 			put(
 				map,
-				`${base}.capacity`,
+				`${base}.ratePerSec`,
 				"node",
 				label,
-				node.kind === "queue" ? "queue.consumers" : "worker.capacity",
-				c.capacity,
+				"limiter.ratePerSec",
+				node.config.ratePerSec,
 			);
+			put(
+				map,
+				`${base}.burst`,
+				"node",
+				label,
+				"limiter.burst",
+				node.config.burst,
+			);
+		} else if (node.kind === "db-cluster") {
+			put(
+				map,
+				`${base}.writeRatio`,
+				"node",
+				label,
+				"cluster.writeRatio",
+				node.config.writeRatio,
+			);
+			put(
+				map,
+				`${base}.failoverMs`,
+				"node",
+				label,
+				"cluster.failoverMs",
+				node.config.failoverMs,
+			);
+			// The first downstream is the primary; the rest are replicas in read order.
+			const out = experiment.model.links
+				.filter((l) => l.source === node.id)
+				.map((l) => l.target);
+			put(map, `${base}.order`, "node", label, "order", out, out.join(", "));
+		} else if (node.kind !== "client") {
+			const c = node.config;
+			const capacityField =
+				node.kind === "queue"
+					? "queue.consumers"
+					: node.kind === "pooler"
+						? "pooler.poolSize"
+						: node.kind === "database"
+							? "database.maxConnections"
+							: "worker.capacity";
+			put(map, `${base}.capacity`, "node", label, capacityField, c.capacity);
 			put(
 				map,
 				`${base}.queueCapacity`,
 				"node",
 				label,
-				node.kind === "queue" ? "queue.backlog" : "worker.queueCapacity",
+				node.kind === "queue"
+					? "queue.backlog"
+					: node.kind === "pooler"
+						? "pooler.maxWaiting"
+						: "worker.queueCapacity",
 				c.queueCapacity,
 			);
 			put(
@@ -238,6 +290,41 @@ function flatten(experiment: Experiment): Map<string, Entry> {
 				label,
 				"worker.serviceTimeDistribution",
 				c.serviceTimeDistribution,
+			);
+			put(
+				map,
+				`${base}.contention`,
+				"node",
+				label,
+				"worker.contention",
+				c.contention,
+			);
+			put(
+				map,
+				`${base}.coherency`,
+				"node",
+				label,
+				"worker.coherency",
+				c.coherency,
+			);
+			put(
+				map,
+				`${base}.queueTimeoutMs`,
+				"node",
+				label,
+				node.kind === "pooler"
+					? "pooler.waitTimeoutMs"
+					: "worker.queueTimeoutMs",
+				c.queueTimeoutMs,
+				c.queueTimeoutMs === null ? "none" : undefined,
+			);
+			put(
+				map,
+				`${base}.callMode`,
+				"node",
+				label,
+				"worker.callMode",
+				c.callMode,
 			);
 			if (node.kind === "cache")
 				put(
@@ -273,6 +360,31 @@ function flatten(experiment: Experiment): Map<string, Entry> {
 			link.timeoutMs === null ? "none" : undefined,
 		);
 		put(map, `${base}.retries`, "link", label, "link.retries", link.retries);
+		put(
+			map,
+			`${base}.retryBackoffMs`,
+			"link",
+			label,
+			"link.retryBackoffMs",
+			link.retryBackoffMs,
+		);
+		put(
+			map,
+			`${base}.retryJitter`,
+			"link",
+			label,
+			"link.retryJitter",
+			link.retryJitter,
+		);
+		put(
+			map,
+			`${base}.retryBudget`,
+			"link",
+			label,
+			"link.retryBudget",
+			link.retryBudget,
+			link.retryBudget === null ? "none" : undefined,
+		);
 		put(
 			map,
 			`${base}.breaker.enabled`,
@@ -329,6 +441,7 @@ function flatten(experiment: Experiment): Map<string, Entry> {
 			if (f.kind === "slowdown") {
 				put(map, `${base}.factor`, "fault", f.id, "fault.factor", f.factor);
 				put(map, `${base}.addMs`, "fault", f.id, "fault.addMs", f.addMs);
+				put(map, `${base}.ramp`, "fault", f.id, "fault.ramp", f.ramp);
 			} else if (f.kind === "error-rate" || f.kind === "link-loss")
 				put(map, `${base}.rate`, "fault", f.id, "fault.rate", f.rate);
 			else if (f.kind === "capacity")

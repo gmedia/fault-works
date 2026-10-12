@@ -18,9 +18,11 @@ export {
 	DEFAULT_LINK,
 	DEFAULT_WORKER,
 	faultTargets,
+	linkProblem,
 	makeFault,
 	makeLink,
 	makeNode,
+	PLAIN_WORKER,
 	randomSeed,
 	removeLink,
 	removeNode,
@@ -46,6 +48,14 @@ export {
 } from "./import.ts";
 export { decodeMessage, type Message, msg } from "./messages.ts";
 export { migrate } from "./migrate.ts";
+export {
+	CATALOG,
+	CATALOG_CATEGORIES,
+	type CatalogCategory,
+	type CatalogEntry,
+	catalogEntry,
+	presetFits,
+} from "./presets.ts";
 export * from "./schema.ts";
 export { sha256Hex } from "./sha256.ts";
 export {

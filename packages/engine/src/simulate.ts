@@ -14,7 +14,7 @@ import type {
 	SimEvent,
 } from "./types.ts";
 
-export const ENGINE_VERSION = "0.2.0";
+export const ENGINE_VERSION = "0.3.0";
 
 /**
  * Same-time ordering. Lower runs first. This table is part of the reproducibility contract:
@@ -52,6 +52,9 @@ type Pending = Scheduled &
 		| { type: "service-complete"; node: number; call: number; epoch: number }
 		| { type: "job-complete"; node: number; job: number; epoch: number }
 		| { type: "call-timeout"; call: number }
+		| { type: "queue-timeout"; node: number; call: number; epoch: number }
+		| { type: "cluster-detect"; cluster: number; edge: number; up: boolean }
+		| { type: "deferred"; id: number }
 		| { type: "deadline"; req: number }
 		| { type: "probe-send"; lb: number }
 		| { type: "arrival" }
@@ -63,7 +66,18 @@ type PendingInit = Pending extends infer P
 		: never
 	: never;
 
-type WorkerNode = Exclude<NodeInput, { kind: "client" | "load-balancer" }>;
+type WorkerNode = Exclude<
+	NodeInput,
+	{ kind: "client" | "load-balancer" | "rate-limiter" | "db-cluster" }
+>;
+type ClusterNode = Extract<NodeInput, { kind: "db-cluster" }>;
+type LimiterNode = Extract<NodeInput, { kind: "rate-limiter" }>;
+type SlowdownFault = Extract<FaultInput, { kind: "slowdown" }>;
+
+/** Exponential backoff never waits longer than this between two attempts. */
+const MAX_BACKOFF_US = 30_000_000;
+/** A retry budget never holds more than this many retries in reserve. */
+const RETRY_BUDGET_CAP = 10;
 
 type Outcome =
 	| { ok: true }
@@ -96,14 +110,31 @@ interface WorkerState {
 	downBehavior: FaultBehavior;
 	activeCrash: number;
 	busy: Set<number>;
+	/** FIFO of call (or job) ids; ids that left early stay in the array but not in `queued`. */
 	waiting: number[];
 	waitingHead: number;
+	/** Calls currently waiting (not used by queue nodes, whose backlog never times out). */
+	queued: Set<number>;
 	rng: Rng;
 	capacityOverride: number | null;
-	slowFactor: number;
-	slowAddUs: Micros;
+	/** Active slowdown faults, by fault index. */
+	slowdowns: number[];
 	errorRate: number;
 	flushed: boolean;
+}
+
+interface ClusterState {
+	/** Edge index of the current primary. */
+	primary: number;
+	/** Edges whose target the cluster has noticed is down. */
+	knownDown: Set<number>;
+	rr: number;
+	rng: Rng;
+}
+
+interface LimiterState {
+	tokens: number;
+	lastUs: Micros;
 }
 
 interface BalancerState {
@@ -156,8 +187,19 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 
 	const workers = new Map<number, WorkerState>();
 	const balancers = new Map<number, BalancerState>();
+	const clusters = new Map<number, ClusterState>();
+	const limiters = new Map<number, LimiterState>();
 	nodes.forEach((n, i) => {
-		if (n.kind === "load-balancer") {
+		if (n.kind === "db-cluster")
+			clusters.set(i, {
+				primary: (outgoing[i] as number[])[0] ?? -1,
+				knownDown: new Set(),
+				rr: 0,
+				rng: createRng(input.seed, `cluster:${n.id}`),
+			});
+		else if (n.kind === "rate-limiter")
+			limiters.set(i, { tokens: n.burst, lastUs: 0 });
+		else if (n.kind === "load-balancer") {
 			const out = outgoing[i] as number[];
 			balancers.set(i, {
 				rrPointer: 0,
@@ -176,10 +218,10 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 				busy: new Set(),
 				waiting: [],
 				waitingHead: 0,
+				queued: new Set(),
 				rng: createRng(input.seed, `service:${n.id}`),
 				capacityOverride: null,
-				slowFactor: 1,
-				slowAddUs: 0,
+				slowdowns: [],
 				errorRate: 0,
 				flushed: false,
 			});
@@ -189,6 +231,15 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 		if (e.circuitBreaker)
 			breakers.set(i, { state: "closed", failures: 0, generation: 0 });
 	});
+	const retryBudget = new Map<number, number>();
+	const deferred = new Map<number, () => void>();
+	let deferredSeq = 0;
+	/** Runs `fn` at simulated time `t`, in the transfer slot of the same-time order. */
+	const defer = (t: Micros, fn: () => void) => {
+		const id = deferredSeq++;
+		deferred.set(id, fn);
+		schedule({ type: "deferred", t, priority: PRIORITY.transfer, id });
+	};
 	const linkAddUs = new Map<number, Micros>();
 	const linkLoss = new Map<number, number>();
 	const linkRng = new Map<number, Rng>();
@@ -339,20 +390,58 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 			});
 	};
 
-	/** A call with the edge's retry policy. */
+	const backoffUs = (edge: number, attempt: number): Micros => {
+		const config = edges[edge] as EdgeInput;
+		if (config.retryBackoffUs <= 0) return 0;
+		const base = Math.min(
+			MAX_BACKOFF_US,
+			config.retryBackoffUs * 2 ** (attempt - 1),
+		);
+		return config.retryJitter
+			? Math.floor(edgeRng(edge).next() * base)
+			: Math.round(base);
+	};
+
+	/** A call with the edge's retry policy: attempts, backoff, jitter and budget. */
 	const callEdge = (
 		edge: number,
 		req: number,
 		t: Micros,
 		onDone: (outcome: Outcome, t: Micros) => void,
 	) => {
-		const retries = (edges[edge] as EdgeInput).retries;
-		const tryOnce = (attempt: number, at: Micros) =>
+		const config = edges[edge] as EdgeInput;
+		const tryOnce = (attempt: number, at: Micros) => {
+			if (attempt === 1 && config.retryBudget !== null)
+				retryBudget.set(
+					edge,
+					Math.min(
+						RETRY_BUDGET_CAP,
+						(retryBudget.get(edge) ?? RETRY_BUDGET_CAP) + config.retryBudget,
+					),
+				);
 			attemptCall(edge, req, attempt, at, (outcome, doneAt) => {
-				if (!outcome.ok && attempt <= retries && !terminal[req])
-					tryOnce(attempt + 1, doneAt);
-				else onDone(outcome, doneAt);
+				if (outcome.ok || attempt > config.retries || terminal[req]) {
+					onDone(outcome, doneAt);
+					return;
+				}
+				if (config.retryBudget !== null) {
+					const balance = retryBudget.get(edge) ?? RETRY_BUDGET_CAP;
+					if (balance < 1) {
+						onDone(outcome, doneAt); // budget spent: give up instead of piling on
+						return;
+					}
+					retryBudget.set(edge, balance - 1);
+				}
+				const wait = backoffUs(edge, attempt);
+				if (wait === 0) tryOnce(attempt + 1, doneAt);
+				// The caller keeps its slot while it sleeps, as a blocking client would.
+				else
+					defer(doneAt + wait, () => {
+						if (terminal[req]) onDone(outcome, now);
+						else tryOnce(attempt + 1, now);
+					});
 			});
+		};
 		tryOnce(1, t);
 	};
 
@@ -365,6 +454,11 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 			emit({ kind: "late-response", t, req: call.req, node: target });
 		// Nobody is waiting for a timed-out call any more. A terminal request's answer still travels
 		// back, because every caller up the chain holds a slot until its own call returns.
+		sendBack(call, outcome, t);
+	};
+
+	/** Returns an outcome to the caller over the edge, unless the caller already gave up. */
+	const sendBack = (call: Call, outcome: Outcome, t: Micros) => {
 		if (call.done) return;
 		const latency = effectiveLatency(call.edge);
 		if (latency === 0) call.onDone(outcome, t);
@@ -388,6 +482,8 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 		lastNode[call.req] = node;
 		const config = nodes[node] as NodeInput;
 		if (config.kind === "load-balancer") balance(node, call, t);
+		else if (config.kind === "rate-limiter") limit(node, call, t);
+		else if (config.kind === "db-cluster") routeCluster(node, call, t);
 		else if (config.kind === "client")
 			respond(call, { ok: false, reason: "refused", origin: node }, t);
 		else admit(node, call, t);
@@ -470,6 +566,127 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 		next(t, null);
 	};
 
+	const limit = (node: number, call: Call, t: Micros) => {
+		const state = limiters.get(node) as LimiterState;
+		const config = nodes[node] as LimiterNode;
+		state.tokens = Math.min(
+			config.burst,
+			state.tokens + ((t - state.lastUs) * config.ratePerSec) / 1_000_000,
+		);
+		state.lastUs = t;
+		const edge = (outgoing[node] as number[])[0];
+		if (state.tokens < 1 || edge === undefined) {
+			respond(call, { ok: false, reason: "rate-limited", origin: node }, t);
+			return;
+		}
+		state.tokens -= 1;
+		callEdge(edge, call.req, t, (outcome, at) => respond(call, outcome, at));
+	};
+
+	const routeCluster = (node: number, call: Call, t: Micros) => {
+		const state = clusters.get(node) as ClusterState;
+		const config = nodes[node] as ClusterNode;
+		const out = outgoing[node] as number[];
+		// Always draw, so the read/write split does not depend on which nodes are down.
+		const write = state.rng.next() < config.writeRatio;
+		let edge = -1;
+		if (write) {
+			if (!state.knownDown.has(state.primary)) edge = state.primary;
+		} else {
+			const replicas = out.filter(
+				(e) => e !== state.primary && !state.knownDown.has(e),
+			);
+			if (replicas.length > 0) {
+				edge = replicas[state.rr % replicas.length] as number;
+				state.rr++;
+			} else if (!state.knownDown.has(state.primary)) edge = state.primary;
+		}
+		if (edge === -1) {
+			respond(
+				call,
+				{ ok: false, reason: "no-healthy-backend", origin: node },
+				t,
+			);
+			return;
+		}
+		emit({
+			kind: "routed",
+			t,
+			req: call.req,
+			call: call.id,
+			node,
+			to: (edges[edge] as EdgeInput).target,
+		});
+		callEdge(edge, call.req, t, (outcome, at) => respond(call, outcome, at));
+	};
+
+	const onClusterDetect = (
+		cluster: number,
+		edge: number,
+		up: boolean,
+		t: Micros,
+	) => {
+		const state = clusters.get(cluster) as ClusterState;
+		const target = (edges[edge] as EdgeInput).target;
+		const worker = workers.get(target);
+		// The node changed state again before the cluster noticed; that change has its own check.
+		if (!worker || worker.up !== up) return;
+		if (!up) {
+			if (state.knownDown.has(edge)) return;
+			state.knownDown.add(edge);
+			emit({
+				kind: "health-changed",
+				t,
+				node: target,
+				from: cluster,
+				healthy: false,
+				fault: worker.activeCrash,
+			});
+			if (edge === state.primary) {
+				const next = (outgoing[cluster] as number[]).find(
+					(e) => e !== edge && !state.knownDown.has(e),
+				);
+				if (next !== undefined) {
+					state.primary = next;
+					emit({
+						kind: "promoted",
+						t,
+						node: cluster,
+						from: target,
+						to: (edges[next] as EdgeInput).target,
+					});
+				}
+			}
+		} else {
+			if (!state.knownDown.delete(edge)) return;
+			emit({
+				kind: "health-changed",
+				t,
+				node: target,
+				from: cluster,
+				healthy: true,
+				fault: worker.activeCrash,
+			});
+		}
+	};
+
+	/** Schedules every cluster in front of `node` to notice that it went down or came back. */
+	const notifyClusters = (node: number, up: boolean, t: Micros) => {
+		for (const [cluster] of clusters) {
+			const config = nodes[cluster] as ClusterNode;
+			for (const edge of outgoing[cluster] as number[])
+				if ((edges[edge] as EdgeInput).target === node)
+					schedule({
+						type: "cluster-detect",
+						t: t + config.failoverUs,
+						priority: PRIORITY.probeResult,
+						cluster,
+						edge,
+						up,
+					});
+		}
+	};
+
 	const effectiveCapacity = (node: number) => {
 		const config = nodes[node] as WorkerNode;
 		const state = workers.get(node) as WorkerState;
@@ -478,14 +695,48 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 			: Math.min(config.capacity, state.capacityOverride);
 	};
 
-	const ownTime = (node: number): Micros => {
+	/** Own work for one call starting now; the node's busy set already includes it. */
+	const ownTime = (node: number, t: Micros): Micros => {
 		const config = nodes[node] as WorkerNode;
 		const state = workers.get(node) as WorkerState;
 		const base =
 			config.distribution === "fixed"
 				? config.serviceTimeUs
 				: Math.max(1, Math.round(state.rng.exponential(config.serviceTimeUs)));
-		return Math.max(1, Math.round(base * state.slowFactor + state.slowAddUs));
+		let factor = 1;
+		let addUs = 0;
+		for (const index of state.slowdowns) {
+			const f = input.faults[index] as SlowdownFault;
+			const share =
+				f.ramp && f.untilUs !== null && f.untilUs > f.atUs
+					? Math.min(1, Math.max(0, (t - f.atUs) / (f.untilUs - f.atUs)))
+					: 1;
+			factor *= 1 + (f.factor - 1) * share;
+			addUs += f.addUs * share;
+		}
+		const n = Math.max(1, state.busy.size);
+		const usl =
+			1 + config.contention * (n - 1) + config.coherency * n * (n - 1);
+		return Math.max(1, Math.round(base * factor * usl + addUs));
+	};
+
+	/** The node gives up on a call without doing the work. */
+	const abandon = (
+		node: number,
+		call: Call,
+		reason: "queue-timeout" | "deadline",
+		t: Micros,
+	) => {
+		emit({ kind: "abandoned", t, req: call.req, call: call.id, node, reason });
+		sendBack(
+			call,
+			{
+				ok: false,
+				reason: reason === "deadline" ? "timeout" : "queue-timeout",
+				origin: node,
+			},
+			t,
+		);
 	};
 
 	const admit = (node: number, call: Call, t: Micros) => {
@@ -495,6 +746,14 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 			if (state.downBehavior === "refuse")
 				respond(call, { ok: false, reason: "refused", origin: node }, t);
 			// `hang`: the connection attempt never completes; only a timeout ends it.
+			return;
+		}
+		if (
+			input.propagateDeadline &&
+			terminal[call.req] &&
+			config.kind !== "queue"
+		) {
+			abandon(node, call, "deadline", t);
 			return;
 		}
 		if (state.errorRate > 0 && state.rng.next() < state.errorRate) {
@@ -529,17 +788,27 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 		}
 		if (state.busy.size < effectiveCapacity(node))
 			startService(node, call, t, 0);
-		else if (state.waiting.length - state.waitingHead < config.queueCapacity) {
+		else if (state.queued.size < config.queueCapacity) {
 			call.queuedAt = t;
 			state.waiting.push(call.id);
+			state.queued.add(call.id);
 			emit({
 				kind: "enqueued",
 				t,
 				req: call.req,
 				call: call.id,
 				node,
-				depth: state.waiting.length - state.waitingHead,
+				depth: state.queued.size,
 			});
+			if (config.queueTimeoutUs !== null)
+				schedule({
+					type: "queue-timeout",
+					t: t + config.queueTimeoutUs,
+					priority: PRIORITY.timeout,
+					node,
+					call: call.id,
+					epoch: state.epoch,
+				});
 		} else respond(call, { ok: false, reason: "queue-full", origin: node }, t);
 	};
 
@@ -551,6 +820,7 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 	) => {
 		const state = workers.get(node) as WorkerState;
 		state.busy.add(call.id);
+		const workUs = ownTime(node, t);
 		emit({
 			kind: "service-start",
 			t,
@@ -558,10 +828,11 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 			call: call.id,
 			node,
 			queuedUs,
+			workUs,
 		});
 		schedule({
 			type: "service-complete",
-			t: t + ownTime(node),
+			t: t + workUs,
 			priority: PRIORITY.serviceComplete,
 			node,
 			call: call.id,
@@ -584,7 +855,7 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 		});
 		schedule({
 			type: "job-complete",
-			t: t + ownTime(node),
+			t: t + ownTime(node, t),
 			priority: PRIORITY.serviceComplete,
 			node,
 			job: job.id,
@@ -620,14 +891,19 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 				});
 				schedule({
 					type: "job-complete",
-					t: t + ownTime(node),
+					t: t + ownTime(node, t),
 					priority: PRIORITY.serviceComplete,
 					node,
 					job: job.id,
 					epoch: state.epoch,
 				});
 			} else {
+				if (!state.queued.delete(id)) continue; // already left the queue
 				const call = calls[id] as Call;
+				if (input.propagateDeadline && terminal[call.req]) {
+					abandon(node, call, "deadline", t);
+					continue;
+				}
 				startService(node, call, t, t - call.queuedAt);
 			}
 		}
@@ -641,6 +917,23 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 		onDone: (outcome: Outcome, t: Micros) => void,
 	) => {
 		const out = outgoing[node] as number[];
+		const config = nodes[node] as WorkerNode;
+		if (config.parallel && out.length > 1 && !terminal[req]) {
+			let pending = out.length;
+			let settled = false;
+			for (const edge of out)
+				callEdge(edge, req, t, (outcome, at) => {
+					if (settled) return;
+					if (!outcome.ok) {
+						settled = true; // fail fast; the other calls finish on their own
+						onDone(outcome, at);
+					} else if (--pending === 0) {
+						settled = true;
+						onDone({ ok: true }, at);
+					}
+				});
+			return;
+		}
 		const step = (i: number, at: Micros) => {
 			if (i >= out.length || terminal[req]) {
 				onDone({ ok: true }, at);
@@ -727,10 +1020,14 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 			emit({ kind: "node-down", t, node: fault.node, fault: index });
 			const config = nodes[fault.node] as NodeInput;
 			const busy = [...state.busy];
-			const waiting = state.waiting.slice(state.waitingHead);
+			const waiting = state.waiting
+				.slice(state.waitingHead)
+				.filter((id) => config.kind === "queue" || state.queued.has(id));
 			state.busy.clear();
 			state.waiting = [];
 			state.waitingHead = 0;
+			state.queued.clear();
+			notifyClusters(fault.node, false, t);
 			if (config.kind === "queue") {
 				for (const id of [...busy, ...waiting]) {
 					const job = jobs[id] as Job;
@@ -781,10 +1078,8 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 		else {
 			const state = workers.get(fault.node);
 			if (!state) return;
-			if (fault.kind === "slowdown") {
-				state.slowFactor *= fault.factor;
-				state.slowAddUs += fault.addUs;
-			} else if (fault.kind === "error-rate")
+			if (fault.kind === "slowdown") state.slowdowns.push(index);
+			else if (fault.kind === "error-rate")
 				state.errorRate = Math.min(1, state.errorRate + fault.rate);
 			else if (fault.kind === "capacity")
 				state.capacityOverride =
@@ -803,6 +1098,7 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 			state.up = true;
 			state.activeCrash = -1;
 			emit({ kind: "node-up", t, node: fault.node, fault: index });
+			notifyClusters(fault.node, true, t);
 			return;
 		}
 		emit({ kind: "fault-end", t, fault: index });
@@ -816,10 +1112,9 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 		else {
 			const state = workers.get(fault.node);
 			if (!state) return;
-			if (fault.kind === "slowdown") {
-				state.slowFactor /= fault.factor;
-				state.slowAddUs -= fault.addUs;
-			} else if (fault.kind === "error-rate")
+			if (fault.kind === "slowdown")
+				state.slowdowns = state.slowdowns.filter((i) => i !== index);
+			else if (fault.kind === "error-rate")
 				state.errorRate = Math.max(0, state.errorRate - fault.rate);
 			else if (fault.kind === "capacity") {
 				// Recompute from the capacity faults still active on this node.
@@ -1043,6 +1338,26 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 							},
 							now,
 						);
+					break;
+				}
+				case "queue-timeout": {
+					const state = workers.get(item.node);
+					const call = calls[item.call] as Call;
+					if (
+						state &&
+						state.epoch === item.epoch &&
+						state.queued.delete(item.call)
+					)
+						abandon(item.node, call, "queue-timeout", now);
+					break;
+				}
+				case "cluster-detect":
+					onClusterDetect(item.cluster, item.edge, item.up, now);
+					break;
+				case "deferred": {
+					const fn = deferred.get(item.id);
+					deferred.delete(item.id);
+					fn?.();
 					break;
 				}
 				case "deadline":

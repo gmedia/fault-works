@@ -1,0 +1,273 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "fan-out-tail-latency",
+	"title": "Fan-out: satu shard lambat, semua ikut lambat",
+	"question": "Kalau setiap pencarian memanggil lima shard sekaligus, apa akibatnya saat satu shard melambat?",
+	"description": "Layanan pencarian memanggil lima shard secara paralel dan menunggu semuanya menjawab. Di detik 20 sampai 40, Shard 3 menjadi delapan kali lebih lambat.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "search",
+				"kind": "service",
+				"label": "Layanan pencarian",
+				"config": {
+					"capacity": 50,
+					"queueCapacity": 100,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "parallel"
+				}
+			},
+			{
+				"id": "shard-1",
+				"kind": "service",
+				"label": "Shard 1",
+				"preset": "search-engine",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 200,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "shard-2",
+				"kind": "service",
+				"label": "Shard 2",
+				"preset": "search-engine",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 200,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "shard-3",
+				"kind": "service",
+				"label": "Shard 3",
+				"preset": "search-engine",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 200,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "shard-4",
+				"kind": "service",
+				"label": "Shard 4",
+				"preset": "search-engine",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 200,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "shard-5",
+				"kind": "service",
+				"label": "Shard 5",
+				"preset": "search-engine",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 200,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-search",
+				"source": "client",
+				"target": "search",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "search-shard-1",
+				"source": "search",
+				"target": "shard-1",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "search-shard-2",
+				"source": "search",
+				"target": "shard-2",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "search-shard-3",
+				"source": "search",
+				"target": "shard-3",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "search-shard-4",
+				"source": "search",
+				"target": "shard-4",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "search-shard-5",
+				"source": "search",
+				"target": "shard-5",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": false,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "shard-3-slow",
+			"target": "shard-3",
+			"atMs": 20000,
+			"kind": "slowdown",
+			"untilMs": 40000,
+			"factor": 8,
+			"addMs": 0,
+			"ramp": false
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah, kecuali propagasi deadline dinyalakan.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Hampir semua pencarian ikut lambat, karena setiap pencarian harus menunggu Shard 3."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"search": {
+			"x": 300,
+			"y": 0
+		},
+		"shard-1": {
+			"x": 650,
+			"y": -320
+		},
+		"shard-2": {
+			"x": 650,
+			"y": -160
+		},
+		"shard-3": {
+			"x": 650,
+			"y": 0
+		},
+		"shard-4": {
+			"x": 650,
+			"y": 160
+		},
+		"shard-5": {
+			"x": 650,
+			"y": 320
+		}
+	}
+}

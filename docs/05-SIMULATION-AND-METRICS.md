@@ -1,6 +1,6 @@
 # Simulation Model, Metrics and Correctness Contract
 
-**Status:** engine `0.2.0`, metrics `0.2.0`. The in-app Model guide says the same in plain language, in Indonesian and English.
+**Status:** engine `0.3.0`, metrics `0.3.0`. The in-app Model guide says the same in plain language, in Indonesian and English.
 
 ## Model scope
 
@@ -16,9 +16,27 @@ Produces request arrivals at scheduled simulated times: constant rate (exact int
 
 Chooses a backend among those it considers healthy, by round robin, least connections (fewest open calls, ties by order) or seeded random. Without health checks every backend is healthy forever. With health checks it probes every backend each interval starting at time 0; a backend leaves rotation after the configured number of consecutive failed probes and returns after the configured number of successes. Probes bypass queues, answer instantly from a running component, and use no capacity, so a short interval only shows its benefit. `retries` lets the balancer try another backend after a failed call, which can mask a refusing backend. "Crashed" and "marked unhealthy" are distinct state changes; the gap between them is the amber hatched band in the UI.
 
+### Contention under load
+
+Every worker (service, database, pooler, cache, queue) has two coefficients from the Universal Scalability Law. With `n` busy slots when a call starts, its own work takes `base × (1 + α(n − 1) + β·n(n − 1))`. α (contention) is the share of work that must take turns; β (coherency) is a coordination cost that grows quadratically. With β above zero throughput peaks at about `√((1 − α)/β)` concurrent calls and falls beyond it. Both default to zero, except for databases created in the editor (α 0.02, β 0.0005, a peak near 44). The coefficients are illustrative, not measurements of any product. The factor is fixed when the call starts, not updated while it runs.
+
 ### Service and database
 
-Identical behavior; the kind is a label for the reader. N concurrency slots and a FIFO queue of bounded size; a call that finds no slot and a full queue fails with `queue-full`. Service time is fixed or exponential (seeded, per component stream). After its own work the component calls each downstream link in order while still holding its slot, so a slow dependency makes the caller's queue grow. A failure anywhere in the chain fails the call unless the link retries.
+Identical behavior apart from defaults; the kind is a label for the reader. N concurrency slots and a FIFO queue of bounded size; a call that finds no slot and a full queue fails with `queue-full`. Service time is fixed or exponential (seeded, per component stream). After its own work the component calls each downstream link in order while still holding its slot, so a slow dependency makes the caller's queue grow. A failure anywhere in the chain fails the call unless the link retries.
+
+A worker may call its downstream links one after another (default) or in parallel, waiting for the slowest and failing at the first failure. A worker may also have a queue wait limit: a call still waiting after that long leaves the queue and fails with `queue-timeout`.
+
+### Connection pooler
+
+A worker whose slots are server connections to the single component behind it, with a small own time (its overhead), a large waiting room and usually a wait limit. A call holds a connection only while its own call to the database runs, which is PgBouncer's transaction mode. Session mode is not modeled.
+
+### Rate limiter
+
+A token bucket in front of exactly one component, holding no slots. Tokens refill at `ratePerSec` up to `burst`; a call that finds less than one token fails at once with `rate-limited`.
+
+### Database cluster
+
+A router in front of two or more workers. The first link is the primary, the rest are replicas. Each call is a write with probability `writeRatio` (drawn from the `cluster:<id>` stream) and goes to the primary; reads round-robin over the replicas the cluster believes are up (the primary when none is). A crash or recovery is noticed `failoverMs` later; a dead primary is then replaced by the first replica believed up (`promoted` event), and a recovered node rejoins as a replica. Until the cluster notices, calls still go to the dead node. Replication is instant: no lag, no lost writes.
 
 ### Cache
 
@@ -30,14 +48,14 @@ Stores jobs up to its backlog limit and answers the caller immediately (or rejec
 
 ### Links
 
-Every link has one-way `latencyMs` added to each call and each answer, an optional call `timeoutMs` after which the caller gives up and frees its slot, `retries` (immediate, no backoff, same target) and an optional circuit breaker. The breaker counts consecutive failures; at `failureThreshold` it opens and rejects calls at once (`circuit-open`) for `openMs`, then lets one trial call through: success closes it, failure opens it again.
+Every link has one-way `latencyMs` added to each call and each answer, an optional call `timeoutMs` after which the caller gives up and frees its slot, `retries` to the same target, and an optional circuit breaker. Retries wait `retryBackoffMs × 2^(k−1)` (capped at 30 s) before retry k; with `retryJitter` each wait is drawn uniformly between zero and that value from the link's stream. A `retryBudget` deposits that share of a token per first attempt and spends one per retry, with a reserve and cap of 10; with no token left the call gives up. The caller keeps its slot while it waits out a backoff. The breaker counts consecutive failures; at `failureThreshold` it opens and rejects calls at once (`circuit-open`) for `openMs`, then lets one trial call through: success closes it, failure opens it again.
 
 ### Faults
 
 | Kind | Target | Effect during the window |
 |---|---|---|
 | `node-failure` | service, database, cache, queue | `refuse`: new connections and probes fail at once, work in progress is lost (`lost-in-crash`). `hang`: no answers; callers wait for their timeout. Recovery empties the queue. |
-| `slowdown` | worker | service time × `factor` + `addMs` |
+| `slowdown` | worker | service time × `factor` + `addMs`; with `ramp`, growing linearly from no effect at the start to full effect at the end |
 | `error-rate` | worker | a seeded share `rate` of arriving calls fail at once (`injected-error`) |
 | `capacity` | worker | concurrency becomes `capacity`; running work finishes |
 | `link-latency` | link | `addMs` added to each call and answer |
@@ -50,7 +68,8 @@ Several faults may be active at once. Crashes of the same component must not ove
 
 - **No cancellation.** A component does not know its caller gave up. Queued or running work continues, uses capacity, and its answer is discarded as a late response (ADR-013). The answer still travels back up the chain so that every caller releases the slot it held for the call; a timed-out request that reaches a slot later is served without calling anything downstream.
 - **Same-time ordering.** Faults, then probe results and breaker transitions, link transfers, service completions, timeouts, probe sends, arrivals. A response landing exactly on the deadline counts as on time.
-- **Randomness.** SFC32 seeded through SplitMix32 with one named stream per consumer: `arrivals`, `service:<id>`, `balancer:<id>` and `edge:<id>`. Adding a component never shifts another component's random numbers.
+- **Randomness.** SFC32 seeded through SplitMix32 with one named stream per consumer: `arrivals`, `service:<id>`, `balancer:<id>`, `cluster:<id>` and `edge:<id>`. Adding a component never shifts another component's random numbers.
+- **Deadline propagation.** Off by default. When on, a worker turns away a call whose request already ended, both on arrival and when its turn in the queue comes (`abandoned` with reason `deadline`, failure `timeout`). Work already running is not cancelled.
 - **Time** is integer microseconds; the 15-minute limit is far below the safe-integer range. A hard ceiling of 3,000,000 events stops a runaway input and the result says the run stopped early.
 - **Percentiles.** Nearest rank, always an observed sample, always shown with its sample count. Success latency excludes failures; a separate "all ended requests" set includes them, with timeouts counted as the full timeout.
 - **Censoring.** Requests without an outcome at the horizon are still in flight, never success or failure.
@@ -58,6 +77,7 @@ Several faults may be active at once. Crashes of the same component must not ove
 
 ## Metrics with definitions
 
+- **Contention and abandonment:** per component, mean and maximum own work compared with the base time, and calls that left a queue by wait limit or deadline. Database clusters report each promotion.
 - **Offered:** client attempts generated. **Succeeded:** answered at or before the deadline. **Failed:** ended without success, by reason (`no-healthy-backend`, `refused`, `queue-full`, `lost-in-crash`, `timeout`, `circuit-open`, `injected-error`) and by originating component. **In flight:** no outcome at the horizon.
 - **Latency:** completion minus arrival for ended requests. p50/p95/p99 of successful requests with n; mean and p95 of all ended requests; total client time spent waiting on failed requests (percentiles hide this once more than 5 % of requests fail).
 - **Calls:** every attempt over a link, retries included, so calls can far exceed requests. Per component: calls, failures originating there, call latency, late responses, peak queue, slot-time busy. Per link: calls, retries, failures, breaker openings. Caches report hit ratio; queues report jobs done, failed, peak backlog and waiting times.
@@ -78,7 +98,7 @@ Automated tests cover the rest: byte-identical traces for the same input, seed a
 
 ## Explicit limits
 
-No TCP, TLS, packets, connection pooling, keep-alive or DNS; no retry backoff, rate limiting, bulkheads or autoscaling; no CPU, memory, garbage collection or OS scheduling; no claim of parity with NGINX, HAProxy, Envoy, Kafka or any product. Any comparison against a real system requires aligned arrival pattern, concurrency semantics, failure semantics, output definitions and measurement uncertainty.
+No TCP, TLS, packets, keep-alive or DNS; no bulkheads, autoscaling, pooler session mode or replication lag; no CPU, memory, garbage collection or OS scheduling; no claim of parity with NGINX, HAProxy, Envoy, Kafka or any product. Any comparison against a real system requires aligned arrival pattern, concurrency semantics, failure semantics, output definitions and measurement uncertainty.
 
 ## Quality of results
 

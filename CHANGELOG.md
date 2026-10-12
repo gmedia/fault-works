@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.0 (unreleased, 2026-10-12)
+
+Closer to real systems: databases slow down under too many connections, connection poolers, rate limiters, database clusters with failover, smarter retries, fan-out and deadline propagation, plus a catalog of everyday components. Engine `0.3.0`, schema `0.3.0`, metrics `0.3.0`; 0.2.0 files migrate with every new switch off and give identical results.
+
+### Simulation
+- Contention under load (Universal Scalability Law): workers have `contention` and `coherency`; with n busy slots own work takes `1 + α(n − 1) + β·n(n − 1)` times longer, so throughput peaks and then falls. Databases default to α 0.02, β 0.0005 (peak near 44 connections), no queue and 100 connections.
+- Connection pooler: a worker whose slots are server connections, with a wait limit (`queue-timeout`), mimicking PgBouncer's transaction mode.
+- Rate limiter: a token bucket in front of one component (`rate-limited`).
+- Database cluster: writes to the primary, reads round-robin to replicas, crashes noticed after a failover time, a dead primary replaced by the first live replica (`promoted` event).
+- Links: exponential retry backoff, full jitter and a Finagle-style retry budget; a caller keeps its slot while it waits out a backoff.
+- Workers can call everything behind them in parallel and wait for the slowest (fail fast on the first failure).
+- Deadline propagation: components skip work for requests whose client already gave up, on arrival and when their turn in the queue comes.
+- Slowdowns can ramp up gradually over their window, like a memory leak.
+
+### Experiment format and editing
+- Schema 0.3.0 with migration from 0.2.0; new node kinds `pooler`, `rate-limiter`, `db-cluster`; optional `preset` naming a catalog entry.
+- Component catalog: CDN, load balancer, API gateway, rate limiter, service, web server, relational database, connection pooler, database cluster, cache, search engine, object storage, worker queue, message broker and third-party API. Presets only set a name, icon and defaults; they add no behavior.
+- `linkProblem` refuses impossible links before they are made (cycles, self links, duplicates, into the client, balancer to balancer, a second exit from a single-exit component, a cluster pointing at a non-database). Adding a component after a single-exit component inserts it in between.
+- Four new templates: database behind a pooler, database cluster, CDN in front of an origin, API gateway.
+- Ten new built-in experiments in both languages: PostgreSQL with too many connections and with a pooler, database cluster failover, CDN purge at peak, flash sale without and with a rate limit, retries with backoff, deadline propagation, fan-out tail latency, and a memory leak health checks never see.
+
+### Metrics
+- Mean and maximum own work per component against its base, calls abandoned by queue timeout or deadline, promotions; new failure reasons and insights for contention, queue timeouts, refused connections, rate limiting, failover and skipped stale work.
+
+### Web app
+- Linking fixes: a drop anywhere on a card makes the link, impossible links are refused while dragging with the reason shown, "Connect to an existing one" only lists valid targets, and new unconnected components are placed below the graph.
+- Grouped add-component catalog on the canvas, in the inspector and on phones; settings for poolers, rate limiters, clusters (including choosing the primary), contention with peak-throughput hints, queue wait limits, parallel calls, retry backoff, jitter and budget, deadline propagation and gradual slowdowns.
+- Model guide section on why databases slow down when busy.
+
 ## 0.2.0 (unreleased, 2026-10-12)
 
 The fixed client, load balancer and servers shape becomes a free graph, the app speaks Indonesian first, and the workbench is designed for phones first. Engine `0.2.0`, schema `0.2.0`, metrics `0.2.0`; v0.1 files migrate automatically and produce the same results.

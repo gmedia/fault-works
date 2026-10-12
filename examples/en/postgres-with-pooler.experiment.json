@@ -1,0 +1,160 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "postgres-with-pooler",
+	"title": "PostgreSQL behind a connection pooler",
+	"question": "If a PgBouncer pool caps active connections at 40, does the same spike still take the database down?",
+	"description": "Identical to the experiment without a pooler, but the API calls PgBouncer in transaction mode. PgBouncer opens only 40 connections to the database; other requests wait in its queue for at most 1.5 seconds.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 300,
+					"queueCapacity": 1000,
+					"serviceTimeMs": 2,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "pgbouncer",
+				"kind": "pooler",
+				"label": "PgBouncer",
+				"config": {
+					"capacity": 40,
+					"queueCapacity": 5000,
+					"serviceTimeMs": 0.1,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": 1500,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "PostgreSQL",
+				"config": {
+					"capacity": 300,
+					"queueCapacity": 0,
+					"serviceTimeMs": 8,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-pgbouncer",
+				"source": "api",
+				"target": "pgbouncer",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "pgbouncer-db",
+				"source": "pgbouncer",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 1400,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 2000,
+		"propagateDeadline": false,
+		"bursts": [
+			{
+				"atMs": 20000,
+				"durationMs": 10000,
+				"extraRps": 1000
+			}
+		]
+	},
+	"faults": [],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Components do not know when their caller gave up, unless deadline propagation is on.",
+		"Numbers are scenario inputs, not measured performance of any product.",
+		"Database slowdown under many active connections follows the Universal Scalability Law with illustrative coefficients (contention 0.02, coherency 0.0005), not measured PostgreSQL numbers."
+	],
+	"expectedObservations": [
+		"The database stays near its sweet spot, so its throughput does not collapse.",
+		"Excess traffic waits in PgBouncer; some gives up after 1.5 seconds, but the system recovers as soon as the spike ends."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"pgbouncer": {
+			"x": 600,
+			"y": 0
+		},
+		"db": {
+			"x": 900,
+			"y": 0
+		}
+	}
+}

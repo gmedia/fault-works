@@ -8,6 +8,10 @@ export const TEMPLATE_IDS = [
 	"cache-database",
 	"worker-queue",
 	"microservices",
+	"pooled-database",
+	"db-cluster",
+	"cdn-origin",
+	"api-gateway",
 ] as const;
 export type TemplateId = (typeof TEMPLATE_IDS)[number];
 
@@ -22,6 +26,13 @@ export interface TemplateText {
 	auth: string;
 	worker: string;
 	server: (letter: string) => string;
+	pooler: string;
+	cluster: string;
+	primary: string;
+	replica: (n: number) => string;
+	cdn: string;
+	webServer: (letter: string) => string;
+	gateway: string;
 	assumptions: string[];
 }
 
@@ -40,6 +51,7 @@ function base(id: string, title: string, text: TemplateText): Experiment {
 			startMs: 0,
 			durationMs: 60_000,
 			timeoutMs: 1000,
+			propagateDeadline: false,
 			bursts: [],
 		},
 		faults: [],
@@ -70,8 +82,9 @@ export function templateExperiment(
 		label: string,
 		x: number,
 		y: number,
+		preset?: string,
 	) => {
-		const r = addNode(e, kind, { from, label, position: { x, y } });
+		const r = addNode(e, kind, { from, label, preset, position: { x, y } });
 		e = r.experiment;
 		return r.id;
 	};
@@ -128,6 +141,43 @@ export function templateExperiment(
 			e = addLink(e, api2, db).experiment;
 			place(auth, 840, -180);
 			place(db, 840, 20);
+			break;
+		}
+		case "pooled-database": {
+			const api = add("service", "client", text.api, 300, 0);
+			const pooler = add("pooler", api, text.pooler, 600, 0);
+			add("database", pooler, text.database, 900, 0);
+			break;
+		}
+		case "db-cluster": {
+			const api = add("service", "client", text.api, 300, 0);
+			const cluster = add("db-cluster", api, text.cluster, 600, 0);
+			add("database", cluster, text.primary, 900, -170);
+			add("database", cluster, text.replica(1), 900, 0);
+			add("database", cluster, text.replica(2), 900, 170);
+			break;
+		}
+		case "cdn-origin": {
+			const cdn = add("cache", "client", text.cdn, 280, 0, "cdn");
+			const lb = add("load-balancer", cdn, text.balancer, 560, 0);
+			const a = add("service", lb, text.webServer("A"), 840, -90, "web-server");
+			const b = add("service", lb, text.webServer("B"), 840, 90, "web-server");
+			const db = add("database", a, text.database, 1120, 0);
+			e = addLink(e, b, db).experiment;
+			break;
+		}
+		case "api-gateway": {
+			const gateway = add(
+				"rate-limiter",
+				"client",
+				text.gateway,
+				280,
+				0,
+				"api-gateway",
+			);
+			const lb = add("load-balancer", gateway, text.balancer, 560, 0);
+			add("service", lb, text.server("A"), 840, -80);
+			add("service", lb, text.server("B"), 840, 80);
 			break;
 		}
 	}

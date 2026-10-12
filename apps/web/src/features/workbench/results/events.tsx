@@ -132,11 +132,22 @@ export function EventsTable({ result }: { result: RunResult }) {
 					to: nodeLabels[row.via ?? -1] ?? "",
 				});
 			case "service-start":
-				return row.durationMs
-					? t("events.detail.waited", {
-							latency: formatLatency(row.durationMs),
-						})
-					: t("events.detail.noWait");
+				return `${
+					row.durationMs
+						? t("events.detail.waited", {
+								latency: formatLatency(row.durationMs),
+							})
+						: t("events.detail.noWait")
+				}${row.workMs ? ` · ${t("events.detail.work", { latency: formatLatency(row.workMs) })}` : ""}`;
+			case "abandoned":
+				return row.reason === "queue-timeout"
+					? t("events.detail.abandonedQueue")
+					: t("events.detail.abandonedDeadline");
+			case "promoted":
+				return t("events.detail.promoted", {
+					from: nodeLabels[row.fromNode ?? -1] ?? "",
+					to: nodeLabels[row.via ?? -1] ?? "",
+				});
 			case "job-start":
 				return row.durationMs
 					? t("events.detail.waited", {

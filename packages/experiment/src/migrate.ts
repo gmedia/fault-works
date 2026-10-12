@@ -103,10 +103,47 @@ function fromV1(input: Json): Json {
 	return out;
 }
 
+/**
+ * 0.2.0 → 0.3.0: new behavior switches, all off, so results stay identical.
+ * - workers get `contention: 0`, `coherency: 0`, `queueTimeoutMs: null`, `callMode: "sequential"`.
+ * - links get `retryBackoffMs: 0`, `retryJitter: false`, `retryBudget: null`.
+ * - the workload gets `propagateDeadline: false`; slowdowns get `ramp: false`.
+ */
+function fromV2(input: Json): Json {
+	const out: Json = structuredClone(input);
+	out.schemaVersion = "0.3.0";
+	const model = isObject(out.model) ? out.model : undefined;
+	if (Array.isArray(model?.nodes))
+		for (const node of model.nodes) {
+			if (!isObject(node) || !isObject(node.config)) continue;
+			if (
+				["service", "database", "cache", "queue"].includes(String(node.kind))
+			) {
+				node.config.contention ??= 0;
+				node.config.coherency ??= 0;
+				node.config.queueTimeoutMs ??= null;
+				node.config.callMode ??= "sequential";
+			}
+		}
+	if (Array.isArray(model?.links))
+		for (const link of model.links) {
+			if (!isObject(link)) continue;
+			link.retryBackoffMs ??= 0;
+			link.retryJitter ??= false;
+			link.retryBudget ??= null;
+		}
+	if (isObject(out.workload)) out.workload.propagateDeadline ??= false;
+	if (Array.isArray(out.faults))
+		for (const fault of out.faults)
+			if (isObject(fault) && fault.kind === "slowdown") fault.ramp ??= false;
+	return out;
+}
+
 const MIGRATIONS: Record<string, { to: string; step: (input: Json) => Json }> =
 	{
 		"0.1.0-proposal": { to: "0.1.0", step: fromProposal },
 		"0.1.0": { to: "0.2.0", step: fromV1 },
+		"0.2.0": { to: "0.3.0", step: fromV2 },
 	};
 
 export function migrate(value: unknown): MigrationResult {

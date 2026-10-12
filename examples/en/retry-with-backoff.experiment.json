@@ -1,0 +1,128 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "retry-with-backoff",
+	"title": "Retries with backoff and a budget",
+	"question": "If retries wait a growing random delay and are capped by a budget, does the retry storm stop?",
+	"description": "Same as the retry storm example, but the API to database link uses exponential backoff starting at 100 ms with full jitter, and a retry budget of 10% of first attempts.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 100,
+					"serviceTimeMs": 20,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-db",
+				"source": "api",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": 300,
+				"retries": 3,
+				"retryBackoffMs": 100,
+				"retryJitter": true,
+				"retryBudget": 0.1,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": false,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "db-slowdown",
+			"target": "db",
+			"atMs": 20000,
+			"kind": "slowdown",
+			"untilMs": 40000,
+			"factor": 50,
+			"addMs": 0,
+			"ramp": false
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Components do not know when their caller gave up, unless deadline propagation is on.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"Calls to the database are only slightly above the number of requests, not multiplied."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"db": {
+			"x": 600,
+			"y": 0
+		}
+	}
+}

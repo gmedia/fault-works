@@ -1,0 +1,165 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "memory-leak",
+	"title": "Memory leak yang lolos dari health check",
+	"question": "Server yang makin lambat sedikit demi sedikit tidak pernah crash. Apakah health check menyelamatkan kita?",
+	"description": "Load balancer membagi trafik round robin ke dua server dengan health check aktif. Mulai detik 10, Server B makin lambat secara bertahap sampai sepuluh kali lipat di detik 50, seperti aplikasi dengan memory leak.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"label": "Load balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"retries": 0,
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 5000,
+						"probeTimeoutMs": 1000,
+						"unhealthyThreshold": 2,
+						"healthyThreshold": 2
+					}
+				}
+			},
+			{
+				"id": "server-a",
+				"kind": "service",
+				"label": "Server A",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 50,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "server-b",
+				"kind": "service",
+				"label": "Server B",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 50,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-lb",
+				"source": "client",
+				"target": "lb",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-server-a",
+				"source": "lb",
+				"target": "server-a",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-server-b",
+				"source": "lb",
+				"target": "server-b",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 200,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": false,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "server-b-leak",
+			"target": "server-b",
+			"atMs": 10000,
+			"kind": "slowdown",
+			"untilMs": 50000,
+			"factor": 10,
+			"addMs": 0,
+			"ramp": true
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah, kecuali propagasi deadline dinyalakan.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Health check tetap lolos karena Server B masih menjawab probe, jadi separuh trafik terus dikirim ke sana.",
+		"Request ke Server B mulai timeout jauh sebelum ada yang menganggapnya rusak."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"lb": {
+			"x": 300,
+			"y": 0
+		},
+		"server-a": {
+			"x": 620,
+			"y": -80
+		},
+		"server-b": {
+			"x": 620,
+			"y": 80
+		}
+	}
+}

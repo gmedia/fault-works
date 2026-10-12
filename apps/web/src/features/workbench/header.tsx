@@ -123,7 +123,7 @@ export function WorkbenchHeader() {
 	return (
 		<div className="border-b bg-card/50">
 			<div className="mx-auto flex max-w-[1600px] flex-col gap-3 px-4 py-3 lg:flex-row lg:items-start lg:justify-between lg:py-4">
-				<div className="min-w-0">
+				<div className="min-w-0 lg:flex-1">
 					<nav
 						aria-label={t("nav.breadcrumb")}
 						className="text-muted-foreground text-xs"
@@ -157,7 +157,7 @@ export function WorkbenchHeader() {
 					</div>
 				</div>
 
-				<div className="flex flex-wrap items-center gap-2">
+				<div className="flex flex-wrap items-center gap-2 lg:shrink-0 lg:flex-nowrap">
 					<div className="flex items-center">
 						<Button
 							variant="ghost"

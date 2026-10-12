@@ -1,4 +1,8 @@
-import type { Experiment, ExperimentNode } from "@faultworks/experiment";
+import {
+	type Experiment,
+	type ExperimentNode,
+	isWorker,
+} from "@faultworks/experiment";
 
 /**
  * Groups nodes by their distance from the client (longest path, so a node called from two depths
@@ -41,7 +45,16 @@ export function layerNodes(experiment: Experiment): ExperimentNode[][] {
 
 /** Nodes in the order the UI lists and colors them (layer by layer). */
 export function orderedWorkers(experiment: Experiment): ExperimentNode[] {
-	return layerNodes(experiment)
-		.flat()
-		.filter((n) => n.kind !== "client" && n.kind !== "load-balancer");
+	// Only components with slots of their own get a color; routers and the client do not.
+	return layerNodes(experiment).flat().filter(isWorker);
+}
+
+/** A sensible place to hang a new component when nothing is selected: the last leaf of the graph. */
+export function lastLeaf(experiment: Experiment): string | undefined {
+	const sources = new Set(experiment.model.links.map((l) => l.source));
+	const layers = layerNodes(experiment).flat();
+	return (
+		[...layers].reverse().find((n) => !sources.has(n.id) && n.kind !== "cache")
+			?.id ?? layers.at(-1)?.id
+	);
 }

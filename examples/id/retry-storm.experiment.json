@@ -1,5 +1,5 @@
 {
-	"schemaVersion": "0.2.0",
+	"schemaVersion": "0.3.0",
 	"experimentId": "retry-storm",
 	"title": "Badai retry: percobaan ulang yang memperparah",
 	"question": "Apa jadinya kalau API mencoba ulang tiap panggilan database yang gagal sampai tiga kali?",
@@ -20,7 +20,11 @@
 					"capacity": 100,
 					"queueCapacity": 100,
 					"serviceTimeMs": 20,
-					"serviceTimeDistribution": "fixed"
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			},
 			{
@@ -31,7 +35,11 @@
 					"capacity": 20,
 					"queueCapacity": 100,
 					"serviceTimeMs": 10,
-					"serviceTimeDistribution": "fixed"
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			}
 		],
@@ -47,7 +55,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			},
 			{
 				"id": "api-db",
@@ -60,7 +71,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			}
 		]
 	},
@@ -70,7 +84,8 @@
 		"startMs": 0,
 		"durationMs": 60000,
 		"timeoutMs": 1000,
-		"bursts": []
+		"bursts": [],
+		"propagateDeadline": false
 	},
 	"faults": [
 		{
@@ -80,7 +95,8 @@
 			"atMs": 20000,
 			"untilMs": 40000,
 			"factor": 50,
-			"addMs": 0
+			"addMs": 0,
+			"ramp": false
 		}
 	],
 	"run": {

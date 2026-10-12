@@ -1,16 +1,18 @@
 import {
 	addFault,
-	addNode,
-	canAddNode,
+	addLink,
+	type DbClusterNode,
 	effectiveHorizonMs,
 	estimateOfferedRequests,
 	FAULT_FIELDS,
 	type FaultKind,
 	type FieldKey,
 	faultTargets,
+	isWorker,
 	LIMITS,
 	LINK_FAULT_KINDS,
-	type NodeKind,
+	linkProblem,
+	type RateLimiterNode,
 	randomSeed,
 	removeLink,
 	removeNode,
@@ -18,7 +20,15 @@ import {
 	workers,
 } from "@faultworks/experiment";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowRight, Dices, Link2, Plus, Trash2, Unplug } from "lucide-react";
+import {
+	ArrowRight,
+	ArrowUpToLine,
+	Dices,
+	Link2,
+	Plus,
+	Trash2,
+	Unplug,
+} from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -32,8 +42,9 @@ import {
 	TabsTrigger,
 } from "#/components/ui/tabs.tsx";
 import { formatCount, formatMs } from "#/lib/format.ts";
-import { ADDABLE_KINDS, NODE_ICONS, seriesColor } from "#/lib/nodes.ts";
+import { nodeIcon, nodeTypeKey, seriesColor } from "#/lib/nodes.ts";
 import { useLibrary } from "#/state/library.ts";
+import { AddComponentMenu } from "./add-component-menu.tsx";
 import { type InspectorTab, useWorkbench } from "./context.tsx";
 import {
 	FieldGroup,
@@ -52,6 +63,7 @@ import {
 	updateBalancer,
 	updateFault,
 	updateHealthCheck,
+	updateNode,
 	updateWorkerConfig,
 } from "./mutations.ts";
 
@@ -164,7 +176,7 @@ function ComponentPanel() {
 				</p>
 				<ul className="grid gap-1.5">
 					{experiment.model.nodes.map((n) => {
-						const Icon = NODE_ICONS[n.kind];
+						const Icon = nodeIcon(n);
 						const wi = list.findIndex((w) => w.id === n.id);
 						return (
 							<li key={n.id}>
@@ -184,14 +196,14 @@ function ComponentPanel() {
 									)}
 									{n.label ?? n.id}
 									<span className="ml-auto text-muted-foreground text-xs">
-										{t(`kinds.${n.kind}`)}
+										{t(nodeTypeKey(n))}
 									</span>
 								</Button>
 							</li>
 						);
 					})}
 				</ul>
-				<AddNodeButtons from={null} />
+				<AddComponentMenu from={undefined} className="w-fit" />
 				<p className="text-muted-foreground text-xs">
 					{t("inspector.linksHint")}
 				</p>
@@ -199,7 +211,7 @@ function ComponentPanel() {
 		);
 	}
 
-	const Icon = NODE_ICONS[node.kind];
+	const Icon = nodeIcon(node);
 	const outgoing = experiment.model.links.filter((l) => l.source === node.id);
 	const incoming = experiment.model.links.filter((l) => l.target === node.id);
 	const onlyNode = node.kind !== "client" && experiment.model.nodes.length <= 2;
@@ -211,7 +223,7 @@ function ComponentPanel() {
 					<Icon className="size-5 text-muted-foreground" aria-hidden="true" />
 					<div>
 						<p className="text-muted-foreground text-xs">
-							{t(`kinds.${node.kind}`)}
+							{t(nodeTypeKey(node))}
 						</p>
 						<h2 className="font-semibold">{node.label ?? node.id}</h2>
 					</div>
@@ -230,12 +242,17 @@ function ComponentPanel() {
 					update((e) => setLabel(e, node.id, v), `label:${node.id}`)
 				}
 			/>
+			{node.preset && (
+				<p className="rounded-md bg-muted p-3 text-xs leading-relaxed">
+					{t(`catalog.${node.preset}.description`)}{" "}
+					{t("inspector.presetNote", { kind: t(`kinds.${node.kind}`) })}
+				</p>
+			)}
 			{node.kind === "client" && <ClientSettings />}
 			{node.kind === "load-balancer" && <LoadBalancerSettings id={node.id} />}
-			{(node.kind === "service" ||
-				node.kind === "database" ||
-				node.kind === "cache" ||
-				node.kind === "queue") && <WorkerSettings id={node.id} />}
+			{node.kind === "rate-limiter" && <LimiterSettings id={node.id} />}
+			{node.kind === "db-cluster" && <ClusterSettings id={node.id} />}
+			{isWorker(node) && <WorkerSettings id={node.id} />}
 
 			<section className="grid gap-2">
 				<h3 className="font-semibold text-sm">{t("inspector.connections")}</h3>
@@ -269,9 +286,11 @@ function ComponentPanel() {
 						</li>
 					))}
 				</ul>
-				{node.kind !== "cache" || outgoing.length === 0 ? (
-					<AddNodeButtons from={node.id} />
-				) : null}
+				<AddComponentMenu
+					from={node.id}
+					label={t("inspector.addDownstream")}
+					className="w-fit"
+				/>
 				<ConnectExisting from={node.id} />
 			</section>
 
@@ -307,63 +326,13 @@ function ComponentPanel() {
 	);
 }
 
-/** Buttons that add a new component, linked from `from` when given. */
-function AddNodeButtons({ from }: { from: string | null }) {
-	const { t } = useTranslation();
-	const { experiment, update, select, setInspectorTab } = useWorkbench();
-	const canAdd = canAddNode(experiment);
-	return (
-		<div className="grid gap-1.5">
-			<p className="text-muted-foreground text-xs">
-				{from ? t("inspector.addDownstream") : t("inspector.addComponent")}
-			</p>
-			<div className="flex flex-wrap gap-1.5">
-				{ADDABLE_KINDS.map((kind: NodeKind) => {
-					const Icon = NODE_ICONS[kind];
-					return (
-						<Button
-							key={kind}
-							variant="outline"
-							size="sm"
-							disabled={!canAdd}
-							title={
-								canAdd
-									? undefined
-									: t("inspector.maxNodes", { max: LIMITS.maxNodes })
-							}
-							onClick={() => {
-								const { experiment: next, id } = addNode(experiment, kind, {
-									from: from ?? undefined,
-									label: t(`defaults.${kind}`),
-								});
-								update(() => next);
-								select({ type: "node", id });
-								setInspectorTab("component");
-							}}
-						>
-							<Plus aria-hidden="true" />
-							<Icon aria-hidden="true" />
-							{t(`kinds.${kind}`)}
-						</Button>
-					);
-				})}
-			</div>
-		</div>
-	);
-}
-
-/** "Connect to…": link this node to a component that already exists. */
 function ConnectExisting({ from }: { from: string }) {
 	const { t } = useTranslation();
 	const { experiment, update, select } = useWorkbench();
 	const id = useId();
-	const existing = new Set(
-		experiment.model.links
-			.filter((l) => l.source === from)
-			.map((l) => l.target),
-	);
+	// Only offer links that would be valid: no cycles, no second exit where one is allowed.
 	const candidates = experiment.model.nodes.filter(
-		(n) => n.id !== from && n.kind !== "client" && !existing.has(n.id),
+		(n) => linkProblem(experiment, from, n.id) === null,
 	);
 	if (candidates.length === 0) return null;
 	return (
@@ -380,39 +349,14 @@ function ConnectExisting({ from }: { from: string }) {
 						const target = e.target.value;
 						if (!target) return;
 						e.target.value = "";
-						update((exp) => {
-							const link = {
-								id: `${from}-${target}`,
-								source: from,
-								target,
-								latencyMs: 0,
-								timeoutMs: null,
-								retries: 0,
-								circuitBreaker: {
-									enabled: false,
-									failureThreshold: 5,
-									openMs: 10_000,
-								},
-							};
-							const taken = new Set(exp.model.links.map((l) => l.id));
-							let linkId = link.id;
-							for (let n = 2; taken.has(linkId); n++)
-								linkId = `${link.id}-${n}`;
-							return {
-								...exp,
-								model: {
-									...exp.model,
-									links: [...exp.model.links, { ...link, id: linkId }],
-								},
-							};
-						});
+						update((exp) => addLink(exp, from, target).experiment);
 						select({ type: "node", id: from });
 					}}
 				>
 					<option value="">{t("inspector.choose")}</option>
 					{candidates.map((n) => (
 						<option key={n.id} value={n.id}>
-							{n.label ?? n.id} ({t(`kinds.${n.kind}`)})
+							{n.label ?? n.id} ({t(nodeTypeKey(n))})
 						</option>
 					))}
 				</select>
@@ -572,106 +516,368 @@ function LoadBalancerSettings({ id }: { id: string }) {
 	);
 }
 
+/** Throughput at `n` busy slots under the Universal Scalability Law, in requests per second. */
+function uslThroughput(
+	n: number,
+	c: { serviceTimeMs: number; contention: number; coherency: number },
+) {
+	return (
+		(n * 1000) /
+		(c.serviceTimeMs * (1 + c.contention * (n - 1) + c.coherency * n * (n - 1)))
+	);
+}
+
 function WorkerSettings({ id }: { id: string }) {
 	const { t } = useTranslation();
 	const { experiment, update } = useWorkbench();
 	const err = useFieldErrors();
 	const node = experiment.model.nodes.find((n) => n.id === id);
-	if (!node || node.kind === "client" || node.kind === "load-balancer")
-		return null;
+	if (!node || !isWorker(node)) return null;
 	const i = nodeIndex(experiment, id);
 	const c = node.config;
-	const maxRps = (c.capacity * 1000) / c.serviceTimeMs;
+	const path = (f: string) => `model.nodes[${i}].config.${f}`;
+	const set = (patch: Partial<typeof c>, key: string) =>
+		update((e) => updateWorkerConfig(e, id, patch), `${key}:${id}`);
 	const isQueue = node.kind === "queue";
+	const isPooler = node.kind === "pooler";
+	const isDb = node.kind === "database";
+	const downstream = experiment.model.links.filter(
+		(l) => l.source === id,
+	).length;
+	const contended = c.contention > 0 || c.coherency > 0;
+	const peakN =
+		c.coherency > 0
+			? Math.max(1, Math.round(Math.sqrt((1 - c.contention) / c.coherency)))
+			: null;
+	// Without contention every slot adds the same throughput; with it, a full node does less.
+	const plainRps = (c.capacity * 1000) / c.serviceTimeMs;
+	const maxRps = uslThroughput(c.capacity, c);
+	const peakRps =
+		peakN !== null && peakN < c.capacity ? uslThroughput(peakN, c) : null;
 	return (
-		<FieldGroup title={t("inspector.capacity")}>
+		<div className="grid gap-6">
+			<FieldGroup title={t("inspector.capacity")}>
+				<NumberField
+					field="worker.capacity"
+					labelKey={
+						isQueue
+							? "queue.consumers"
+							: isPooler
+								? "pooler.poolSize"
+								: isDb
+									? "database.maxConnections"
+									: undefined
+					}
+					value={c.capacity}
+					integer
+					min={1}
+					errors={err(path("capacity"))}
+					onChange={(v) => v !== null && set({ capacity: v }, "cap")}
+				/>
+				<NumberField
+					field="worker.serviceTimeMs"
+					value={c.serviceTimeMs}
+					min={0.1}
+					step={isPooler ? 0.1 : 10}
+					errors={err(path("serviceTimeMs"))}
+					onChange={(v) => v !== null && set({ serviceTimeMs: v }, "svc")}
+				/>
+				<SelectField
+					field="worker.serviceTimeDistribution"
+					value={c.serviceTimeDistribution}
+					onChange={(v) => set({ serviceTimeDistribution: v }, "dist")}
+				/>
+				<NumberField
+					field="worker.queueCapacity"
+					labelKey={
+						isQueue
+							? "queue.backlog"
+							: isPooler
+								? "pooler.maxWaiting"
+								: undefined
+					}
+					value={c.queueCapacity}
+					integer
+					min={0}
+					step={10}
+					errors={err(path("queueCapacity"))}
+					onChange={(v) => v !== null && set({ queueCapacity: v }, "queue")}
+				/>
+				{!isQueue && (
+					<NumberField
+						field="worker.queueTimeoutMs"
+						labelKey={isPooler ? "pooler.waitTimeoutMs" : undefined}
+						value={c.queueTimeoutMs}
+						nullable
+						nullLabel={t("common.none")}
+						integer
+						min={1}
+						step={100}
+						showSeconds
+						errors={err(path("queueTimeoutMs"))}
+						onChange={(v) => set({ queueTimeoutMs: v }, "qto")}
+					/>
+				)}
+				{node.kind === "cache" && (
+					<NumberField
+						field="cache.hitRatio"
+						value={node.config.hitRatio}
+						percent
+						min={0}
+						step={5}
+						errors={err(path("hitRatio"))}
+						onChange={(v) =>
+							v !== null &&
+							set({ hitRatio: Math.max(0, Math.min(1, v)) } as never, "hit")
+						}
+					/>
+				)}
+				{isPooler && (
+					<p className="rounded-md bg-muted p-3 text-xs leading-relaxed">
+						{t("inspector.poolerHint", {
+							pool: c.capacity,
+							target:
+								experiment.model.nodes.find(
+									(n) =>
+										n.id ===
+										experiment.model.links.find((l) => l.source === id)?.target,
+								)?.label ?? t("kinds.database"),
+							waiting: formatCount(c.queueCapacity),
+							wait:
+								c.queueTimeoutMs === null
+									? t("common.never")
+									: formatMs(c.queueTimeoutMs),
+						})}
+					</p>
+				)}
+				{!isPooler && Number.isFinite(plainRps) && plainRps > 0 && (
+					<p className="rounded-md bg-muted p-3 text-xs leading-relaxed">
+						{t(
+							isQueue
+								? "inspector.queueCapacityHint"
+								: "inspector.capacityHint",
+							{
+								rps: formatCount(plainRps),
+								slots: c.capacity,
+								time: formatMs(c.serviceTimeMs),
+								avg:
+									c.serviceTimeDistribution === "exponential"
+										? t("inspector.onAverage")
+										: "",
+							},
+						)}
+						{contended &&
+							` ${t("inspector.capacityContended", { rps: formatCount(maxRps) })}`}
+					</p>
+				)}
+				{isDb && c.queueCapacity === 0 && (
+					<p className="text-muted-foreground text-xs leading-relaxed">
+						{t("inspector.databaseNoQueue")}
+					</p>
+				)}
+			</FieldGroup>
+
+			{!isQueue && !isPooler && (
+				<FieldGroup
+					title={t("inspector.contention")}
+					description={t("inspector.contentionHelp")}
+				>
+					<div className="flex flex-wrap gap-1.5">
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => set({ contention: 0, coherency: 0 }, "usl")}
+						>
+							{t("inspector.contentionNone")}
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() =>
+								set({ contention: 0.02, coherency: 0.0005 }, "usl")
+							}
+						>
+							{t("inspector.contentionDatabase")}
+						</Button>
+					</div>
+					<NumberField
+						field="worker.contention"
+						value={c.contention}
+						min={0}
+						step={0.01}
+						errors={err(path("contention"))}
+						onChange={(v) => v !== null && set({ contention: v }, "alpha")}
+					/>
+					<NumberField
+						field="worker.coherency"
+						value={c.coherency}
+						min={0}
+						step={0.0001}
+						errors={err(path("coherency"))}
+						onChange={(v) => v !== null && set({ coherency: v }, "beta")}
+					/>
+					{peakN !== null && (
+						<p
+							className={
+								peakRps !== null
+									? "rounded-md bg-gap-soft p-3 text-xs leading-relaxed"
+									: "rounded-md bg-muted p-3 text-xs leading-relaxed"
+							}
+						>
+							{t("inspector.contentionPeak", {
+								n: peakN,
+								rps: formatCount(uslThroughput(peakN, c)),
+							})}
+							{peakRps !== null &&
+								` ${t("inspector.contentionOver", {
+									slots: c.capacity,
+									rps: formatCount(maxRps),
+								})}`}
+						</p>
+					)}
+				</FieldGroup>
+			)}
+
+			{downstream > 1 && node.kind !== "cache" && (
+				<FieldGroup title={t("inspector.calls")}>
+					<SelectField
+						field="worker.callMode"
+						value={c.callMode}
+						onChange={(callMode) => set({ callMode }, "mode")}
+					/>
+				</FieldGroup>
+			)}
+		</div>
+	);
+}
+
+function LimiterSettings({ id }: { id: string }) {
+	const { t } = useTranslation();
+	const { experiment, update } = useWorkbench();
+	const err = useFieldErrors();
+	const node = experiment.model.nodes.find((n) => n.id === id);
+	if (node?.kind !== "rate-limiter") return null;
+	const i = nodeIndex(experiment, id);
+	const set = (patch: Partial<RateLimiterNode["config"]>, key: string) =>
+		update(
+			(e) =>
+				updateNode<RateLimiterNode>(e, id, (n) => ({
+					...n,
+					config: { ...n.config, ...patch },
+				})),
+			`${key}:${id}`,
+		);
+	return (
+		<FieldGroup title={t("inspector.limit")}>
 			<NumberField
-				field="worker.capacity"
-				labelKey={isQueue ? "queue.consumers" : undefined}
-				value={c.capacity}
+				field="limiter.ratePerSec"
+				value={node.config.ratePerSec}
+				min={1}
+				step={10}
+				errors={err(`model.nodes[${i}].config.ratePerSec`)}
+				onChange={(v) => v !== null && set({ ratePerSec: v }, "rate")}
+			/>
+			<NumberField
+				field="limiter.burst"
+				value={node.config.burst}
 				integer
 				min={1}
-				errors={err(`model.nodes[${i}].config.capacity`)}
-				onChange={(v) =>
-					v !== null &&
-					update((e) => updateWorkerConfig(e, id, { capacity: v }), `cap:${id}`)
-				}
-			/>
-			<NumberField
-				field="worker.serviceTimeMs"
-				value={c.serviceTimeMs}
-				min={0.1}
 				step={10}
-				errors={err(`model.nodes[${i}].config.serviceTimeMs`)}
+				errors={err(`model.nodes[${i}].config.burst`)}
+				onChange={(v) => v !== null && set({ burst: v }, "burst")}
+			/>
+			<p className="rounded-md bg-muted p-3 text-xs leading-relaxed">
+				{t("inspector.limiterHint", {
+					rate: formatCount(node.config.ratePerSec),
+					burst: formatCount(node.config.burst),
+				})}
+			</p>
+		</FieldGroup>
+	);
+}
+
+function ClusterSettings({ id }: { id: string }) {
+	const { t } = useTranslation();
+	const { experiment, update } = useWorkbench();
+	const err = useFieldErrors();
+	const node = experiment.model.nodes.find((n) => n.id === id);
+	if (node?.kind !== "db-cluster") return null;
+	const i = nodeIndex(experiment, id);
+	const members = experiment.model.links.filter((l) => l.source === id);
+	const labelOf = (nid: string) =>
+		experiment.model.nodes.find((n) => n.id === nid)?.label ?? nid;
+	const set = (patch: Partial<DbClusterNode["config"]>, key: string) =>
+		update(
+			(e) =>
+				updateNode<DbClusterNode>(e, id, (n) => ({
+					...n,
+					config: { ...n.config, ...patch },
+				})),
+			`${key}:${id}`,
+		);
+	/** The primary is the cluster's first link; moving a link first makes its node the primary. */
+	const makePrimary = (linkId: string) =>
+		update((e) => {
+			const link = e.model.links.find((l) => l.id === linkId);
+			if (!link) return e;
+			const rest = e.model.links.filter((l) => l.id !== linkId);
+			const at = rest.findIndex((l) => l.source === id);
+			rest.splice(at === -1 ? rest.length : at, 0, link);
+			return { ...e, model: { ...e.model, links: rest } };
+		});
+	return (
+		<FieldGroup title={t("inspector.cluster")}>
+			<NumberField
+				field="cluster.writeRatio"
+				value={node.config.writeRatio}
+				percent
+				min={0}
+				step={5}
+				errors={err(`model.nodes[${i}].config.writeRatio`)}
 				onChange={(v) =>
 					v !== null &&
-					update(
-						(e) => updateWorkerConfig(e, id, { serviceTimeMs: v }),
-						`svc:${id}`,
-					)
-				}
-			/>
-			<SelectField
-				field="worker.serviceTimeDistribution"
-				value={c.serviceTimeDistribution}
-				onChange={(v) =>
-					update((e) =>
-						updateWorkerConfig(e, id, { serviceTimeDistribution: v }),
-					)
+					set({ writeRatio: Math.max(0, Math.min(1, v)) }, "writes")
 				}
 			/>
 			<NumberField
-				field="worker.queueCapacity"
-				labelKey={isQueue ? "queue.backlog" : undefined}
-				value={c.queueCapacity}
+				field="cluster.failoverMs"
+				value={node.config.failoverMs}
 				integer
 				min={0}
-				step={10}
-				errors={err(`model.nodes[${i}].config.queueCapacity`)}
-				onChange={(v) =>
-					v !== null &&
-					update(
-						(e) => updateWorkerConfig(e, id, { queueCapacity: v }),
-						`queue:${id}`,
-					)
-				}
+				step={1000}
+				showSeconds
+				errors={err(`model.nodes[${i}].config.failoverMs`)}
+				onChange={(v) => v !== null && set({ failoverMs: v }, "failover")}
 			/>
-			{node.kind === "cache" && (
-				<NumberField
-					field="cache.hitRatio"
-					value={node.config.hitRatio}
-					percent
-					min={0}
-					step={5}
-					errors={err(`model.nodes[${i}].config.hitRatio`)}
-					onChange={(v) =>
-						v !== null &&
-						update(
-							(e) =>
-								updateWorkerConfig(e, id, {
-									hitRatio: Math.max(0, Math.min(1, v)),
-								} as never),
-							`hit:${id}`,
-						)
-					}
-				/>
-			)}
-			{Number.isFinite(maxRps) && maxRps > 0 && (
-				<p className="rounded-md bg-muted p-3 text-xs leading-relaxed">
-					{t(
-						isQueue ? "inspector.queueCapacityHint" : "inspector.capacityHint",
-						{
-							rps: formatCount(maxRps),
-							slots: c.capacity,
-							time: formatMs(c.serviceTimeMs),
-							avg:
-								c.serviceTimeDistribution === "exponential"
-									? t("inspector.onAverage")
-									: "",
-						},
-					)}
-				</p>
-			)}
+			<ul className="grid gap-1.5 text-sm">
+				{members.map((l, k) => (
+					<li key={l.id} className="flex items-center gap-2">
+						<span className="min-w-0 flex-1 truncate">{labelOf(l.target)}</span>
+						<span className="text-muted-foreground text-xs">
+							{k === 0 ? t("inspector.primary") : t("inspector.replica")}
+						</span>
+						{k > 0 && (
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								aria-label={t("inspector.makePrimary", {
+									node: labelOf(l.target),
+								})}
+								title={t("inspector.makePrimary", { node: labelOf(l.target) })}
+								onClick={() => makePrimary(l.id)}
+							>
+								<ArrowUpToLine />
+							</Button>
+						)}
+					</li>
+				))}
+			</ul>
+			<p className="rounded-md bg-muted p-3 text-xs leading-relaxed">
+				{t("inspector.clusterHint", {
+					writes: Math.round(node.config.writeRatio * 100),
+					failover: formatMs(node.config.failoverMs),
+				})}
+			</p>
 		</FieldGroup>
 	);
 }
@@ -754,6 +960,53 @@ function LinkSettings({ linkId }: { linkId: string }) {
 						)
 					}
 				/>
+				{link.retries > 0 && (
+					<>
+						<NumberField
+							field="link.retryBackoffMs"
+							value={link.retryBackoffMs}
+							min={0}
+							step={50}
+							errors={err(`model.links[${i}].retryBackoffMs`)}
+							onChange={(v) =>
+								v !== null &&
+								update(
+									(e) => updateLink(e, linkId, { retryBackoffMs: v }),
+									`backoff:${linkId}`,
+								)
+							}
+						/>
+						{link.retryBackoffMs > 0 && (
+							<SwitchField
+								field="link.retryJitter"
+								checked={link.retryJitter}
+								onChange={(retryJitter) =>
+									update((e) => updateLink(e, linkId, { retryJitter }))
+								}
+							/>
+						)}
+						<NumberField
+							field="link.retryBudget"
+							value={link.retryBudget}
+							nullable
+							nullLabel={t("common.none")}
+							percent
+							min={0}
+							step={5}
+							errors={err(`model.links[${i}].retryBudget`)}
+							onChange={(v) =>
+								update(
+									(e) =>
+										updateLink(e, linkId, {
+											retryBudget:
+												v === null ? null : Math.max(0, Math.min(1, v)),
+										}),
+									`budget:${linkId}`,
+								)
+							}
+						/>
+					</>
+				)}
 				<SwitchField
 					field="breaker.enabled"
 					checked={breaker.enabled}
@@ -847,7 +1100,7 @@ function TrafficPanel() {
 		? experiment.model.nodes.find((n) => n.id === entry.target)
 		: undefined;
 	const firstCapacity =
-		first && first.kind !== "client" && first.kind !== "load-balancer"
+		first && isWorker(first)
 			? (first.config.capacity * 1000) / first.config.serviceTimeMs
 			: first?.kind === "load-balancer"
 				? experiment.model.links
@@ -856,7 +1109,7 @@ function TrafficPanel() {
 						.reduce(
 							(sum, n) =>
 								sum +
-								(n && n.kind !== "client" && n.kind !== "load-balancer"
+								(n && isWorker(n)
 									? (n.config.capacity * 1000) / n.config.serviceTimeMs
 									: 0),
 							0,
@@ -911,6 +1164,11 @@ function TrafficPanel() {
 					onChange={(v) =>
 						v !== null && setWorkload({ timeoutMs: v }, "timeout")
 					}
+				/>
+				<SwitchField
+					field="workload.propagateDeadline"
+					checked={w.propagateDeadline}
+					onChange={(propagateDeadline) => setWorkload({ propagateDeadline })}
 				/>
 				<p className="rounded-md bg-muted p-3 text-xs leading-relaxed">
 					{t("inspector.trafficHint", {
@@ -1103,6 +1361,17 @@ function FaultsPanel() {
 						/>
 						{fields.map((field) => {
 							const prop = field.replace("fault.", "") as keyof typeof f;
+							if (field === "fault.ramp")
+								return (
+									<SwitchField
+										key={field}
+										field="fault.ramp"
+										checked={(f as { ramp: boolean }).ramp}
+										onChange={(ramp) =>
+											update((e) => updateFault(e, i, { ramp } as never))
+										}
+									/>
+								);
 							if (field === "fault.behavior")
 								return (
 									<SelectField

@@ -1,0 +1,252 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "cdn-purge",
+	"title": "CDN purge at peak traffic",
+	"question": "What happens to the origin when the whole CDN cache is purged during heavy traffic?",
+	"description": "3,000 requests per second come through a CDN that normally answers 90% from cache. Only 10% reach the two web servers and the database. At 20 seconds someone purges the CDN cache for 5 seconds.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "cdn",
+				"kind": "cache",
+				"label": "CDN",
+				"preset": "cdn",
+				"config": {
+					"capacity": 2000,
+					"queueCapacity": 0,
+					"serviceTimeMs": 2,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential",
+					"hitRatio": 0.9
+				}
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"label": "Load balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"retries": 0,
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 5000,
+						"probeTimeoutMs": 1000,
+						"unhealthyThreshold": 2,
+						"healthyThreshold": 2
+					}
+				}
+			},
+			{
+				"id": "web-a",
+				"kind": "service",
+				"label": "Web server A",
+				"preset": "web-server",
+				"config": {
+					"capacity": 32,
+					"queueCapacity": 128,
+					"serviceTimeMs": 30,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "web-b",
+				"kind": "service",
+				"label": "Web server B",
+				"preset": "web-server",
+				"config": {
+					"capacity": 32,
+					"queueCapacity": 128,
+					"serviceTimeMs": 30,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "PostgreSQL",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 0,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-cdn",
+				"source": "client",
+				"target": "cdn",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "cdn-lb",
+				"source": "cdn",
+				"target": "lb",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-web-a",
+				"source": "lb",
+				"target": "web-a",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-web-b",
+				"source": "lb",
+				"target": "web-b",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "web-a-db",
+				"source": "web-a",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "web-b-db",
+				"source": "web-b",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 3000,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": false,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "cdn-purge",
+			"target": "cdn",
+			"atMs": 20000,
+			"kind": "cache-flush",
+			"untilMs": 25000
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Components do not know when their caller gave up, unless deadline propagation is on.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"During the purge, traffic to the origin grows tenfold and exceeds what the web servers can handle.",
+		"The web server queues fill and many requests are rejected, then everything returns to normal once the cache is warm."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"cdn": {
+			"x": 300,
+			"y": 0
+		},
+		"lb": {
+			"x": 600,
+			"y": 0
+		},
+		"web-a": {
+			"x": 900,
+			"y": -90
+		},
+		"web-b": {
+			"x": 900,
+			"y": 90
+		},
+		"db": {
+			"x": 1200,
+			"y": 0
+		}
+	}
+}

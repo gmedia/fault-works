@@ -12,6 +12,7 @@ export const Route = createFileRoute("/guide")({ component: GuidePage });
 const SECTIONS = [
 	"what",
 	"components",
+	"contention",
 	"lifecycle",
 	"faults",
 	"resilience",
@@ -25,6 +26,9 @@ const COMPONENTS = [
 	"load-balancer",
 	"service",
 	"database",
+	"pooler",
+	"db-cluster",
+	"rate-limiter",
 	"cache",
 	"queue",
 ] as const;
@@ -162,6 +166,10 @@ function GuidePage() {
 							</div>
 						))}
 					</dl>
+					<Paragraphs k="guide.catalog" />
+				</Section>
+				<Section id="contention">
+					<Paragraphs k="guide.contention" />
 				</Section>
 				<Section id="lifecycle">
 					<ol>

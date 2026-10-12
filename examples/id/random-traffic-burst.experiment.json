@@ -1,5 +1,5 @@
 {
-	"schemaVersion": "0.2.0",
+	"schemaVersion": "0.3.0",
 	"experimentId": "random-traffic-burst",
 	"title": "Trafik acak dengan lonjakan",
 	"question": "Seberapa besar variasi yang muncul dari keacakan saja, dan apa dampak lonjakan terhadap antrean?",
@@ -36,7 +36,11 @@
 					"capacity": 8,
 					"queueCapacity": 20,
 					"serviceTimeMs": 80,
-					"serviceTimeDistribution": "exponential"
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			},
 			{
@@ -47,7 +51,11 @@
 					"capacity": 8,
 					"queueCapacity": 20,
 					"serviceTimeMs": 80,
-					"serviceTimeDistribution": "exponential"
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			},
 			{
@@ -58,7 +66,11 @@
 					"capacity": 8,
 					"queueCapacity": 20,
 					"serviceTimeMs": 80,
-					"serviceTimeDistribution": "exponential"
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			}
 		],
@@ -74,7 +86,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			},
 			{
 				"id": "lb-server-a",
@@ -87,7 +102,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			},
 			{
 				"id": "lb-server-b",
@@ -100,7 +118,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			},
 			{
 				"id": "lb-server-c",
@@ -113,7 +134,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			}
 		]
 	},
@@ -129,7 +153,8 @@
 				"durationMs": 10000,
 				"extraRps": 120
 			}
-		]
+		],
+		"propagateDeadline": false
 	},
 	"faults": [],
 	"run": {

@@ -1,0 +1,128 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "retry-with-backoff",
+	"title": "Retry dengan backoff dan budget",
+	"question": "Kalau retry diberi jeda acak yang makin panjang dan dibatasi budget, apakah badai retry berhenti?",
+	"description": "Sama dengan contoh badai retry, tetapi link API ke database memakai exponential backoff mulai 100 ms dengan jitter penuh, dan retry budget 10% dari percobaan pertama.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 100,
+					"serviceTimeMs": 20,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "Database",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 100,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-db",
+				"source": "api",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": 300,
+				"retries": 3,
+				"retryBackoffMs": 100,
+				"retryJitter": true,
+				"retryBudget": 0.1,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": false,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "db-slowdown",
+			"target": "db",
+			"atMs": 20000,
+			"kind": "slowdown",
+			"untilMs": 40000,
+			"factor": 50,
+			"addMs": 0,
+			"ramp": false
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah, kecuali propagasi deadline dinyalakan.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Jumlah panggilan ke database hanya sedikit di atas jumlah request, bukan berlipat ganda."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"db": {
+			"x": 600,
+			"y": 0
+		}
+	}
+}

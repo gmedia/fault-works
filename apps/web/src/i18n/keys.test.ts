@@ -2,10 +2,13 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { EVENT_KINDS, FAILURE_REASONS } from "@faultworks/engine";
 import {
+	CATALOG,
+	CATALOG_CATEGORIES,
 	EXAMPLE_IDS,
 	FAULT_FIELDS,
 	FIELDS,
 	findBuiltIn,
+	TEMPLATE_IDS,
 } from "@faultworks/experiment";
 import { compareSummaries, explainRun } from "@faultworks/metrics";
 import { describe, expect, it } from "vitest";
@@ -81,6 +84,31 @@ describe("locale files", () => {
 				`faultKinds.${kind}.short`,
 				`options.fault.kind.${kind}`,
 			);
+		for (const kind of [
+			"client",
+			"load-balancer",
+			"service",
+			"database",
+			"pooler",
+			"db-cluster",
+			"rate-limiter",
+			"cache",
+			"queue",
+		])
+			families.push(`kinds.${kind}`);
+		for (const entry of CATALOG)
+			families.push(
+				`catalog.${entry.id}.label`,
+				`catalog.${entry.id}.hint`,
+				`catalog.${entry.id}.description`,
+			);
+		for (const category of CATALOG_CATEGORIES)
+			families.push(`catalog.categories.${category}`);
+		for (const template of TEMPLATE_IDS)
+			families.push(
+				`templates.${template}.title`,
+				`templates.${template}.description`,
+			);
 		for (const status of [
 			"up",
 			"degraded",
@@ -101,7 +129,9 @@ describe("locale files", () => {
 		expect(missing).toEqual([]);
 	});
 
-	it("cover every insight and comparison row the built-in examples produce", () => {
+	it("cover every insight and comparison row the built-in examples produce", {
+		timeout: 120_000,
+	}, () => {
 		const families = new Set<string>();
 		let previous: ReturnType<typeof executeRun> | null = null;
 		for (const exampleId of EXAMPLE_IDS) {

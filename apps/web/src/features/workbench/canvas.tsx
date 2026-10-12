@@ -1,13 +1,10 @@
 import {
 	addLink,
-	addNode,
-	canAddNode,
 	type Experiment,
-	LIMITS,
-	type NodeKind,
+	isWorker,
+	linkProblem,
 } from "@faultworks/experiment";
 import {
-	addEdge,
 	applyNodeChanges,
 	Background,
 	BaseEdge,
@@ -24,9 +21,10 @@ import {
 	Position,
 	ReactFlow,
 	ReactFlowProvider,
+	useConnection,
 	useReactFlow,
 } from "@xyflow/react";
-import { Plus, Zap } from "lucide-react";
+import { Zap } from "lucide-react";
 import {
 	type CSSProperties,
 	memo,
@@ -37,18 +35,14 @@ import {
 	useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "#/components/ui/button.tsx";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "#/components/ui/dropdown-menu.tsx";
+import { toast } from "sonner";
 import { formatCount, formatMs } from "#/lib/format.ts";
-import { ADDABLE_KINDS, NODE_ICONS, seriesColor } from "#/lib/nodes.ts";
+import { NODE_ICONS, nodeIcon, seriesColor } from "#/lib/nodes.ts";
 import { useMediaQuery } from "#/lib/use-media-query.ts";
 import { cn } from "#/lib/utils.ts";
+import { AddComponentMenu } from "./add-component-menu.tsx";
 import { useWorkbench } from "./context.tsx";
+import { useMessage } from "./fields.tsx";
 import { layerNodes, orderedWorkers } from "./layers.ts";
 import { usePlayback } from "./playback-store.ts";
 import {
@@ -148,7 +142,25 @@ function NodeFrame({
 }
 
 const handleClass =
-	"!size-3 !rounded-full !border-2 !border-card !bg-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 [.react-flow__node.selected_&]:opacity-100";
+	"!size-3.5 !rounded-full !border-2 !border-card !bg-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 [.react-flow__node.selected_&]:opacity-100 [.react-flow.connecting_&]:opacity-100";
+
+/**
+ * The whole card accepts a dropped connection while one is being dragged. Without this a link
+ * only formed when it was released exactly on the small dot on the left edge.
+ */
+function DropTarget({ id }: { id: string }) {
+	const connection = useConnection();
+	if (!connection.inProgress || connection.fromNode?.id === id) return null;
+	return (
+		<Handle
+			type="target"
+			id="drop"
+			position={Position.Left}
+			className="!absolute !inset-0 !h-full !w-full !rounded-lg !border-0 !bg-transparent"
+			style={{ transform: "none" }}
+		/>
+	);
+}
 
 const ClientNode = memo(function ClientNode({
 	id,
@@ -207,8 +219,9 @@ const BalancerNode = memo(function BalancerNode({
 			: backends.length;
 	const Icon = NODE_ICONS["load-balancer"];
 	return (
-		<NodeFrame selected={selected} className="group w-48">
+		<NodeFrame selected={selected} className="group relative w-48">
 			<Handle type="target" position={Position.Left} className={handleClass} />
+			<DropTarget id={id} />
 			<div className="flex items-center gap-2 font-medium text-sm">
 				<Icon className="size-4 text-muted-foreground" aria-hidden="true" />
 				{node.label ?? t("kinds.load-balancer")}
@@ -273,11 +286,10 @@ const WorkerNode = memo(function WorkerNode({
 	const node = experiment.model.nodes.find((n) => n.id === id);
 	const s = nodeSnapshot(snap, id, result?.topology.nodeIds);
 	const shake = useCrashShake(s?.status);
-	if (!node || node.kind === "client" || node.kind === "load-balancer")
-		return null;
+	if (!node || !isWorker(node)) return null;
 	const c = node.config;
 	const faults = experiment.faults.filter((f) => f.target === id);
-	const Icon = NODE_ICONS[node.kind];
+	const Icon = nodeIcon(node);
 	const color = seriesColor(data.workerIndex);
 	const saturated =
 		s !== undefined && c.queueCapacity > 0 && s.queue >= c.queueCapacity;
@@ -287,11 +299,12 @@ const WorkerNode = memo(function WorkerNode({
 	return (
 		<NodeFrame
 			selected={selected}
-			className="group w-52"
+			className="group relative w-52"
 			shake={shake}
 			pulse={saturated}
 		>
 			<Handle type="target" position={Position.Left} className={handleClass} />
+			<DropTarget id={id} />
 			<div className="flex min-w-0 items-center gap-2 font-medium text-sm">
 				<span
 					className="size-2.5 shrink-0 rounded-full"
@@ -325,13 +338,26 @@ const WorkerNode = memo(function WorkerNode({
 							time: formatMs(c.serviceTimeMs),
 							backlog: c.queueCapacity,
 						})
-					: t("canvas.workerSpec", {
-							slots: c.capacity,
-							time: formatMs(c.serviceTimeMs),
-							queue: c.queueCapacity,
-						})}
+					: node.kind === "pooler"
+						? t("canvas.poolerSpec", {
+								pool: c.capacity,
+								waiting: formatCount(c.queueCapacity),
+							})
+						: node.kind === "database" && c.queueCapacity === 0
+							? t("canvas.databaseSpec", {
+									connections: c.capacity,
+									time: formatMs(c.serviceTimeMs),
+								})
+							: t("canvas.workerSpec", {
+									slots: c.capacity,
+									time: formatMs(c.serviceTimeMs),
+									queue: c.queueCapacity,
+								})}
 				{node.kind === "cache" &&
 					` · ${t("canvas.hit", { pct: Math.round(node.config.hitRatio * 100) })}`}
+				{c.callMode === "parallel" &&
+					experiment.model.links.filter((l) => l.source === id).length > 1 &&
+					` · ${t("canvas.parallel")}`}
 			</p>
 			{s ? (
 				<div className="mt-2 grid gap-1">
@@ -362,14 +388,78 @@ const WorkerNode = memo(function WorkerNode({
 					</p>
 				)
 			)}
-			{node.kind !== "cache" ||
-			experiment.model.links.filter((l) => l.source === id).length === 0 ? (
-				<Handle
-					type="source"
-					position={Position.Right}
-					className={handleClass}
+			{/* The handle must always exist: React Flow cannot draw an edge without it. A component
+			    that may only call one other just cannot start a second link from it. */}
+			<Handle
+				type="source"
+				position={Position.Right}
+				className={handleClass}
+				isConnectableStart={
+					(node.kind !== "cache" && node.kind !== "pooler") ||
+					experiment.model.links.every((l) => l.source !== id)
+				}
+			/>
+		</NodeFrame>
+	);
+});
+
+/** Rate limiters and database clusters: they route calls and hold no slots of their own. */
+const RouterNode = memo(function RouterNode({
+	id,
+	selected,
+}: NodeProps<FlowNode>) {
+	const { t } = useTranslation();
+	const { experiment, result } = useWorkbench();
+	const snap = useSnapshot();
+	const node = experiment.model.nodes.find((n) => n.id === id);
+	const s = nodeSnapshot(snap, id, result?.topology.nodeIds);
+	if (node?.kind !== "rate-limiter" && node?.kind !== "db-cluster") return null;
+	const Icon = nodeIcon(node);
+	const out = experiment.model.links.filter((l) => l.source === id);
+	const labelOf = (nid: string) =>
+		experiment.model.nodes.find((n) => n.id === nid)?.label ?? nid;
+	const primary =
+		node.kind === "db-cluster"
+			? (snap?.primaries.get(id) ?? out[0]?.target)
+			: undefined;
+	return (
+		<NodeFrame selected={selected} className="group relative w-52">
+			<Handle type="target" position={Position.Left} className={handleClass} />
+			<DropTarget id={id} />
+			<div className="flex min-w-0 items-center gap-2 font-medium text-sm">
+				<Icon
+					className="size-4 shrink-0 text-muted-foreground"
+					aria-hidden="true"
 				/>
-			) : null}
+				<span className="truncate">{node.label ?? id}</span>
+			</div>
+			<p className="mt-1 text-muted-foreground text-xs tabular">
+				{node.kind === "rate-limiter"
+					? t("canvas.limiterSpec", {
+							rate: formatCount(node.config.ratePerSec),
+							burst: formatCount(node.config.burst),
+						})
+					: t("canvas.clusterSpec", {
+							writes: Math.round(node.config.writeRatio * 100),
+							failover: formatMs(node.config.failoverMs),
+						})}
+			</p>
+			{node.kind === "db-cluster" && primary && (
+				<p className="mt-1 text-xs">
+					{t("canvas.primary", { node: labelOf(primary) })}
+				</p>
+			)}
+			{node.kind === "rate-limiter" && s && s.failedRps > 0 && (
+				<p className="mt-1 text-gap text-xs tabular">
+					{t("canvas.rejecting", { rps: formatCount(s.failedRps) })}
+				</p>
+			)}
+			<Handle
+				type="source"
+				position={Position.Right}
+				className={handleClass}
+				isConnectableStart={node.kind !== "rate-limiter" || out.length === 0}
+			/>
 		</NodeFrame>
 	);
 });
@@ -456,6 +546,9 @@ const TrafficEdge = memo(function TrafficEdge(props: EdgeProps<FlowEdge>) {
 					? t("canvas.edgeTimeout", { ms: link.timeoutMs })
 					: null,
 				link.retries > 0 ? t("canvas.edgeRetries", { n: link.retries }) : null,
+				link.retries > 0 && link.retryBackoffMs > 0
+					? t("canvas.edgeBackoff")
+					: null,
 				link.circuitBreaker.enabled ? t("canvas.edgeBreaker") : null,
 				link.latencyMs > 0
 					? t("canvas.edgeLatency", { ms: link.latencyMs })
@@ -526,8 +619,11 @@ const nodeTypes = {
 	"load-balancer": BalancerNode,
 	service: WorkerNode,
 	database: WorkerNode,
+	pooler: WorkerNode,
 	cache: WorkerNode,
 	queue: WorkerNode,
+	"rate-limiter": RouterNode,
+	"db-cluster": RouterNode,
 };
 const edgeTypes = { traffic: TrafficEdge };
 
@@ -567,6 +663,7 @@ function CanvasInner() {
 	const { t } = useTranslation();
 	const { experiment, update, selection, select, setInspectorTab } =
 		useWorkbench();
+	const message = useMessage();
 	const [nodes, setNodes] = useState<FlowNode[]>(() =>
 		buildNodes(experiment, selection),
 	);
@@ -649,12 +746,16 @@ function CanvasInner() {
 			update(() => next);
 			select({ type: "link", id });
 			setInspectorTab("component");
-			void addEdge;
 		},
 		[experiment, update, select, setInspectorTab],
 	);
 
-	const canAdd = canAddNode(experiment);
+	const isValidConnection = useCallback(
+		(c: Connection | Edge) =>
+			Boolean(c.source && c.target) &&
+			linkProblem(experiment, c.source, c.target) === null,
+		[experiment],
+	);
 
 	return (
 		<div className="relative h-full w-full">
@@ -671,6 +772,27 @@ function CanvasInner() {
 					setInspectorTab("component");
 				}}
 				onConnect={onConnect}
+				isValidConnection={isValidConnection}
+				onConnectEnd={(event, state) => {
+					// Say why a drop on a component did not make a link, instead of silently doing nothing.
+					// React Flow leaves `toNode` empty for some refused drops, so also look under the pointer.
+					const from = state.fromNode?.id;
+					const point =
+						"changedTouches" in event
+							? event.changedTouches[0]
+							: (event as MouseEvent);
+					const under = point
+						? document
+								.elementFromPoint(point.clientX, point.clientY)
+								?.closest(".react-flow__node")
+								?.getAttribute("data-id")
+						: null;
+					const to = state.toNode?.id ?? under ?? undefined;
+					if (!from || !to || from === to || state.isValid) return;
+					const problem = linkProblem(experiment, from, to);
+					if (problem) toast.error(message(problem));
+				}}
+				connectionRadius={36}
 				nodesConnectable
 				deleteKeyCode={null}
 				selectionKeyCode={null}
@@ -692,51 +814,9 @@ function CanvasInner() {
 				/>
 			</ReactFlow>
 			<div className="absolute top-3 left-3 flex gap-2">
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<Button
-							variant="outline"
-							size="sm"
-							className="bg-card"
-							disabled={!canAdd}
-							title={
-								canAdd
-									? undefined
-									: t("inspector.maxNodes", { max: LIMITS.maxNodes })
-							}
-						>
-							<Plus aria-hidden="true" />
-							{t("canvas.addComponent")}
-						</Button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="start">
-						{ADDABLE_KINDS.map((kind: NodeKind) => {
-							const Icon = NODE_ICONS[kind];
-							return (
-								<DropdownMenuItem
-									key={kind}
-									onSelect={() => {
-										const from =
-											selection?.type === "node" ? selection.id : undefined;
-										const { experiment: next, id } = addNode(experiment, kind, {
-											from,
-											label: t(`defaults.${kind}`),
-										});
-										update(() => next);
-										select({ type: "node", id });
-										setInspectorTab("component");
-									}}
-								>
-									<Icon aria-hidden="true" />
-									{t(`kinds.${kind}`)}
-									<span className="ml-auto text-muted-foreground text-xs">
-										{t(`kindHints.${kind}`)}
-									</span>
-								</DropdownMenuItem>
-							);
-						})}
-					</DropdownMenuContent>
-				</DropdownMenu>
+				<AddComponentMenu
+					from={selection?.type === "node" ? selection.id : undefined}
+				/>
 			</div>
 			<p className="pointer-events-none absolute right-3 bottom-3 left-3 hidden text-center text-muted-foreground text-xs sm:block">
 				{t("canvas.hint")}

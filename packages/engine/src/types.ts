@@ -1,5 +1,5 @@
 /**
- * Engine contract (v0.2). Everything the engine consumes is already validated and compiled by
+ * Engine contract (v0.3). Everything the engine consumes is already validated and compiled by
  * `@faultworks/experiment`: units are integer microseconds and nodes, edges and faults are
  * referenced by index. Nothing here knows about React, the DOM or canvas layout.
  *
@@ -30,7 +30,9 @@ export type FailureReason =
 	| "lost-in-crash"
 	| "timeout"
 	| "circuit-open"
-	| "injected-error";
+	| "injected-error"
+	| "rate-limited"
+	| "queue-timeout";
 
 export const FAILURE_REASONS: readonly FailureReason[] = [
 	"no-healthy-backend",
@@ -40,6 +42,8 @@ export const FAILURE_REASONS: readonly FailureReason[] = [
 	"timeout",
 	"circuit-open",
 	"injected-error",
+	"rate-limited",
+	"queue-timeout",
 ];
 
 export interface HealthCheckInput {
@@ -56,9 +60,22 @@ export interface WorkerInput {
 	capacity: number;
 	/** FIFO waiting room; 0 means requests are rejected when every slot is busy. */
 	queueCapacity: number;
-	/** Mean service time of the component's own work. */
+	/** Mean service time of the component's own work at a concurrency of one. */
 	serviceTimeUs: Micros;
 	distribution: ServiceTimeDistribution;
+	/**
+	 * Universal Scalability Law coefficients. With `n` busy slots, own work takes
+	 * `1 + contention·(n−1) + coherency·n·(n−1)` times longer: contention is serialization (locks,
+	 * a shared log), coherency is the cost of keeping concurrent work consistent. With coherency
+	 * above zero, throughput peaks at `sqrt((1 − contention) / coherency)` busy slots and falls
+	 * beyond that, which is why a database with too many connections gets slower, not faster.
+	 */
+	contention: number;
+	coherency: number;
+	/** A waiting call that is still queued after this long fails with `queue-timeout`. */
+	queueTimeoutUs: Micros | null;
+	/** `parallel`: call every downstream edge at once and wait for all; fails at the first failure. */
+	parallel: boolean;
 }
 
 export type NodeInput =
@@ -72,7 +89,33 @@ export type NodeInput =
 			/** Extra attempts on another backend when a backend fails a call immediately. */
 			retries: number;
 	  }
-	| ({ kind: "service" | "database"; id: string } & WorkerInput)
+	| ({
+			/**
+			 * A connection pooler is a worker whose slots are server connections: callers wait in its
+			 * queue for a free connection and hold it only while their call to the database runs.
+			 */
+			kind: "service" | "database" | "pooler";
+			id: string;
+	  } & WorkerInput)
+	| {
+			/** Token bucket in front of exactly one downstream: rejects calls over the rate. */
+			kind: "rate-limiter";
+			id: string;
+			ratePerSec: number;
+			burst: number;
+	  }
+	| {
+			/**
+			 * Routes to a primary (first downstream edge) and replicas (the others): a share of calls
+			 * are writes and go to the primary, reads round-robin over the replicas. A crash is noticed
+			 * `failoverUs` after it happens; a crashed primary is then replaced by the first replica
+			 * that is up, and a recovered node rejoins as a replica.
+			 */
+			kind: "db-cluster";
+			id: string;
+			writeRatio: number;
+			failoverUs: Micros;
+	  }
 	| ({
 			kind: "cache";
 			id: string;
@@ -108,6 +151,15 @@ export interface EdgeInput {
 	timeoutUs: Micros | null;
 	/** Extra attempts after a failed call over this edge. */
 	retries: number;
+	/** Wait before retry k is `retryBackoffUs · 2^(k−1)`, capped at 30 s; 0 retries at once. */
+	retryBackoffUs: Micros;
+	/** Full jitter: each wait is drawn uniformly between zero and the backoff. */
+	retryJitter: boolean;
+	/**
+	 * Retry budget as a share of first attempts (Finagle style): each first attempt deposits this
+	 * much, each retry withdraws one, the balance is capped at 10. `null`: no budget.
+	 */
+	retryBudget: number | null;
 	circuitBreaker: CircuitBreakerInput | null;
 }
 
@@ -136,6 +188,8 @@ export type FaultInput =
 			untilUs: Micros | null;
 			factor: number;
 			addUs: Micros;
+			/** Grow linearly from no effect at `atUs` to the full effect at `untilUs`. */
+			ramp: boolean;
 	  }
 	| {
 			/** A share of calls arriving at the node fail at once with an injected error. */
@@ -197,6 +251,11 @@ export interface EngineInput {
 	phases: RatePhase[];
 	/** Client deadline per request, measured from arrival. */
 	timeoutUs: Micros;
+	/**
+	 * The deadline travels with every call. Components then refuse work for requests whose client
+	 * already gave up instead of doing it and discarding the answer.
+	 */
+	propagateDeadline: boolean;
 	faults: FaultInput[];
 }
 
@@ -264,6 +323,8 @@ export type SimEvent =
 			call: number;
 			node: number;
 			queuedUs: Micros;
+			/** Own work this call will take, after slowdowns and contention. */
+			workUs: Micros;
 	  }
 	| { kind: "service-end"; t: Micros; req: number; call: number; node: number }
 	| {
@@ -273,6 +334,23 @@ export type SimEvent =
 			call: number;
 			node: number;
 			from: "queue" | "service";
+	  }
+	| {
+			/** A waiting call left the queue without being served. */
+			kind: "abandoned";
+			t: Micros;
+			req: number;
+			call: number;
+			node: number;
+			reason: "queue-timeout" | "deadline";
+	  }
+	| {
+			/** A database cluster made `to` its primary after `from` was found down. */
+			kind: "promoted";
+			t: Micros;
+			node: number;
+			from: number;
+			to: number;
 	  }
 	| {
 			kind: "cache-hit";
@@ -334,6 +412,8 @@ export const EVENT_KINDS: readonly SimEventKind[] = [
 	"service-start",
 	"service-end",
 	"evicted",
+	"abandoned",
+	"promoted",
 	"cache-hit",
 	"job-start",
 	"job-done",

@@ -4,7 +4,7 @@ Guidance for AI coding agents (and humans) working in this repository. Read it b
 
 ## What this project is
 
-FaultWorks is a browser-only workbench for reproducible infrastructure failure experiments: a small directed graph of components (client, load balancers, services, databases, caches, worker queues) joined by links with latency, timeouts, retries and circuit breakers; seven kinds of scheduled fault; a deterministic discrete-event simulation; and an A/B comparison. There is no backend, account or telemetry. Simulation results are model outputs, never predictions of real systems, and the UI must never suggest otherwise.
+FaultWorks is a browser-only workbench for reproducible infrastructure failure experiments: a small directed graph of components (client, load balancers, rate limiters, database clusters, services, databases, connection poolers, caches, worker queues, plus catalog presets such as CDN or API gateway) joined by links with latency, timeouts, retries with backoff and budgets, and circuit breakers; contention under load (Universal Scalability Law); seven kinds of scheduled fault; a deterministic discrete-event simulation; and an A/B comparison. There is no backend, account or telemetry. Simulation results are model outputs, never predictions of real systems, and the UI must never suggest otherwise.
 
 The interface is Indonesian first (default language `id`, English when the browser prefers it). Every user-visible string goes through `t()`; see "Languages" below.
 
@@ -43,10 +43,12 @@ Packages are consumed as TypeScript source (`exports: ./src/index.ts`); there is
 
 **Determinism.** Same experiment, seed and engine version must produce the byte-identical event trace.
 - Never use `Math.random`, `Date`, `performance` or iteration over unordered state inside `packages/engine`.
-- Randomness comes only from `createRng(seed, stream)` with a named stream (`arrivals`, `service:<id>`, `balancer:<id>`, `edge:<id>`).
+- Randomness comes only from `createRng(seed, stream)` with a named stream (`arrivals`, `service:<id>`, `balancer:<id>`, `cluster:<id>`, `edge:<id>`).
 - Same-time ordering is the `PRIORITY` table in `packages/engine/src/simulate.ts`. Changing it, the PRNG, or event semantics changes traces: bump `ENGINE_VERSION`, update golden tests on purpose, and note it in `CHANGELOG.md`.
 
 **Request lifecycle.** Every request ends exactly once (`succeeded` or `failed`). Work finished after the client deadline is a `late-response`, never a success. Offered = succeeded + failed + still in flight. The metrics recorder checks these after every run; property tests check them over random inputs.
+
+**Presets and links.** Catalog presets (`packages/experiment/src/presets.ts`) only set a name, icon and defaults on an existing kind; never branch on `preset` in the engine or metrics. Every new link goes through `linkProblem`/`addLink` in `edit.ts`, so the canvas, the inspector and imports agree on what is valid.
 
 **Separation.** The engine knows nothing about React, the DOM, canvas layout or labels. Metrics read events only. Layout, titles, notes and labels must never change results; `runKey` (the behavior digest) ignores them.
 

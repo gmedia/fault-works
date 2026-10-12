@@ -73,3 +73,15 @@ All decisions are **provisional** until reviewed and approved by project maintai
 ## ADR-017 — Replay animation is derived, never authoritative
 
 **Decision:** Flow dots, crash shake and pulse rings are CSS driven by the recorded replay position and windowed rates. They do not run the simulation and cannot change it, and they switch off under `prefers-reduced-motion`. **Why:** the user asked for a simulation that feels alive; invariant 7 (replay never alters results) must hold. **Consequence:** animation shows rates per window, not individual requests; the event log remains the place for per-request detail (ADR-011).
+
+## ADR-018 — Contention through the Universal Scalability Law
+
+**Decision:** Model load-dependent slowdown with two coefficients per worker, contention α and coherency β, applied as `1 + α(n − 1) + β·n(n − 1)` to a call's own work, with n the busy slots when it starts. Databases created in the editor default to α 0.02 and β 0.0005. **Why:** without it, adding connections could only ever help, which contradicts the most common real database failure (too many connections) and makes the case for connection poolers impossible to show. USL is a published, two-parameter model that produces a throughput peak and retrograde scaling, and it is easy to explain next to the field. **Consequence:** results depend on illustrative coefficients; the UI, guide and examples say so and show where the peak is. The factor is fixed per call at start, a simplification documented in docs/05.
+
+## ADR-019 — Catalog presets add names and defaults, never behavior
+
+**Decision:** Components such as CDN, API gateway, web server, search engine, object storage, message broker and third-party API are presets on existing kinds (cache, rate limiter, service, queue). A preset stores only an id that sets the icon, name and starting values. **Why:** users want to build from the parts they know, but every new behavior needs a contract, tests and an engine version. Presets give breadth without pretending to emulate products (ADR-005). **Consequence:** a CDN behaves exactly like a cache with the same numbers; the inspector says so next to every preset.
+
+## ADR-020 — Links are validated before they are created
+
+**Decision:** One function, `linkProblem`, decides whether a link may exist; the canvas, the inspector and `addLink` all use it, and adding a component after a single-exit component inserts it in between. **Why:** users reported that linking components was buggy: drops only worked on a tiny dot, and invalid links appeared and immediately turned the experiment red. **Consequence:** some links can no longer be drawn at all (a second exit from the client, a cycle); the editor shows the reason instead.

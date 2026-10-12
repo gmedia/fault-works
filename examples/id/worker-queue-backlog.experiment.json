@@ -1,5 +1,5 @@
 {
-	"schemaVersion": "0.2.0",
+	"schemaVersion": "0.3.0",
 	"experimentId": "worker-queue-backlog",
 	"title": "Antrean kerja: cepat menjawab, lambat mengerjakan",
 	"question": "Berapa lama backlog antrean pulih setelah lonjakan trafik?",
@@ -20,7 +20,11 @@
 					"capacity": 50,
 					"queueCapacity": 100,
 					"serviceTimeMs": 5,
-					"serviceTimeDistribution": "fixed"
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			},
 			{
@@ -31,7 +35,11 @@
 					"capacity": 4,
 					"queueCapacity": 5000,
 					"serviceTimeMs": 50,
-					"serviceTimeDistribution": "exponential"
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			},
 			{
@@ -42,7 +50,11 @@
 					"capacity": 20,
 					"queueCapacity": 100,
 					"serviceTimeMs": 5,
-					"serviceTimeDistribution": "fixed"
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
 				}
 			}
 		],
@@ -58,7 +70,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			},
 			{
 				"id": "api-queue",
@@ -71,7 +86,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			},
 			{
 				"id": "queue-db",
@@ -84,7 +102,10 @@
 					"enabled": false,
 					"failureThreshold": 5,
 					"openMs": 10000
-				}
+				},
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null
 			}
 		]
 	},
@@ -100,7 +121,8 @@
 				"durationMs": 15000,
 				"extraRps": 100
 			}
-		]
+		],
+		"propagateDeadline": false
 	},
 	"faults": [],
 	"run": {

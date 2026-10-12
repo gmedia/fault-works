@@ -1,4 +1,4 @@
-import type { Experiment } from "@faultworks/experiment";
+import { type Experiment, isWorker } from "@faultworks/experiment";
 import type { RunSummary } from "@faultworks/metrics";
 import { Dices, LoaderCircle } from "lucide-react";
 import { useState } from "react";
@@ -10,17 +10,20 @@ import type { SweepPoint } from "#/workers/protocol.ts";
 
 const SEEDS = 10;
 
+/** True when the seed can change results: anything drawn from a random stream. */
 export function isStochastic(e: Experiment): boolean {
 	return (
 		e.workload.arrival === "poisson" ||
 		e.model.nodes.some(
 			(n) =>
-				(n.kind !== "client" &&
-					n.kind !== "load-balancer" &&
-					n.config.serviceTimeDistribution === "exponential") ||
+				(isWorker(n) && n.config.serviceTimeDistribution === "exponential") ||
 				n.kind === "cache" ||
-				n.kind === "load-balancer",
+				(n.kind === "load-balancer" && n.config.algorithm === "random") ||
+				(n.kind === "db-cluster" &&
+					n.config.writeRatio > 0 &&
+					n.config.writeRatio < 1),
 		) ||
+		e.model.links.some((l) => l.retries > 0 && l.retryJitter) ||
 		e.faults.some((f) => f.kind === "error-rate" || f.kind === "link-loss")
 	);
 }

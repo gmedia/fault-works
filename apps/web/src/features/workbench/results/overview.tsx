@@ -2,8 +2,13 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { faultBands } from "#/features/charts/bands.ts";
 import { TimeChart } from "#/features/charts/time-chart.tsx";
-import { formatCount, formatLatency, formatPercent } from "#/lib/format.ts";
-import { NODE_ICONS, seriesColor } from "#/lib/nodes.ts";
+import {
+	formatCount,
+	formatLatency,
+	formatNumber,
+	formatPercent,
+} from "#/lib/format.ts";
+import { nodeIcon, seriesColor } from "#/lib/nodes.ts";
 import type { RunResult } from "#/workers/protocol.ts";
 import { orderedWorkers } from "../layers.ts";
 import { usePlayback } from "../playback-store.ts";
@@ -198,7 +203,7 @@ export function Overview({ result }: { result: RunResult }) {
 							{workerRows.map(({ node, index, color }) => {
 								const n = summary.nodes[index];
 								if (!n) return null;
-								const Icon = NODE_ICONS[node.kind];
+								const Icon = nodeIcon(node);
 								return (
 									<tr key={node.id} className="border-t">
 										<th scope="row" className="px-3 py-2 text-left font-medium">
@@ -247,6 +252,26 @@ export function Overview({ result }: { result: RunResult }) {
 													failed: formatCount(n.jobs.failed),
 													wait: formatLatency(n.jobs.maxWaitMs),
 												})}
+											{n.baseWorkMs !== null &&
+												n.meanWorkMs !== null &&
+												n.meanWorkMs >= n.baseWorkMs * 1.1 && (
+													<span className="block">
+														{t("perNode.slower", {
+															factor: formatNumber(
+																n.meanWorkMs / n.baseWorkMs,
+																1,
+															),
+														})}
+													</span>
+												)}
+											{n.abandoned.queueTimeout + n.abandoned.deadline > 0 && (
+												<span className="block">
+													{t("perNode.abandoned", {
+														queue: formatCount(n.abandoned.queueTimeout),
+														deadline: formatCount(n.abandoned.deadline),
+													})}
+												</span>
+											)}
 										</td>
 									</tr>
 								);

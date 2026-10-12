@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { msg } from "./messages.ts";
 
-export const SCHEMA_VERSION = "0.2.0";
+export const SCHEMA_VERSION = "0.3.0";
 
 /** Product limits. They keep a run inside a browser tab's budget and are part of the contract. */
 export const LIMITS = {
@@ -21,6 +21,21 @@ const idPattern = /^[a-z0-9][a-z0-9-]{0,47}$/;
 export const idSchema = z.string().regex(idPattern, msg("validation.id"));
 
 const label = z.string().trim().min(1).max(40).optional();
+
+/**
+ * Catalog presets (CDN, API gateway, …) are starting points built on a node kind. The preset only
+ * names the component and picks its icon and defaults; it never changes behavior.
+ */
+export const PRESET_IDS = [
+	"cdn",
+	"api-gateway",
+	"web-server",
+	"external-api",
+	"object-storage",
+	"search-engine",
+	"message-broker",
+] as const;
+const preset = z.enum(PRESET_IDS).optional();
 
 /** Field keys name the translation of a setting's label; messages refer to them. */
 const num = (
@@ -70,13 +85,13 @@ export const workerConfigSchema = z.strictObject({
 	capacity: num("worker.capacity", {
 		int: true,
 		min: 1,
-		max: 1000,
+		max: 10_000,
 		unit: "slots",
 	}),
 	queueCapacity: num("worker.queueCapacity", {
 		int: true,
 		min: 0,
-		max: 10_000,
+		max: 1_000_000,
 		unit: "requests",
 	}),
 	serviceTimeMs: num("worker.serviceTimeMs", {
@@ -85,18 +100,24 @@ export const workerConfigSchema = z.strictObject({
 		unit: "ms",
 	}),
 	serviceTimeDistribution: z.enum(["fixed", "exponential"]),
+	contention: num("worker.contention", { min: 0, max: 1 }),
+	coherency: num("worker.coherency", { min: 0, max: 0.1 }),
+	queueTimeoutMs: ms("worker.queueTimeoutMs", 1, 300_000).nullable(),
+	callMode: z.enum(["sequential", "parallel"]),
 });
 
 export const clientNodeSchema = z.strictObject({
 	id: idSchema,
 	kind: z.literal("client"),
 	label,
+	preset,
 });
 
 export const loadBalancerNodeSchema = z.strictObject({
 	id: idSchema,
 	kind: z.literal("load-balancer"),
 	label,
+	preset,
 	config: z.strictObject({
 		algorithm: z.enum(["round-robin", "least-connections", "random"]),
 		retries: num("balancer.retries", {
@@ -111,8 +132,9 @@ export const loadBalancerNodeSchema = z.strictObject({
 
 export const serviceNodeSchema = z.strictObject({
 	id: idSchema,
-	kind: z.enum(["service", "database"]),
+	kind: z.enum(["service", "database", "pooler"]),
 	label,
+	preset,
 	config: workerConfigSchema,
 });
 
@@ -120,6 +142,7 @@ export const cacheNodeSchema = z.strictObject({
 	id: idSchema,
 	kind: z.literal("cache"),
 	label,
+	preset,
 	config: workerConfigSchema.extend({ hitRatio: rate("cache.hitRatio") }),
 });
 
@@ -127,7 +150,39 @@ export const queueNodeSchema = z.strictObject({
 	id: idSchema,
 	kind: z.literal("queue"),
 	label,
+	preset,
 	config: workerConfigSchema,
+});
+
+export const rateLimiterNodeSchema = z.strictObject({
+	id: idSchema,
+	kind: z.literal("rate-limiter"),
+	label,
+	preset,
+	config: z.strictObject({
+		ratePerSec: num("limiter.ratePerSec", {
+			gt: 0,
+			max: 100_000,
+			unit: "req/s",
+		}),
+		burst: num("limiter.burst", {
+			int: true,
+			min: 1,
+			max: 100_000,
+			unit: "requests",
+		}),
+	}),
+});
+
+export const dbClusterNodeSchema = z.strictObject({
+	id: idSchema,
+	kind: z.literal("db-cluster"),
+	label,
+	preset,
+	config: z.strictObject({
+		writeRatio: rate("cluster.writeRatio"),
+		failoverMs: ms("cluster.failoverMs", 0, 600_000),
+	}),
 });
 
 export const nodeSchema = z.union([
@@ -136,6 +191,8 @@ export const nodeSchema = z.union([
 	serviceNodeSchema,
 	cacheNodeSchema,
 	queueNodeSchema,
+	rateLimiterNodeSchema,
+	dbClusterNodeSchema,
 ]);
 
 export const circuitBreakerSchema = z.strictObject({
@@ -161,6 +218,13 @@ export const linkSchema = z.strictObject({
 		max: 10,
 		unit: "attempts",
 	}),
+	retryBackoffMs: num("link.retryBackoffMs", {
+		min: 0,
+		max: 60_000,
+		unit: "ms",
+	}),
+	retryJitter: z.boolean(),
+	retryBudget: rate("link.retryBudget").nullable(),
 	circuitBreaker: circuitBreakerSchema,
 });
 
@@ -179,6 +243,7 @@ export const workloadSchema = z.strictObject({
 	startMs: ms("workload.startMs", 0, LIMITS.maxHorizonMs),
 	durationMs: ms("workload.durationMs", 1, LIMITS.maxHorizonMs),
 	timeoutMs: ms("workload.timeoutMs", 1, 300_000),
+	propagateDeadline: z.boolean(),
 	bursts: z.array(burstSchema).max(LIMITS.maxBursts),
 });
 
@@ -202,6 +267,7 @@ export const faultSchema = z.discriminatedUnion("kind", [
 		untilMs,
 		factor: num("fault.factor", { min: 1, max: 100 }),
 		addMs: num("fault.addMs", { min: 0, max: 60_000, unit: "ms" }),
+		ramp: z.boolean(),
 	}),
 	z.strictObject({
 		...faultBase,
@@ -216,7 +282,7 @@ export const faultSchema = z.discriminatedUnion("kind", [
 		capacity: num("fault.capacity", {
 			int: true,
 			min: 0,
-			max: 1000,
+			max: 10_000,
 			unit: "slots",
 		}),
 	}),
@@ -275,6 +341,9 @@ export type LoadBalancerNode = z.infer<typeof loadBalancerNodeSchema>;
 export type ServiceNode = z.infer<typeof serviceNodeSchema>;
 export type CacheNode = z.infer<typeof cacheNodeSchema>;
 export type QueueNode = z.infer<typeof queueNodeSchema>;
+export type RateLimiterNode = z.infer<typeof rateLimiterNodeSchema>;
+export type DbClusterNode = z.infer<typeof dbClusterNodeSchema>;
+export type PresetId = (typeof PRESET_IDS)[number];
 export type WorkerNode = ServiceNode | CacheNode | QueueNode;
 export type WorkerConfig = z.infer<typeof workerConfigSchema>;
 export type HealthCheck = z.infer<typeof healthCheckSchema>;
@@ -289,6 +358,7 @@ export type RunSettings = z.infer<typeof runSettingsSchema>;
 export const WORKER_KINDS: readonly NodeKind[] = [
 	"service",
 	"database",
+	"pooler",
 	"cache",
 	"queue",
 ];

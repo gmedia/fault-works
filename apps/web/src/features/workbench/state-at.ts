@@ -34,6 +34,8 @@ export interface Snapshot {
 	inFlight: number;
 	nodes: NodeSnapshot[];
 	links: LinkSnapshot[];
+	/** Database cluster id → id of its primary at this time. */
+	primaries: Map<string, string>;
 }
 
 /**
@@ -53,13 +55,19 @@ export function snapshotAt(result: RunResult, tMs: number): Snapshot {
 
 	const up = new Array<boolean>(nodeCount).fill(true);
 	const healthy = new Array<boolean>(nodeCount).fill(true);
+	// Nodes something detects crashes of: behind a health-checking balancer or a database cluster.
 	const watched = new Set<number>();
-	result.experiment.model.links.forEach((l, i) => {
+	const primaries = new Map<string, string>();
+	for (const l of result.experiment.model.links) {
 		const src = result.experiment.model.nodes.find((n) => n.id === l.source);
-		if (src?.kind === "load-balancer" && src.config.healthCheck.enabled)
+		if (
+			(src?.kind === "load-balancer" && src.config.healthCheck.enabled) ||
+			src?.kind === "db-cluster"
+		)
 			watched.add(result.topology.nodeIds.indexOf(l.target));
-		void i;
-	});
+		if (src?.kind === "db-cluster" && !primaries.has(src.id))
+			primaries.set(src.id, l.target);
+	}
 	const breakers = new Array<LinkSnapshot["breaker"]>(linkCount).fill("closed");
 	const nodeFaults: number[][] = Array.from({ length: nodeCount }, () => []);
 	const linkFaults: number[][] = Array.from({ length: linkCount }, () => []);
@@ -77,7 +85,11 @@ export function snapshotAt(result: RunResult, tMs: number): Snapshot {
 		else if (tr.kind === "unhealthy") healthy[tr.node] = false;
 		else if (tr.kind === "healthy") healthy[tr.node] = true;
 		else if (tr.kind === "breaker") breakers[tr.edge] = tr.state;
-		else {
+		else if (tr.kind === "promoted") {
+			const cluster = result.topology.nodeIds[tr.node];
+			const to = result.topology.nodeIds[tr.to];
+			if (cluster && to) primaries.set(cluster, to);
+		} else {
 			const target = faultTarget(tr.fault);
 			if (!target) continue;
 			const list =
@@ -131,6 +143,7 @@ export function snapshotAt(result: RunResult, tMs: number): Snapshot {
 		inFlight: series.inFlight[window] ?? 0,
 		nodes,
 		links,
+		primaries,
 	};
 }
 

@@ -1,24 +1,13 @@
-import {
-	addNode,
-	canAddNode,
-	type Experiment,
-	type NodeKind,
-} from "@faultworks/experiment";
-import { ArrowDown, Plus, Zap } from "lucide-react";
+import { isWorker } from "@faultworks/experiment";
+import { ArrowDown, Zap } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "#/components/ui/button.tsx";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "#/components/ui/dropdown-menu.tsx";
 import { formatCount, formatMs } from "#/lib/format.ts";
-import { ADDABLE_KINDS, NODE_ICONS, seriesColor } from "#/lib/nodes.ts";
+import { nodeIcon, seriesColor } from "#/lib/nodes.ts";
 import { cn } from "#/lib/utils.ts";
+import { AddComponentMenu } from "./add-component-menu.tsx";
 import { useWorkbench } from "./context.tsx";
-import { layerNodes, orderedWorkers } from "./layers.ts";
+import { lastLeaf, layerNodes, orderedWorkers } from "./layers.ts";
 import { usePlayback } from "./playback-store.ts";
 import { snapshotAt } from "./state-at.ts";
 import { StatusBadge } from "./status-badge.tsx";
@@ -63,15 +52,8 @@ function Bar({
  */
 export function StackedTopology({ readOnly = false }: { readOnly?: boolean }) {
 	const { t } = useTranslation();
-	const {
-		experiment,
-		result,
-		stale,
-		selection,
-		select,
-		setInspectorTab,
-		update,
-	} = useWorkbench();
+	const { experiment, result, stale, selection, select, setInspectorTab } =
+		useWorkbench();
 	const timeMs = usePlayback((s) => s.timeMs);
 	const snap = useMemo(
 		() => (result && !stale ? snapshotAt(result, timeMs) : null),
@@ -113,7 +95,7 @@ export function StackedTopology({ readOnly = false }: { readOnly?: boolean }) {
 						{layer.map((node) => {
 							const i = ids ? ids.indexOf(node.id) : -1;
 							const s = snap && i !== -1 ? snap.nodes[i] : undefined;
-							const Icon = NODE_ICONS[node.kind];
+							const Icon = nodeIcon(node);
 							const wi = workersList.findIndex((w) => w.id === node.id);
 							const faults = experiment.faults.filter(
 								(f) => f.target === node.id,
@@ -154,8 +136,23 @@ export function StackedTopology({ readOnly = false }: { readOnly?: boolean }) {
 												})}
 											{node.kind === "load-balancer" &&
 												`${t(`options.balancer.algorithm.${node.config.algorithm}`)}, ${node.config.healthCheck.enabled ? t("canvas.probes", { interval: formatMs(node.config.healthCheck.intervalMs) }) : t("canvas.noHealthChecks")}`}
-											{node.kind !== "client" &&
-												node.kind !== "load-balancer" &&
+											{node.kind === "rate-limiter" &&
+												t("canvas.limiterSpec", {
+													rate: formatCount(node.config.ratePerSec),
+													burst: formatCount(node.config.burst),
+												})}
+											{node.kind === "db-cluster" &&
+												t("canvas.clusterSpec", {
+													writes: Math.round(node.config.writeRatio * 100),
+													failover: formatMs(node.config.failoverMs),
+												})}
+											{node.kind === "pooler" &&
+												t("canvas.poolerSpec", {
+													pool: node.config.capacity,
+													waiting: formatCount(node.config.queueCapacity),
+												})}
+											{isWorker(node) &&
+												node.kind !== "pooler" &&
 												(node.kind === "queue"
 													? t("canvas.queueSpec", {
 															consumers: node.config.capacity,
@@ -168,36 +165,41 @@ export function StackedTopology({ readOnly = false }: { readOnly?: boolean }) {
 															queue: node.config.queueCapacity,
 														}))}
 											{s &&
-												node.kind !== "client" &&
-												node.kind !== "load-balancer" &&
+												isWorker(node) &&
 												` · ${formatCount(s.callsRps)} req/s`}
+											{s &&
+												node.kind === "rate-limiter" &&
+												s.failedRps > 0 &&
+												` · ${t("canvas.rejecting", { rps: formatCount(s.failedRps) })}`}
+											{s &&
+												node.kind === "db-cluster" &&
+												snap?.primaries.get(node.id) &&
+												` · ${t("canvas.primary", { node: labelOf(snap.primaries.get(node.id) as string) })}`}
 										</span>
-										{s &&
-											node.kind !== "client" &&
-											node.kind !== "load-balancer" && (
-												<span className="mt-2 grid gap-1">
-													<Bar
-														label={t("canvas.busy")}
-														value={s.busy}
-														max={(node.config as { capacity: number }).capacity}
-														tone={seriesColor(wi)}
-													/>
-													<Bar
-														label={
-															node.kind === "queue"
-																? t("canvas.backlog")
-																: t("canvas.queue")
-														}
-														value={s.queue}
-														max={Math.max(
-															1,
-															(node.config as { queueCapacity: number })
-																.queueCapacity,
-														)}
-														tone="var(--muted-foreground)"
-													/>
-												</span>
-											)}
+										{s && isWorker(node) && (
+											<span className="mt-2 grid gap-1">
+												<Bar
+													label={t("canvas.busy")}
+													value={s.busy}
+													max={(node.config as { capacity: number }).capacity}
+													tone={seriesColor(wi)}
+												/>
+												<Bar
+													label={
+														node.kind === "queue"
+															? t("canvas.backlog")
+															: t("canvas.queue")
+													}
+													value={s.queue}
+													max={Math.max(
+														1,
+														(node.config as { queueCapacity: number })
+															.queueCapacity,
+													)}
+													tone="var(--muted-foreground)"
+												/>
+											</span>
+										)}
 										{!s && faults.length > 0 && (
 											<span className="mt-1 flex items-center gap-1 text-gap text-xs">
 												<Zap className="size-3" aria-hidden="true" />
@@ -249,57 +251,15 @@ export function StackedTopology({ readOnly = false }: { readOnly?: boolean }) {
 				</div>
 			))}
 			{!readOnly && (
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<Button
-							variant="outline"
-							className="mt-1"
-							disabled={!canAddNode(experiment)}
-						>
-							<Plus aria-hidden="true" />
-							{t("canvas.addComponent")}
-						</Button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="start">
-						{ADDABLE_KINDS.map((kind: NodeKind) => {
-							const Icon = NODE_ICONS[kind];
-							return (
-								<DropdownMenuItem
-									key={kind}
-									onSelect={() => {
-										const from =
-											selection?.type === "node"
-												? selection.id
-												: lastLeaf(experiment);
-										const { experiment: next, id } = addNode(experiment, kind, {
-											from,
-											label: t(`defaults.${kind}`),
-										});
-										update(() => next);
-										open(id);
-									}}
-								>
-									<Icon aria-hidden="true" />
-									{t(`kinds.${kind}`)}
-									<span className="ml-auto text-muted-foreground text-xs">
-										{t(`kindHints.${kind}`)}
-									</span>
-								</DropdownMenuItem>
-							);
-						})}
-					</DropdownMenuContent>
-				</DropdownMenu>
+				<AddComponentMenu
+					from={
+						selection?.type === "node" ? selection.id : lastLeaf(experiment)
+					}
+					size="default"
+					className="mt-1"
+					onAdded={open}
+				/>
 			)}
 		</div>
-	);
-}
-
-/** A sensible place to hang a new component when nothing is selected: the last leaf of the graph. */
-function lastLeaf(experiment: Experiment): string | undefined {
-	const sources = new Set(experiment.model.links.map((l) => l.source));
-	const layers = layerNodes(experiment).flat();
-	return (
-		[...layers].reverse().find((n) => !sources.has(n.id) && n.kind !== "cache")
-			?.id ?? layers.at(-1)?.id
 	);
 }

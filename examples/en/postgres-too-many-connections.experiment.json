@@ -1,0 +1,125 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "postgres-too-many-connections",
+	"title": "PostgreSQL: more connections, less throughput",
+	"question": "What happens when a traffic spike makes the API open hundreds of connections straight to the database?",
+	"description": "The API calls PostgreSQL directly, one connection per request, with max_connections at 300. The database peaks at about 44 active connections; beyond that every query gets slower as they fight over locks and buffers. From 20 to 30 seconds traffic rises from 1,400 to 2,400 requests per second.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 300,
+					"queueCapacity": 1000,
+					"serviceTimeMs": 2,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "PostgreSQL",
+				"config": {
+					"capacity": 300,
+					"queueCapacity": 0,
+					"serviceTimeMs": 8,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-db",
+				"source": "api",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 1400,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 2000,
+		"propagateDeadline": false,
+		"bursts": [
+			{
+				"atMs": 20000,
+				"durationMs": 10000,
+				"extraRps": 1000
+			}
+		]
+	},
+	"faults": [],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Components do not know when their caller gave up, unless deadline propagation is on.",
+		"Numbers are scenario inputs, not measured performance of any product.",
+		"Database slowdown under many active connections follows the Universal Scalability Law with illustrative coefficients (contention 0.02, coherency 0.0005), not measured PostgreSQL numbers."
+	],
+	"expectedObservations": [
+		"Once the spike arrives, active connections climb into the hundreds and every query becomes several times slower.",
+		"Database throughput drops below normal traffic, so the system does not recover even after the spike is over."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"db": {
+			"x": 600,
+			"y": 0
+		}
+	}
+}

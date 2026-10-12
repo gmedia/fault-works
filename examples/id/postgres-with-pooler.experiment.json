@@ -1,0 +1,160 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "postgres-with-pooler",
+	"title": "PostgreSQL dengan connection pooler",
+	"question": "Kalau koneksi aktif dibatasi 40 lewat PgBouncer, apakah lonjakan yang sama masih menjatuhkan database?",
+	"description": "Sama persis dengan eksperimen tanpa pooler, tetapi API memanggil PgBouncer dalam mode transaction. PgBouncer hanya membuka 40 koneksi ke database; request lain menunggu di antreannya paling lama 1,5 detik.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 300,
+					"queueCapacity": 1000,
+					"serviceTimeMs": 2,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "pgbouncer",
+				"kind": "pooler",
+				"label": "PgBouncer",
+				"config": {
+					"capacity": 40,
+					"queueCapacity": 5000,
+					"serviceTimeMs": 0.1,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": 1500,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "PostgreSQL",
+				"config": {
+					"capacity": 300,
+					"queueCapacity": 0,
+					"serviceTimeMs": 8,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-pgbouncer",
+				"source": "api",
+				"target": "pgbouncer",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "pgbouncer-db",
+				"source": "pgbouncer",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 1400,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 2000,
+		"propagateDeadline": false,
+		"bursts": [
+			{
+				"atMs": 20000,
+				"durationMs": 10000,
+				"extraRps": 1000
+			}
+		]
+	},
+	"faults": [],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah, kecuali propagasi deadline dinyalakan.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun.",
+		"Perlambatan database karena banyak koneksi aktif mengikuti Universal Scalability Law dengan koefisien ilustratif (kontensi 0,02, koherensi 0,0005), bukan hasil ukur PostgreSQL."
+	],
+	"expectedObservations": [
+		"Database tetap bekerja di dekat titik optimalnya, jadi throughput-nya tidak runtuh.",
+		"Kelebihan trafik menunggu di PgBouncer; sebagian menyerah setelah 1,5 detik, tetapi sistem pulih begitu lonjakan selesai."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"pgbouncer": {
+			"x": 600,
+			"y": 0
+		},
+		"db": {
+			"x": 900,
+			"y": 0
+		}
+	}
+}

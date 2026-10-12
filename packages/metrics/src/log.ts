@@ -43,8 +43,12 @@ export interface EventRow {
 	from: "queue" | "service" | null;
 	breakerState: "open" | "half-open" | "closed" | null;
 	durationMs: number | null;
-	/** Balancer index for probe and health events. */
+	/** Balancer index for probe and health events; chosen backend for routing; new primary. */
 	via: number | null;
+	/** Service starts: own work after slowdowns and contention. */
+	workMs: number | null;
+	/** Promotions: the old primary. */
+	fromNode: number | null;
 }
 
 const BREAKER_STATES = ["open", "half-open", "closed"] as const;
@@ -127,7 +131,15 @@ export class EventLogRecorder {
 				a = e.depth;
 				break;
 			case "service-start":
+				a = Math.min(2_147_483_647, e.workUs);
 				b = e.queuedUs;
+				break;
+			case "abandoned":
+				a = e.reason === "deadline" ? 1 : 0;
+				break;
+			case "promoted":
+				a = e.to;
+				b = e.from;
 				break;
 			case "evicted":
 				a = e.from === "queue" ? 0 : 1;
@@ -207,6 +219,8 @@ export function readEventRow(log: EventLogData, index: number): EventRow {
 		breakerState: null,
 		durationMs: null,
 		via: null,
+		workMs: null,
+		fromNode: null,
 	};
 	switch (kind) {
 		case "failed":
@@ -232,6 +246,14 @@ export function readEventRow(log: EventLogData, index: number): EventRow {
 			break;
 		case "service-start":
 			row.durationMs = b / 1000;
+			row.workMs = a / 1000;
+			break;
+		case "abandoned":
+			row.reason = a === 1 ? "timeout" : "queue-timeout";
+			break;
+		case "promoted":
+			row.via = a;
+			row.fromNode = b;
 			break;
 		case "evicted":
 			row.from = a === 0 ? "queue" : "service";

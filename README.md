@@ -6,7 +6,7 @@ FaultWorks is a browser-based workbench for reproducible infrastructure failure 
 
 The interface is in Bahasa Indonesia by default and in English when the browser prefers it, and it is designed for phones first.
 
-> **Status:** v0.2, pre-release. Open source under the [Apache-2.0 license](LICENSE).
+> **Status:** v0.3, pre-release. Open source under the [Apache-2.0 license](LICENSE).
 
 ## What you can do
 
@@ -14,8 +14,10 @@ Open the app and the *Load balancer failure* pair is ready to run: Server B cras
 
 From there you can:
 
-- build any system you like from six templates or a blank canvas: add components, connect them by dragging, and set latency, timeouts, retries and circuit breakers on every link;
-- break it with seven kinds of fault: crashes that refuse or hang, slowdowns, error rates, capacity drops, link latency, link loss and cache flushes;
+- build any system you like from ten templates or a blank canvas, with a catalog of everyday components: CDN, API gateway, rate limiter, load balancer, web server, service, relational database, connection pooler (PgBouncer style), database cluster with failover, cache, search engine, object storage, worker queue, message broker and third-party APIs;
+- see why "more connections" can make a database slower: components slow down under concurrency following the Universal Scalability Law, and a connection pooler keeps them at their peak;
+- set latency, timeouts, retries with backoff, jitter and budgets, and circuit breakers on every link, fan out calls in parallel, and propagate client deadlines;
+- break it with seven kinds of fault: crashes that refuse or hang, slowdowns (sudden or gradual, like a memory leak), error rates, capacity drops, link latency, link loss and cache flushes;
 - replay a run over simulated time and watch requests flow, components crash, get detected and come back;
 - read a plain-language explanation built only from the simulated events;
 - trace any single request through the event log;
@@ -23,7 +25,7 @@ From there you can:
 - export the experiment, the result (with behavior digest and trace fingerprint), the event log as CSV, or a whole comparison as one file plus a Markdown report;
 - import any of those files elsewhere and see whether a re-run reproduces them.
 
-Ten built-in experiments cover load balancer failures, hanging backends, failover overload, cascading failures, retry storms, circuit breakers, cache stampedes and worker-queue backlogs.
+Twenty built-in experiments cover load balancer failures, hanging backends, failover overload, cascading failures, retry storms and their fix, circuit breakers, cache stampedes, worker-queue backlogs, PostgreSQL with too many connections versus a pooler, database cluster failover, a CDN purge at peak, a flash sale with and without a rate limit, deadline propagation, fan-out tail latency and a memory leak that health checks never see.
 
 Everything runs in your browser. There is no account, no backend and no telemetry; experiments are saved in the browser's local storage.
 
@@ -67,7 +69,7 @@ The engine is checked three ways: reference cases whose answers were computed by
 
 ## Project status
 
-v0.2 (October 2026) turns the fixed v0.1 topology into a free graph with five component kinds, seven fault kinds, link-level resilience settings, an Indonesian-first interface and a phone-first workbench ([docs/02](docs/02-SCOPE-AND-ROADMAP.md)). A simulated pilot with four AI personas found and drove fixes for import, comparison export, latency reporting and the phone layout ([docs/12](docs/12-SIMULATED-PILOT.md)); it does not replace real users. The next gate is still the pilot in [docs/10](docs/10-VALIDATION-PLAN.md): three to five people should be able to run the A/B experiment and explain the difference without help.
+v0.2 (October 2026) turned the fixed v0.1 topology into a free graph with an Indonesian-first, phone-first interface; v0.3 adds contention under load, connection poolers, rate limiters, database clusters, smarter retries, fan-out, deadline propagation and a component catalog ([docs/02](docs/02-SCOPE-AND-ROADMAP.md)). A simulated pilot with four AI personas found and drove fixes for import, comparison export, latency reporting and the phone layout ([docs/12](docs/12-SIMULATED-PILOT.md)); it does not replace real users. The next gate is still the pilot in [docs/10](docs/10-VALIDATION-PLAN.md): three to five people should be able to run the A/B experiment and explain the difference without help.
 
 The name **FaultWorks** has not been through a trademark search yet ([ADR-007](docs/11-DECISION-LOG.md)).
 

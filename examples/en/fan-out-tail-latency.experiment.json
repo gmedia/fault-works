@@ -1,0 +1,273 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "fan-out-tail-latency",
+	"title": "Fan-out: one slow shard slows everything",
+	"question": "If every search calls five shards at once, what happens when one shard slows down?",
+	"description": "The search service calls five shards in parallel and waits for all of them. From 20 to 40 seconds, Shard 3 becomes eight times slower.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "search",
+				"kind": "service",
+				"label": "Search service",
+				"config": {
+					"capacity": 50,
+					"queueCapacity": 100,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "parallel"
+				}
+			},
+			{
+				"id": "shard-1",
+				"kind": "service",
+				"label": "Shard 1",
+				"preset": "search-engine",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 200,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "shard-2",
+				"kind": "service",
+				"label": "Shard 2",
+				"preset": "search-engine",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 200,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "shard-3",
+				"kind": "service",
+				"label": "Shard 3",
+				"preset": "search-engine",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 200,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "shard-4",
+				"kind": "service",
+				"label": "Shard 4",
+				"preset": "search-engine",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 200,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "shard-5",
+				"kind": "service",
+				"label": "Shard 5",
+				"preset": "search-engine",
+				"config": {
+					"capacity": 20,
+					"queueCapacity": 200,
+					"serviceTimeMs": 10,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-search",
+				"source": "client",
+				"target": "search",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "search-shard-1",
+				"source": "search",
+				"target": "shard-1",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "search-shard-2",
+				"source": "search",
+				"target": "shard-2",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "search-shard-3",
+				"source": "search",
+				"target": "shard-3",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "search-shard-4",
+				"source": "search",
+				"target": "shard-4",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "search-shard-5",
+				"source": "search",
+				"target": "shard-5",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": false,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "shard-3-slow",
+			"target": "shard-3",
+			"atMs": 20000,
+			"kind": "slowdown",
+			"untilMs": 40000,
+			"factor": 8,
+			"addMs": 0,
+			"ramp": false
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Components do not know when their caller gave up, unless deadline propagation is on.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"Almost every search slows down, because every search has to wait for Shard 3."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"search": {
+			"x": 300,
+			"y": 0
+		},
+		"shard-1": {
+			"x": 650,
+			"y": -320
+		},
+		"shard-2": {
+			"x": 650,
+			"y": -160
+		},
+		"shard-3": {
+			"x": 650,
+			"y": 0
+		},
+		"shard-4": {
+			"x": 650,
+			"y": 160
+		},
+		"shard-5": {
+			"x": 650,
+			"y": 320
+		}
+	}
+}

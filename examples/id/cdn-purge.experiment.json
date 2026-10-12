@@ -1,0 +1,252 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "cdn-purge",
+	"title": "CDN di-purge saat ramai",
+	"question": "Apa yang terjadi pada server asal saat seluruh cache CDN dikosongkan di tengah trafik ramai?",
+	"description": "3.000 request per detik masuk lewat CDN yang biasanya menjawab 90% dari cache. Hanya 10% yang sampai ke dua web server dan database. Di detik 20 seseorang mem-purge cache CDN selama 5 detik.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "cdn",
+				"kind": "cache",
+				"label": "CDN",
+				"preset": "cdn",
+				"config": {
+					"capacity": 2000,
+					"queueCapacity": 0,
+					"serviceTimeMs": 2,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential",
+					"hitRatio": 0.9
+				}
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"label": "Load balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"retries": 0,
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 5000,
+						"probeTimeoutMs": 1000,
+						"unhealthyThreshold": 2,
+						"healthyThreshold": 2
+					}
+				}
+			},
+			{
+				"id": "web-a",
+				"kind": "service",
+				"label": "Web server A",
+				"preset": "web-server",
+				"config": {
+					"capacity": 32,
+					"queueCapacity": 128,
+					"serviceTimeMs": 30,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "web-b",
+				"kind": "service",
+				"label": "Web server B",
+				"preset": "web-server",
+				"config": {
+					"capacity": 32,
+					"queueCapacity": 128,
+					"serviceTimeMs": 30,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "PostgreSQL",
+				"config": {
+					"capacity": 100,
+					"queueCapacity": 0,
+					"serviceTimeMs": 5,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-cdn",
+				"source": "client",
+				"target": "cdn",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "cdn-lb",
+				"source": "cdn",
+				"target": "lb",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-web-a",
+				"source": "lb",
+				"target": "web-a",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "lb-web-b",
+				"source": "lb",
+				"target": "web-b",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "web-a-db",
+				"source": "web-a",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "web-b-db",
+				"source": "web-b",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 3000,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"propagateDeadline": false,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "cdn-purge",
+			"target": "cdn",
+			"atMs": 20000,
+			"kind": "cache-flush",
+			"untilMs": 25000
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah, kecuali propagasi deadline dinyalakan.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+	],
+	"expectedObservations": [
+		"Selama purge, trafik ke server asal naik sepuluh kali lipat dan melebihi kapasitas web server.",
+		"Antrean web server penuh dan banyak request ditolak, lalu semuanya normal lagi saat cache terisi."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"cdn": {
+			"x": 300,
+			"y": 0
+		},
+		"lb": {
+			"x": 600,
+			"y": 0
+		},
+		"web-a": {
+			"x": 900,
+			"y": -90
+		},
+		"web-b": {
+			"x": 900,
+			"y": 90
+		},
+		"db": {
+			"x": 1200,
+			"y": 0
+		}
+	}
+}

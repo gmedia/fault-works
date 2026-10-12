@@ -1,0 +1,125 @@
+{
+	"schemaVersion": "0.3.0",
+	"experimentId": "postgres-too-many-connections",
+	"title": "PostgreSQL: makin banyak koneksi malah makin lambat",
+	"question": "Apa yang terjadi saat lonjakan trafik membuat API membuka ratusan koneksi langsung ke database?",
+	"description": "API memanggil PostgreSQL langsung, satu koneksi per request, dengan max_connections 300. Database punya titik optimal sekitar 44 koneksi aktif; di atas itu tiap query makin lambat karena berebut kunci dan buffer. Di detik 20 sampai 30 trafik naik dari 1.400 ke 2.400 request per detik.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Klien"
+			},
+			{
+				"id": "api",
+				"kind": "service",
+				"label": "API",
+				"config": {
+					"capacity": 300,
+					"queueCapacity": 1000,
+					"serviceTimeMs": 2,
+					"serviceTimeDistribution": "fixed",
+					"contention": 0,
+					"coherency": 0,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			},
+			{
+				"id": "db",
+				"kind": "database",
+				"label": "PostgreSQL",
+				"config": {
+					"capacity": 300,
+					"queueCapacity": 0,
+					"serviceTimeMs": 8,
+					"serviceTimeDistribution": "exponential",
+					"contention": 0.02,
+					"coherency": 0.0005,
+					"queueTimeoutMs": null,
+					"callMode": "sequential"
+				}
+			}
+		],
+		"links": [
+			{
+				"id": "client-api",
+				"source": "client",
+				"target": "api",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			},
+			{
+				"id": "api-db",
+				"source": "api",
+				"target": "db",
+				"latencyMs": 0,
+				"timeoutMs": null,
+				"retries": 0,
+				"retryBackoffMs": 0,
+				"retryJitter": false,
+				"retryBudget": null,
+				"circuitBreaker": {
+					"enabled": false,
+					"failureThreshold": 5,
+					"openMs": 10000
+				}
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 1400,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 2000,
+		"propagateDeadline": false,
+		"bursts": [
+			{
+				"atMs": 20000,
+				"durationMs": 10000,
+				"extraRps": 1000
+			}
+		]
+	},
+	"faults": [],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+		"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+		"Komponen tidak tahu kalau pemanggilnya sudah menyerah, kecuali propagasi deadline dinyalakan.",
+		"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun.",
+		"Perlambatan database karena banyak koneksi aktif mengikuti Universal Scalability Law dengan koefisien ilustratif (kontensi 0,02, koherensi 0,0005), bukan hasil ukur PostgreSQL."
+	],
+	"expectedObservations": [
+		"Begitu lonjakan datang, koneksi aktif naik ke ratusan dan tiap query jadi berkali-kali lebih lambat.",
+		"Throughput database justru turun di bawah trafik normal, jadi sistem tidak pulih walau lonjakan sudah lewat."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"api": {
+			"x": 300,
+			"y": 0
+		},
+		"db": {
+			"x": 600,
+			"y": 0
+		}
+	}
+}
