@@ -8,6 +8,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { create } from "zustand";
 import { Button } from "#/components/ui/button.tsx";
 import { formatSeconds } from "#/lib/format.ts";
@@ -26,7 +27,7 @@ export interface ChartSeries {
 export interface ChartBand {
 	fromMs: number;
 	toMs: number;
-	kind: "gap" | "down" | "off";
+	kind: "gap" | "down" | "off" | "fault" | "breaker";
 	label: string;
 }
 
@@ -108,6 +109,7 @@ export function TimeChart({
 	minYMax = 1,
 	integer = false,
 }: TimeChartProps) {
+	const { t } = useTranslation();
 	const { ref, width } = useWidth<HTMLDivElement>();
 	const hoverMs = useChartHover((s) => s.ms);
 	const setHover = useChartHover((s) => s.set);
@@ -215,10 +217,10 @@ export function TimeChart({
 					Math.min(startMs.length - 1, Math.floor(cursorMs / windowMs)),
 				)
 			: 0);
-	const valueText = `${formatSeconds(startMs[readIndex] ?? 0)} to ${formatSeconds((startMs[readIndex] ?? 0) + windowMs)}: ${series
+	const valueText = `${formatSeconds(startMs[readIndex] ?? 0)} – ${formatSeconds((startMs[readIndex] ?? 0) + windowMs)}: ${series
 		.map((s) => {
 			const v = s.values[readIndex];
-			return `${s.label} ${v === null || v === undefined ? "no data" : formatValue(v)}`;
+			return `${s.label} ${v === null || v === undefined ? t("chart.noData") : formatValue(v)}`;
 		})
 		.join(", ")}`;
 	const tooltipLeft = hoverIndex !== null ? x(center(hoverIndex)) : 0;
@@ -244,7 +246,7 @@ export function TimeChart({
 					className="text-muted-foreground"
 				>
 					<Table2 aria-hidden="true" />
-					{showTable ? "Chart" : "Table"}
+					{showTable ? t("chart.showChart") : t("chart.showTable")}
 				</Button>
 			</div>
 			{legend && !showTable && (
@@ -347,7 +349,11 @@ export function TimeChart({
 											? `url(#${titleId}-gap)`
 											: b.kind === "down"
 												? `url(#${titleId}-down)`
-												: "color-mix(in oklab, var(--off) 10%, transparent)"
+												: b.kind === "fault"
+													? "color-mix(in oklab, var(--gap-band) 12%, transparent)"
+													: b.kind === "breaker"
+														? "color-mix(in oklab, var(--series-7) 14%, transparent)"
+														: "color-mix(in oklab, var(--off) 10%, transparent)"
 									}
 								>
 									<title>{b.label}</title>
@@ -523,16 +529,17 @@ function ChartTable({
 	series: ChartSeries[];
 	formatValue: (v: number) => string;
 }) {
+	const { t } = useTranslation();
 	return (
 		<div className="mt-2 max-h-56 overflow-auto rounded-md border">
 			<table className="w-full text-xs tabular">
 				<caption className="sr-only">
-					{title}, per {formatSeconds(windowMs)} window
+					{t("chart.tableCaption", { title, window: formatSeconds(windowMs) })}
 				</caption>
 				<thead className="sticky top-0 bg-card">
 					<tr>
 						<th scope="col" className="px-2 py-1.5 text-left font-medium">
-							Window
+							{t("chart.window")}
 						</th>
 						{series.map((s) => (
 							<th

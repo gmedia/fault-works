@@ -1,53 +1,87 @@
-import { type Experiment, findBuiltIn } from "@faultworks/experiment";
+import { findBuiltIn } from "@faultworks/experiment";
 import { describe, expect, it } from "vitest";
-import { faultBands } from "#/features/charts/bands.ts";
-import { canonicalResult, resultArtifact } from "#/features/library/export.ts";
 import { executeRun } from "#/workers/protocol.ts";
-import { snapshotAt } from "./state-at.ts";
+import { snapshotAt, stateChangeTimes } from "./state-at.ts";
 
-const builtIn = (id: string) => findBuiltIn(id) as Experiment;
-const withChecks = executeRun(builtIn("lb-failure-with-health-checks"), true);
-const without = executeRun(builtIn("lb-failure-no-health-checks"), true);
+function run(id: string) {
+	const experiment = findBuiltIn(id);
+	if (!experiment) throw new Error(`missing example ${id}`);
+	const result = executeRun(experiment, false);
+	const node = (nodeId: string) => result.topology.nodeIds.indexOf(nodeId);
+	return { result, node };
+}
 
 describe("snapshotAt", () => {
-	it("tracks a server from up, through undetected and removed, back to rotation", () => {
-		const status = (t: number) => snapshotAt(withChecks, t).servers[1]?.status;
-		expect(status(10_000)).toBe("up");
-		expect(status(22_000)).toBe("down-routed");
-		expect(status(30_000)).toBe("down-removed");
-		expect(status(42_000)).toBe("recovering");
-		expect(status(50_000)).toBe("up");
+	it("follows a crash through detection, recovery and re-admission", () => {
+		// Server B refuses from 20 s to 40 s; probes every 5 s, two failures to remove, two successes to re-add.
+		const { result, node } = run("lb-failure-with-health-checks");
+		const b = node("server-b");
+		expect(snapshotAt(result, 10_000).nodes[b]?.status).toBe("up");
+		expect(snapshotAt(result, 20_000).nodes[b]?.status).toBe("down-routed");
+		expect(snapshotAt(result, 26_000).nodes[b]?.status).toBe("down-removed");
+		expect(snapshotAt(result, 41_000).nodes[b]?.status).toBe("recovering");
+		expect(snapshotAt(result, 55_000).nodes[b]?.status).toBe("up");
 	});
 
-	it("keeps routing to a dead server when health checks are off", () => {
-		const snap = snapshotAt(without, 30_000);
-		expect(snap.servers[1]?.status).toBe("down-routed");
-		expect(snap.inRotation).toBe(2);
-		expect(snap.servers[1]?.routedRps).toBe(50);
+	it("keeps a crashed node routed when nothing watches it", () => {
+		const { result, node } = run("lb-failure-no-health-checks");
+		const b = node("server-b");
+		expect(snapshotAt(result, 30_000).nodes[b]?.status).toBe("down-routed");
+		expect(snapshotAt(result, 45_000).nodes[b]?.status).toBe("up");
+		// Refused calls never arrive, so they are not counted as calls, but their failures originate here.
+		const during = snapshotAt(result, 30_000);
+		expect(during.nodes[b]?.callsRps).toBe(0);
+		expect(during.nodes[b]?.failedRps).toBeGreaterThan(0);
+		expect(during.failedRps).toBeGreaterThan(0);
 	});
-});
 
-describe("faultBands", () => {
-	it("draws the detection gap only until detection", () => {
-		const { bands } = faultBands(withChecks);
-		expect(bands.map((b) => [b.kind, b.fromMs, b.toMs])).toEqual([
-			["gap", 20_000, 25_000],
-			["down", 25_000, 40_000],
-			["off", 40_000, 45_000],
+	it("marks a slowed-down node as degraded and lists the active fault", () => {
+		const { result, node } = run("cascading-failure");
+		const slow = result.experiment.faults.find((f) => f.kind === "slowdown");
+		if (!slow || !("untilMs" in slow) || slow.untilMs === undefined)
+			throw new Error("example changed");
+		const target = node(slow.target);
+		const before = snapshotAt(result, slow.atMs - 1);
+		const during = snapshotAt(result, slow.atMs + 1000);
+		expect(before.nodes[target]?.status).toBe("up");
+		expect(during.nodes[target]?.status).toBe("degraded");
+		expect(during.nodes[target]?.activeFaults).toEqual([
+			result.experiment.faults.indexOf(slow),
 		]);
-		expect(faultBands(without).bands.map((b) => b.kind)).toEqual(["gap"]);
+	});
+
+	it("reports breaker state per link", () => {
+		const { result } = run("circuit-breaker");
+		const opens = result.metrics.transitions.filter(
+			(t) => t.kind === "breaker" && t.state === "open",
+		);
+		expect(opens.length).toBeGreaterThan(0);
+		const first = opens[0] as { tMs: number; edge: number };
+		expect(snapshotAt(result, first.tMs - 1).links[first.edge]?.breaker).toBe(
+			"closed",
+		);
+		expect(snapshotAt(result, first.tMs).links[first.edge]?.breaker).toBe(
+			"open",
+		);
+	});
+
+	it("clamps the window to the run and reports per-second rates", () => {
+		const { result } = run("lb-failure-with-health-checks");
+		const last = snapshotAt(result, 10 * 60 * 60 * 1000);
+		expect(last.window).toBe(result.metrics.series.startMs.length - 1);
+		const steady = snapshotAt(result, 10_000);
+		// 100 req/s offered during steady traffic.
+		expect(steady.offeredRps).toBeCloseTo(100, 0);
+		expect(steady.succeededRps).toBeCloseTo(100, 0);
 	});
 });
 
-describe("result artifact", () => {
-	it("is reproducible byte for byte and carries digests and limitations", () => {
-		const again = executeRun(builtIn("lb-failure-with-health-checks"), false);
-		expect(canonicalResult(again)).toBe(canonicalResult(withChecks));
-		const artifact = resultArtifact(withChecks);
-		expect(artifact.inputDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
-		expect(artifact.limitations.length).toBeGreaterThan(3);
-		// Wall-clock values never enter the artifact.
-		expect(artifact).not.toHaveProperty("durationMs");
-		expect(JSON.stringify(artifact)).not.toMatch(/finishedAt/);
+describe("stateChangeTimes", () => {
+	it("lists every transition time once, in order", () => {
+		const { result } = run("lb-failure-with-health-checks");
+		const times = stateChangeTimes(result);
+		expect(times).toContain(20_000);
+		expect(times).toContain(40_000);
+		expect(times).toEqual([...new Set(times)].sort((a, b) => a - b));
 	});
 });

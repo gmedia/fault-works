@@ -1,4 +1,4 @@
-import { STARTER_COMPARISON, servers } from "@faultworks/experiment";
+import { type Locale, STARTER_COMPARISON } from "@faultworks/experiment";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowRightLeft,
@@ -12,6 +12,7 @@ import {
 	Upload,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
@@ -31,16 +32,15 @@ import { formatRelative } from "#/lib/format.ts";
 import { useDocumentTitle } from "#/lib/use-document-title.ts";
 import { type LibraryEntry, useLibrary } from "#/state/library.ts";
 
-export const Route = createFileRoute("/")({
-	component: HomePage,
-});
+export const Route = createFileRoute("/")({ component: HomePage });
 
 function HomePage() {
+	const { t, i18n } = useTranslation();
 	const entries = useLibrary((s) => s.entries);
 	const order = useLibrary((s) => s.order);
 	const restoreBuiltIns = useLibrary((s) => s.restoreBuiltIns);
 	const [query, setQuery] = useState("");
-	useDocumentTitle("Experiments");
+	useDocumentTitle(t("nav.experiments"));
 
 	const list = useMemo(() => {
 		const q = query.trim().toLowerCase();
@@ -55,39 +55,38 @@ function HomePage() {
 					e.experiment.experimentId.includes(q),
 			);
 	}, [entries, order, query]);
-
 	const total = order.length;
-	const starterReady =
-		entries[STARTER_COMPARISON.a] && entries[STARTER_COMPARISON.b];
-	const missingBuiltIns =
-		!entries[STARTER_COMPARISON.a] || !entries[STARTER_COMPARISON.b];
+	const starterReady = Boolean(
+		entries[STARTER_COMPARISON.a] && entries[STARTER_COMPARISON.b],
+	);
+	const restore = () => {
+		const n = restoreBuiltIns(i18n.language as Locale);
+		toast.success(t("library.restored", { count: n }));
+	};
 
 	return (
 		<div className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
 			<div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
 				<div className="max-w-2xl">
 					<h1 className="font-semibold text-3xl tracking-tight sm:text-4xl">
-						Failure experiments
+						{t("home.title")}
 					</h1>
-					<p className="mt-3 text-lg text-muted-foreground">
-						Describe a small system, break one part on purpose, and see what
-						changes. Every run is reproducible from its file and seed.
-					</p>
+					<p className="mt-3 text-lg text-muted-foreground">{t("home.lead")}</p>
 				</div>
 				<div className="flex flex-wrap gap-2">
 					<ImportDialog
 						trigger={
 							<Button variant="outline">
 								<Upload aria-hidden="true" />
-								Import
+								{t("home.import")}
 							</Button>
 						}
 					/>
 					<NewExperimentDialog
 						trigger={
-							<Button variant="outline">
+							<Button>
 								<FilePlus2 aria-hidden="true" />
-								New experiment
+								{t("home.new")}
 							</Button>
 						}
 					/>
@@ -102,7 +101,7 @@ function HomePage() {
 						id="library-heading"
 						className="font-semibold text-xl tracking-tight"
 					>
-						In this browser{" "}
+						{t("home.inBrowser")}{" "}
 						<span className="font-normal text-muted-foreground">({total})</span>
 					</h2>
 					{total > 3 && (
@@ -115,8 +114,8 @@ function HomePage() {
 								type="search"
 								value={query}
 								onChange={(e) => setQuery(e.target.value)}
-								placeholder="Filter by title or question"
-								aria-label="Filter experiments"
+								placeholder={t("home.filter")}
+								aria-label={t("home.filterLabel")}
 								className="pl-9"
 							/>
 						</div>
@@ -129,42 +128,32 @@ function HomePage() {
 							className="mx-auto size-6 text-muted-foreground"
 							aria-hidden="true"
 						/>
-						<p className="mt-3 font-medium">No experiments in this browser</p>
+						<p className="mt-3 font-medium">{t("home.emptyTitle")}</p>
 						<p className="mt-1 text-muted-foreground text-sm">
-							Bring back the five built-in examples, import a file, or start
-							from a two-server template.
+							{t("home.emptyBody")}
 						</p>
 						<div className="mt-4 flex flex-wrap justify-center gap-2">
-							<Button
-								onClick={() => {
-									const n = restoreBuiltIns();
-									toast.success(
-										`Restored ${n} built-in example${n === 1 ? "" : "s"}`,
-									);
-								}}
-							>
-								Restore examples
-							</Button>
+							<Button onClick={restore}>{t("home.restore")}</Button>
 							<NewExperimentDialog
-								trigger={<Button variant="outline">New experiment</Button>}
+								trigger={<Button variant="outline">{t("home.new")}</Button>}
 							/>
 						</div>
 					</div>
 				) : list.length === 0 ? (
 					<p className="mt-6 rounded-lg border border-dashed p-6 text-center text-muted-foreground">
-						No experiment matches “{query}”.{" "}
+						{t("home.noMatch", { query })}{" "}
 						<button
 							type="button"
 							className="underline underline-offset-4"
 							onClick={() => setQuery("")}
 						>
-							Clear the filter
+							{t("home.clearFilter")}
 						</button>
 					</p>
 				) : (
-					<ul className="mt-4 divide-y rounded-lg border bg-card">
+					<ul className="mt-4 grid gap-3 sm:grid-cols-2">
 						{list.map((entry) => (
-							<ExperimentRow
+							<ExperimentCard
 								key={entry.experiment.experimentId}
 								entry={entry}
 							/>
@@ -172,20 +161,15 @@ function HomePage() {
 					</ul>
 				)}
 
-				{total > 0 && missingBuiltIns && (
+				{total > 0 && !starterReady && (
 					<p className="mt-3 text-muted-foreground text-sm">
-						Some built-in examples were removed.{" "}
+						{t("home.someRemoved")}{" "}
 						<button
 							type="button"
 							className="underline underline-offset-4 hover:text-foreground"
-							onClick={() => {
-								const n = restoreBuiltIns();
-								toast.success(
-									`Restored ${n} built-in example${n === 1 ? "" : "s"}`,
-								);
-							}}
+							onClick={restore}
 						>
-							Restore them
+							{t("home.restoreThem")}
 						</button>
 					</p>
 				)}
@@ -195,59 +179,40 @@ function HomePage() {
 }
 
 function StarterCard() {
-	const baseline = useLibrary((s) => s.entries[STARTER_COMPARISON.a]);
-	if (!baseline) return null;
+	const { t } = useTranslation();
 	return (
 		<section
 			aria-labelledby="starter-heading"
-			className="mt-10 grid overflow-hidden rounded-xl border bg-card md:grid-cols-[1fr_minmax(0,22rem)]"
+			className="mt-10 grid overflow-hidden rounded-xl border bg-card md:grid-cols-[1fr_minmax(0,20rem)]"
 		>
 			<div className="p-6 sm:p-8">
-				<p className="text-muted-foreground text-sm">
-					Start here · about 5 minutes
-				</p>
+				<p className="text-muted-foreground text-sm">{t("starter.kicker")}</p>
 				<h2
 					id="starter-heading"
 					className="mt-2 font-semibold text-2xl tracking-tight"
 				>
-					What do health checks actually save you?
+					{t("starter.title")}
 				</h2>
 				<p className="mt-3 max-w-prose text-muted-foreground">
-					Two experiments that differ in exactly one setting. Server B crashes
-					for 20 seconds while the client sends 100 requests per second. In the
-					first, the load balancer never checks its backends. In the second, it
-					probes them every 5 seconds and needs two failed probes, so it notices
-					the crash after 5 to 10 seconds.
+					{t("starter.body")}
 				</p>
 				<ol className="mt-5 space-y-2 text-sm">
-					{[
-						"Run the baseline and look at the failed requests.",
-						"Run the version with health checks.",
-						"Compare them and read why the numbers differ.",
-					].map((step, i) => (
-						<li key={step} className="flex gap-3">
-							<span
-								className="flex size-6 shrink-0 items-center justify-center rounded-full border font-medium text-xs tabular"
-								aria-hidden="true"
-							>
-								{i + 1}
-							</span>
-							<span className="pt-0.5">{step}</span>
-						</li>
-					))}
+					{(t("starter.steps", { returnObjects: true }) as string[]).map(
+						(step, i) => (
+							<li key={step} className="flex gap-3">
+								<span
+									className="flex size-6 shrink-0 items-center justify-center rounded-full border font-medium text-xs tabular"
+									aria-hidden="true"
+								>
+									{i + 1}
+								</span>
+								<span className="pt-0.5">{step}</span>
+							</li>
+						),
+					)}
 				</ol>
 				<p className="mt-4 max-w-prose text-muted-foreground text-sm">
-					In both, the crashed server refuses connections, so requests fail
-					instantly and latency barely moves. For a failure that also makes
-					clients wait, open{" "}
-					<Link
-						to="/experiments/$experimentId"
-						params={{ experimentId: "hanging-backend" }}
-						className="underline underline-offset-4 hover:text-foreground"
-					>
-						Hanging backend
-					</Link>
-					.
+					{t("starter.note")}
 				</p>
 				<div className="mt-6 flex flex-wrap gap-2">
 					<Button asChild>
@@ -255,7 +220,7 @@ function StarterCard() {
 							to="/experiments/$experimentId"
 							params={{ experimentId: STARTER_COMPARISON.a }}
 						>
-							Open the baseline
+							{t("starter.open")}
 						</Link>
 					</Button>
 					<Button asChild variant="outline">
@@ -264,12 +229,12 @@ function StarterCard() {
 							search={{ a: STARTER_COMPARISON.a, b: STARTER_COMPARISON.b }}
 						>
 							<ArrowRightLeft aria-hidden="true" />
-							Compare the pair
+							{t("starter.compare")}
 						</Link>
 					</Button>
 				</div>
 			</div>
-			<div className="relative hidden items-center justify-center border-l bg-background/60 p-6 md:flex">
+			<div className="hidden items-center justify-center border-l bg-background/60 p-6 md:flex">
 				<StarterIllustration />
 			</div>
 		</section>
@@ -278,6 +243,7 @@ function StarterCard() {
 
 /** A labeled sketch of the timeline both experiments share: crash, detection, recovery. */
 function StarterIllustration() {
+	const { t } = useTranslation();
 	return (
 		<figure className="w-full">
 			<svg
@@ -286,11 +252,7 @@ function StarterIllustration() {
 				role="img"
 				aria-labelledby="starter-fig"
 			>
-				<title id="starter-fig">
-					Timeline: Server B is down from 20 to 40 seconds. Without health
-					checks it receives traffic the whole time; with checks it is removed
-					after about 5 seconds.
-				</title>
+				<title id="starter-fig">{t("starter.figure")}</title>
 				<line x1="10" y1="120" x2="290" y2="120" stroke="var(--chart-axis)" />
 				{[0, 20, 40, 60].map((s) => (
 					<g key={s}>
@@ -308,12 +270,12 @@ function StarterIllustration() {
 							fontSize="10"
 							fill="var(--muted-foreground)"
 						>
-							{s} s
+							{s} {t("units.s")}
 						</text>
 					</g>
 				))}
 				<text x="10" y="22" fontSize="10.5" fill="var(--muted-foreground)">
-					No health checks
+					{t("starter.noChecks")}
 				</text>
 				<rect
 					x={10 + 20 * 4.6}
@@ -324,7 +286,7 @@ function StarterIllustration() {
 					fill="url(#hatch)"
 				/>
 				<text x="10" y="76" fontSize="10.5" fill="var(--muted-foreground)">
-					With health checks
+					{t("starter.withChecks")}
 				</text>
 				<rect
 					x={10 + 20 * 4.6}
@@ -349,7 +311,7 @@ function StarterIllustration() {
 					fontSize="9.5"
 					fill="var(--muted-foreground)"
 				>
-					out of rotation
+					{t("starter.outOfRotation")}
 				</text>
 				<defs>
 					<pattern
@@ -377,20 +339,14 @@ function StarterIllustration() {
 					className="gap-hatch inline-block size-3 rounded-sm"
 					aria-hidden="true"
 				/>
-				Down, but the load balancer still sends it requests
+				{t("bands.legend.gap")}
 			</figcaption>
 		</figure>
 	);
 }
 
-const ORIGIN_LABEL: Record<LibraryEntry["origin"], string> = {
-	"built-in": "Example",
-	imported: "Imported",
-	variant: "Variant",
-	created: "Yours",
-};
-
-function ExperimentRow({ entry }: { entry: LibraryEntry }) {
+function ExperimentCard({ entry }: { entry: LibraryEntry }) {
+	const { t } = useTranslation();
 	const { experiment } = entry;
 	const remove = useLibrary((s) => s.remove);
 	const restoreEntry = useLibrary((s) => s.restoreEntry);
@@ -399,25 +355,25 @@ function ExperimentRow({ entry }: { entry: LibraryEntry }) {
 		entry.basedOn ? s.entries[entry.basedOn]?.experiment.title : undefined,
 	);
 	const navigate = useNavigate();
-	const serverCount = servers(experiment).length;
+	const nodes = experiment.model.nodes.length - 1;
 
 	return (
-		<li className="group relative flex items-start gap-4 p-4 hover:bg-accent/40 sm:items-center">
+		<li className="group relative flex gap-4 rounded-lg border bg-card p-4 hover:border-input">
 			<TopologyThumbnail
 				experiment={experiment}
-				className="hidden h-12 w-20 shrink-0 sm:block"
+				className="h-14 w-24 shrink-0"
 			/>
 			<div className="min-w-0 flex-1">
 				<div className="flex flex-wrap items-center gap-2">
 					<Link
 						to="/experiments/$experimentId"
 						params={{ experimentId: experiment.experimentId }}
-						className="font-medium after:absolute after:inset-0 hover:underline focus-visible:outline-none focus-visible:after:rounded-md focus-visible:after:outline-2 focus-visible:after:outline-ring"
+						className="font-medium after:absolute after:inset-0 hover:underline focus-visible:outline-none focus-visible:after:rounded-lg focus-visible:after:outline-2 focus-visible:after:outline-ring"
 					>
 						{experiment.title}
 					</Link>
 					<Badge variant="secondary" className="font-normal">
-						{ORIGIN_LABEL[entry.origin]}
+						{t(`origin.${entry.origin}`)}
 					</Badge>
 				</div>
 				{experiment.question && (
@@ -426,13 +382,14 @@ function ExperimentRow({ entry }: { entry: LibraryEntry }) {
 					</p>
 				)}
 				<p className="mt-1.5 text-muted-foreground text-xs">
-					{serverCount} server{serverCount === 1 ? "" : "s"} ·{" "}
-					{experiment.faults.length} fault
-					{experiment.faults.length === 1 ? "" : "s"} ·{" "}
-					{experiment.workload.offeredRps} req/s · seed{" "}
-					<span className="font-mono">{experiment.seed}</span> · edited{" "}
-					{formatRelative(entry.updatedAt)}
-					{basedOnTitle && <> · variant of {basedOnTitle}</>}
+					{t("library.meta", {
+						nodes,
+						faults: experiment.faults.length,
+						rps: experiment.workload.offeredRps,
+						when: formatRelative(entry.updatedAt),
+					})}
+					{basedOnTitle &&
+						` · ${t("library.variantOf", { title: basedOnTitle })}`}
 				</p>
 			</div>
 			<DropdownMenu>
@@ -440,8 +397,8 @@ function ExperimentRow({ entry }: { entry: LibraryEntry }) {
 					<Button
 						variant="ghost"
 						size="icon"
-						className="relative z-10"
-						aria-label={`Actions for ${experiment.title}`}
+						className="relative z-10 shrink-0"
+						aria-label={t("library.actionsFor", { title: experiment.title })}
 					>
 						<EllipsisVertical />
 					</Button>
@@ -449,11 +406,14 @@ function ExperimentRow({ entry }: { entry: LibraryEntry }) {
 				<DropdownMenuContent align="end">
 					<DropdownMenuItem
 						onSelect={() => {
-							const id = createVariant(experiment.experimentId);
+							const id = createVariant(
+								experiment.experimentId,
+								t("variant.suffix"),
+								t("variant.descriptionPrompt", { title: experiment.title }),
+							);
 							if (id) {
-								toast.success("Variant created", {
-									description:
-										"Change one setting, then compare it with the original.",
+								toast.success(t("variant.created"), {
+									description: t("variant.createdHint"),
 								});
 								void navigate({
 									to: "/experiments/$experimentId",
@@ -463,11 +423,11 @@ function ExperimentRow({ entry }: { entry: LibraryEntry }) {
 						}}
 					>
 						<Copy aria-hidden="true" />
-						Create a variant
+						{t("actions.variant")}
 					</DropdownMenuItem>
 					<DropdownMenuItem onSelect={() => exportExperiment(experiment)}>
 						<Download aria-hidden="true" />
-						Export JSON
+						{t("export.experiment")}
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem
@@ -475,16 +435,16 @@ function ExperimentRow({ entry }: { entry: LibraryEntry }) {
 						onSelect={() => {
 							const removed = remove(experiment.experimentId);
 							if (!removed) return;
-							toast(`Deleted “${experiment.title}”`, {
+							toast(t("library.deleted", { title: experiment.title }), {
 								action: {
-									label: "Undo",
+									label: t("common.undo"),
 									onClick: () => restoreEntry(removed.entry, removed.index),
 								},
 							});
 						}}
 					>
 						<Trash2 aria-hidden="true" />
-						Delete
+						{t("actions.delete")}
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>

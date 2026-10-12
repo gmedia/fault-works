@@ -1,26 +1,26 @@
 import {
-	ARRIVAL_LABELS,
 	addFault,
-	BEHAVIOR_LABELS,
-	BURST_FIELDS,
-	DISTRIBUTION_LABELS,
-	type Experiment,
+	addNode,
+	canAddNode,
 	effectiveHorizonMs,
 	estimateOfferedRequests,
 	FAULT_FIELDS,
-	HEALTH_CHECK_FIELDS,
+	type FaultKind,
+	type FieldKey,
+	faultTargets,
 	LIMITS,
-	RUN_FIELDS,
+	LINK_FAULT_KINDS,
+	type NodeKind,
 	randomSeed,
-	removeServer,
-	SERVER_FIELDS,
-	type ServerNode,
-	servers,
-	WORKLOAD_FIELDS,
+	removeLink,
+	removeNode,
+	updateLink,
+	workers,
 } from "@faultworks/experiment";
 import { useNavigate } from "@tanstack/react-router";
-import { Dices, Plus, Server, Trash2, Waypoints } from "lucide-react";
+import { ArrowRight, Dices, Link2, Plus, Trash2, Unplug } from "lucide-react";
 import { useEffect, useId, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "#/components/ui/button.tsx";
 import { Input } from "#/components/ui/input.tsx";
@@ -32,7 +32,7 @@ import {
 	TabsTrigger,
 } from "#/components/ui/tabs.tsx";
 import { formatCount, formatMs } from "#/lib/format.ts";
-import { serverColor } from "#/lib/series.ts";
+import { ADDABLE_KINDS, NODE_ICONS, seriesColor } from "#/lib/nodes.ts";
 import { useLibrary } from "#/state/library.ts";
 import { type InspectorTab, useWorkbench } from "./context.tsx";
 import {
@@ -42,32 +42,27 @@ import {
 	SelectField,
 	SwitchField,
 	TextField,
+	useMessage,
 } from "./fields.tsx";
+import { orderedWorkers } from "./layers.ts";
 import {
-	loadBalancer,
+	linkIndex,
 	nodeIndex,
 	setLabel,
+	updateBalancer,
 	updateFault,
 	updateHealthCheck,
-	updateServerConfig,
+	updateWorkerConfig,
 } from "./mutations.ts";
 
-const TABS: Array<{ value: InspectorTab; label: string }> = [
-	{ value: "component", label: "Component" },
-	{ value: "traffic", label: "Traffic" },
-	{ value: "faults", label: "Faults" },
-	{ value: "run", label: "Run" },
-	{ value: "notes", label: "Notes" },
-];
+const TABS: InspectorTab[] = ["component", "traffic", "faults", "run", "notes"];
 
 export function Inspector() {
+	const { t } = useTranslation();
 	const { inspectorTab, setInspectorTab, experiment, validation } =
 		useWorkbench();
-	const counts: Partial<Record<InspectorTab, number>> = {
-		faults: experiment.faults.length,
-	};
-	const errorsIn = (prefix: string[]) =>
-		validation.issues.filter((i) => prefix.some((p) => i.path.startsWith(p)))
+	const errorsIn = (prefixes: string[]) =>
+		validation.issues.filter((i) => prefixes.some((p) => i.path.startsWith(p)))
 			.length;
 	const tabErrors: Record<InspectorTab, number> = {
 		component: errorsIn(["model"]),
@@ -82,6 +77,9 @@ export function Inspector() {
 			"expectedObservations",
 		]),
 	};
+	const counts: Partial<Record<InspectorTab, number>> = {
+		faults: experiment.faults.length,
+	};
 
 	return (
 		<Tabs
@@ -89,27 +87,27 @@ export function Inspector() {
 			onValueChange={(v) => setInspectorTab(v as InspectorTab)}
 			className="flex h-full min-h-0 flex-col gap-0"
 		>
-			<div className="border-b px-3 pt-3">
+			<div className="border-b px-3 pt-2">
 				<TabsList
 					className="w-full justify-start overflow-x-auto bg-transparent p-0"
-					aria-label="Settings"
+					aria-label={t("inspector.settings")}
 				>
 					{TABS.map((tab) => (
 						<TabsTrigger
-							key={tab.value}
-							value={tab.value}
+							key={tab}
+							value={tab}
 							className="relative flex-none rounded-none border-0 border-transparent border-b-2 px-2.5 pb-2 data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none"
 						>
-							{tab.label}
-							{counts[tab.value] !== undefined && (
+							{t(`inspector.tabs.${tab}`)}
+							{counts[tab] !== undefined && (
 								<span className="ml-1 text-muted-foreground tabular">
-									{counts[tab.value]}
+									{counts[tab]}
 								</span>
 							)}
-							{tabErrors[tab.value] > 0 && (
+							{tabErrors[tab] > 0 && (
 								<span className="ml-1 rounded-full bg-down px-1.5 text-[10px] text-white tabular">
-									<span className="sr-only">, problems: </span>
-									{tabErrors[tab.value]}
+									<span className="sr-only">{t("inspector.problems")}: </span>
+									{tabErrors[tab]}
 								</span>
 							)}
 						</TabsTrigger>
@@ -137,453 +135,801 @@ export function Inspector() {
 	);
 }
 
-function ComponentPanel() {
-	const { experiment, selectedNode, selectNode } = useWorkbench();
-	const node = experiment.model.nodes.find((n) => n.id === selectedNode);
+/** Errors for a field path, translated. */
+function useFieldErrors() {
+	const { validation } = useWorkbench();
+	const message = useMessage();
+	return (path: string) => validation.byPath.get(path)?.map(message);
+}
 
-	if (!node)
+function ComponentPanel() {
+	const { t } = useTranslation();
+	const { experiment, selection, select, update } = useWorkbench();
+	const node =
+		selection?.type === "node"
+			? experiment.model.nodes.find((n) => n.id === selection.id)
+			: undefined;
+	const link =
+		selection?.type === "link"
+			? experiment.model.links.find((l) => l.id === selection.id)
+			: undefined;
+
+	if (link) return <LinkSettings linkId={link.id} />;
+	if (!node) {
+		const list = orderedWorkers(experiment);
 		return (
 			<div className="grid gap-4">
 				<p className="text-muted-foreground text-sm">
-					Select a component on the canvas, or pick one here, to see and change
-					its settings.
+					{t("inspector.pickComponent")}
 				</p>
 				<ul className="grid gap-1.5">
-					{experiment.model.nodes.map((n) => (
-						<li key={n.id}>
-							<Button
-								variant="outline"
-								className="w-full justify-start"
-								onClick={() => selectNode(n.id)}
-							>
-								{n.kind === "server" ? (
-									<span
-										className="size-2.5 rounded-full"
-										style={{
-											background: serverColor(
-												servers(experiment).findIndex((s) => s.id === n.id),
-											),
-										}}
-										aria-hidden="true"
-									/>
-								) : (
-									<Waypoints aria-hidden="true" />
-								)}
-								{n.label ?? n.id}
-								<span className="ml-auto text-muted-foreground text-xs">
-									{kindLabel(n.kind)}
-								</span>
-							</Button>
-						</li>
-					))}
+					{experiment.model.nodes.map((n) => {
+						const Icon = NODE_ICONS[n.kind];
+						const wi = list.findIndex((w) => w.id === n.id);
+						return (
+							<li key={n.id}>
+								<Button
+									variant="outline"
+									className="w-full justify-start"
+									onClick={() => select({ type: "node", id: n.id })}
+								>
+									{wi >= 0 ? (
+										<span
+											className="size-2.5 rounded-full"
+											style={{ background: seriesColor(wi) }}
+											aria-hidden="true"
+										/>
+									) : (
+										<Icon aria-hidden="true" />
+									)}
+									{n.label ?? n.id}
+									<span className="ml-auto text-muted-foreground text-xs">
+										{t(`kinds.${n.kind}`)}
+									</span>
+								</Button>
+							</li>
+						);
+					})}
 				</ul>
-				<ConnectionNote />
+				<AddNodeButtons from={null} />
+				<p className="text-muted-foreground text-xs">
+					{t("inspector.linksHint")}
+				</p>
 			</div>
 		);
+	}
+
+	const Icon = NODE_ICONS[node.kind];
+	const outgoing = experiment.model.links.filter((l) => l.source === node.id);
+	const incoming = experiment.model.links.filter((l) => l.target === node.id);
+	const onlyNode = node.kind !== "client" && experiment.model.nodes.length <= 2;
 
 	return (
 		<div className="grid gap-6">
 			<div className="flex items-center justify-between gap-2">
-				<div>
-					<p className="text-muted-foreground text-xs">
-						{kindLabel(node.kind)}
-					</p>
-					<h2 className="font-semibold">{node.label ?? node.id}</h2>
+				<div className="flex items-center gap-2">
+					<Icon className="size-5 text-muted-foreground" aria-hidden="true" />
+					<div>
+						<p className="text-muted-foreground text-xs">
+							{t(`kinds.${node.kind}`)}
+						</p>
+						<h2 className="font-semibold">{node.label ?? node.id}</h2>
+					</div>
 				</div>
-				<Button variant="ghost" size="sm" onClick={() => selectNode(null)}>
-					All components
+				<Button variant="ghost" size="sm" onClick={() => select(null)}>
+					{t("inspector.allComponents")}
 				</Button>
 			</div>
-			<LabelField id={node.id} label={node.label ?? ""} />
+			<TextField
+				label={t("inspector.name")}
+				value={node.label ?? ""}
+				maxLength={40}
+				placeholder={node.id}
+				help={t("inspector.nameHelp", { id: node.id })}
+				onChange={(v) =>
+					update((e) => setLabel(e, node.id, v), `label:${node.id}`)
+				}
+			/>
 			{node.kind === "client" && <ClientSettings />}
-			{node.kind === "load-balancer" && <LoadBalancerSettings />}
-			{node.kind === "server" && <ServerSettings server={node} />}
+			{node.kind === "load-balancer" && <LoadBalancerSettings id={node.id} />}
+			{(node.kind === "service" ||
+				node.kind === "database" ||
+				node.kind === "cache" ||
+				node.kind === "queue") && <WorkerSettings id={node.id} />}
+
+			<section className="grid gap-2">
+				<h3 className="font-semibold text-sm">{t("inspector.connections")}</h3>
+				{incoming.length === 0 && node.kind !== "client" && (
+					<p className="text-down text-xs">{t("inspector.noIncoming")}</p>
+				)}
+				{outgoing.length === 0 && node.kind !== "client" ? null : null}
+				<ul className="grid gap-1.5">
+					{outgoing.map((l) => (
+						<li key={l.id} className="flex items-center gap-2 text-sm">
+							<ArrowRight
+								className="size-3.5 text-muted-foreground"
+								aria-hidden="true"
+							/>
+							<button
+								type="button"
+								className="min-w-0 flex-1 truncate text-left hover:underline"
+								onClick={() => select({ type: "link", id: l.id })}
+							>
+								{experiment.model.nodes.find((n) => n.id === l.target)?.label ??
+									l.target}
+							</button>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								aria-label={t("inspector.removeLinkTo", { target: l.target })}
+								onClick={() => update((e) => removeLink(e, l.id))}
+							>
+								<Unplug />
+							</Button>
+						</li>
+					))}
+				</ul>
+				{node.kind !== "cache" || outgoing.length === 0 ? (
+					<AddNodeButtons from={node.id} />
+				) : null}
+				<ConnectExisting from={node.id} />
+			</section>
+
+			{node.kind !== "client" && (
+				<div className="border-t pt-4">
+					<Button
+						variant="outline"
+						className="text-down"
+						disabled={onlyNode}
+						onClick={() => {
+							const { experiment: next, removedFaults } = removeNode(
+								experiment,
+								node.id,
+							);
+							update(() => next);
+							select(null);
+							toast(t("inspector.removed", { name: node.label ?? node.id }), {
+								description: t(
+									removedFaults
+										? "inspector.removedWithFaults"
+										: "inspector.undoHint",
+									{ count: removedFaults },
+								),
+							});
+						}}
+					>
+						<Trash2 aria-hidden="true" />
+						{t("inspector.removeComponent")}
+					</Button>
+				</div>
+			)}
 		</div>
 	);
 }
 
-function kindLabel(kind: string) {
-	return kind === "load-balancer"
-		? "Load balancer"
-		: kind === "client"
-			? "Client"
-			: "Server";
-}
-
-function ConnectionNote() {
+/** Buttons that add a new component, linked from `from` when given. */
+function AddNodeButtons({ from }: { from: string | null }) {
+	const { t } = useTranslation();
+	const { experiment, update, select, setInspectorTab } = useWorkbench();
+	const canAdd = canAddNode(experiment);
 	return (
-		<p className="rounded-md border bg-muted/50 p-3 text-muted-foreground text-xs">
-			Connections are fixed in v0.1: the client sends to the load balancer, and
-			the load balancer sends to every server in round-robin order.
-		</p>
+		<div className="grid gap-1.5">
+			<p className="text-muted-foreground text-xs">
+				{from ? t("inspector.addDownstream") : t("inspector.addComponent")}
+			</p>
+			<div className="flex flex-wrap gap-1.5">
+				{ADDABLE_KINDS.map((kind: NodeKind) => {
+					const Icon = NODE_ICONS[kind];
+					return (
+						<Button
+							key={kind}
+							variant="outline"
+							size="sm"
+							disabled={!canAdd}
+							title={
+								canAdd
+									? undefined
+									: t("inspector.maxNodes", { max: LIMITS.maxNodes })
+							}
+							onClick={() => {
+								const { experiment: next, id } = addNode(experiment, kind, {
+									from: from ?? undefined,
+									label: t(`defaults.${kind}`),
+								});
+								update(() => next);
+								select({ type: "node", id });
+								setInspectorTab("component");
+							}}
+						>
+							<Plus aria-hidden="true" />
+							<Icon aria-hidden="true" />
+							{t(`kinds.${kind}`)}
+						</Button>
+					);
+				})}
+			</div>
+		</div>
 	);
 }
 
-function LabelField({ id, label }: { id: string; label: string }) {
-	const { update } = useWorkbench();
+/** "Connect to…": link this node to a component that already exists. */
+function ConnectExisting({ from }: { from: string }) {
+	const { t } = useTranslation();
+	const { experiment, update, select } = useWorkbench();
+	const id = useId();
+	const existing = new Set(
+		experiment.model.links
+			.filter((l) => l.source === from)
+			.map((l) => l.target),
+	);
+	const candidates = experiment.model.nodes.filter(
+		(n) => n.id !== from && n.kind !== "client" && !existing.has(n.id),
+	);
+	if (candidates.length === 0) return null;
 	return (
-		<TextField
-			label="Name"
-			value={label}
-			maxLength={40}
-			placeholder={id}
-			onChange={(v) => update((e) => setLabel(e, id, v), `label:${id}`)}
-			help={`Display name only. The id ${id} is what faults and exports refer to.`}
-		/>
+		<div className="flex items-end gap-2">
+			<div className="grid flex-1 gap-1">
+				<Label htmlFor={id} className="text-xs">
+					{t("inspector.connectTo")}
+				</Label>
+				<select
+					id={id}
+					className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+					defaultValue=""
+					onChange={(e) => {
+						const target = e.target.value;
+						if (!target) return;
+						e.target.value = "";
+						update((exp) => {
+							const link = {
+								id: `${from}-${target}`,
+								source: from,
+								target,
+								latencyMs: 0,
+								timeoutMs: null,
+								retries: 0,
+								circuitBreaker: {
+									enabled: false,
+									failureThreshold: 5,
+									openMs: 10_000,
+								},
+							};
+							const taken = new Set(exp.model.links.map((l) => l.id));
+							let linkId = link.id;
+							for (let n = 2; taken.has(linkId); n++)
+								linkId = `${link.id}-${n}`;
+							return {
+								...exp,
+								model: {
+									...exp.model,
+									links: [...exp.model.links, { ...link, id: linkId }],
+								},
+							};
+						});
+						select({ type: "node", id: from });
+					}}
+				>
+					<option value="">{t("inspector.choose")}</option>
+					{candidates.map((n) => (
+						<option key={n.id} value={n.id}>
+							{n.label ?? n.id} ({t(`kinds.${n.kind}`)})
+						</option>
+					))}
+				</select>
+			</div>
+			<Link2
+				className="mb-2.5 size-4 text-muted-foreground"
+				aria-hidden="true"
+			/>
+		</div>
 	);
 }
 
 function ClientSettings() {
+	const { t } = useTranslation();
 	const { setInspectorTab, experiment } = useWorkbench();
 	return (
 		<div className="grid gap-3 text-sm">
 			<p className="text-muted-foreground">
-				The client sends {experiment.workload.offeredRps} req/s for{" "}
-				{formatMs(experiment.workload.durationMs)} and gives up on a request
-				after {formatMs(experiment.workload.timeoutMs)}.
+				{t("inspector.clientSummary", {
+					rps: experiment.workload.offeredRps,
+					duration: formatMs(experiment.workload.durationMs),
+					timeout: formatMs(experiment.workload.timeoutMs),
+				})}
 			</p>
 			<Button variant="outline" onClick={() => setInspectorTab("traffic")}>
-				Edit traffic
+				{t("inspector.editTraffic")}
 			</Button>
 		</div>
 	);
 }
 
-function LoadBalancerSettings() {
-	const { experiment, update, validation } = useWorkbench();
-	const lb = loadBalancer(experiment);
-	if (!lb) return null;
-	const i = nodeIndex(experiment, lb.id);
-	const hc = lb.config.healthCheck;
-	const err = (f: string) =>
-		validation.byPath.get(`model.nodes[${i}].config.healthCheck.${f}`);
+function LoadBalancerSettings({ id }: { id: string }) {
+	const { t } = useTranslation();
+	const { experiment, update } = useWorkbench();
+	const err = useFieldErrors();
+	const node = experiment.model.nodes.find((n) => n.id === id);
+	if (node?.kind !== "load-balancer") return null;
+	const i = nodeIndex(experiment, id);
+	const hc = node.config.healthCheck;
 	const minDetect = (hc.unhealthyThreshold - 1) * hc.intervalMs;
 	const maxDetect = hc.unhealthyThreshold * hc.intervalMs;
-
 	return (
 		<div className="grid gap-6">
-			<div className="grid gap-1 text-sm">
-				<span className="font-medium">Algorithm</span>
-				<span className="text-muted-foreground">
-					Round robin: each request goes to the next backend in rotation. It is
-					the only algorithm modeled in v0.1.
-				</span>
-			</div>
-			<FieldGroup title="Failure detection">
+			<FieldGroup title={t("inspector.routing")}>
+				<SelectField
+					field="balancer.algorithm"
+					value={node.config.algorithm}
+					onChange={(algorithm) =>
+						update((e) => updateBalancer(e, id, { algorithm }))
+					}
+				/>
+				<NumberField
+					field="balancer.retries"
+					value={node.config.retries}
+					integer
+					min={0}
+					errors={err(`model.nodes[${i}].config.retries`)}
+					onChange={(v) =>
+						v !== null &&
+						update(
+							(e) => updateBalancer(e, id, { retries: v }),
+							`lb.retries:${id}`,
+						)
+					}
+				/>
+			</FieldGroup>
+			<FieldGroup title={t("inspector.detection")}>
 				<SwitchField
-					info={HEALTH_CHECK_FIELDS.enabled}
+					field="healthCheck.enabled"
 					checked={hc.enabled}
 					onChange={(enabled) =>
-						update((e) => updateHealthCheck(e, { enabled }))
+						update((e) => updateHealthCheck(e, id, { enabled }))
 					}
 				/>
 				{hc.enabled ? (
 					<>
 						<NumberField
-							info={HEALTH_CHECK_FIELDS.intervalMs}
+							field="healthCheck.intervalMs"
 							value={hc.intervalMs}
 							integer
 							min={100}
 							step={500}
 							showSeconds
-							errors={err("intervalMs")}
+							errors={err(`model.nodes[${i}].config.healthCheck.intervalMs`)}
 							onChange={(v) =>
 								v !== null &&
 								update(
-									(e) => updateHealthCheck(e, { intervalMs: v }),
-									"hc.interval",
+									(e) => updateHealthCheck(e, id, { intervalMs: v }),
+									`hc.interval:${id}`,
 								)
 							}
 						/>
 						<NumberField
-							info={HEALTH_CHECK_FIELDS.unhealthyThreshold}
+							field="healthCheck.unhealthyThreshold"
 							value={hc.unhealthyThreshold}
 							integer
 							min={1}
-							errors={err("unhealthyThreshold")}
+							errors={err(
+								`model.nodes[${i}].config.healthCheck.unhealthyThreshold`,
+							)}
 							onChange={(v) =>
 								v !== null &&
 								update(
-									(e) => updateHealthCheck(e, { unhealthyThreshold: v }),
-									"hc.unhealthy",
+									(e) => updateHealthCheck(e, id, { unhealthyThreshold: v }),
+									`hc.unhealthy:${id}`,
 								)
 							}
 						/>
 						<NumberField
-							info={HEALTH_CHECK_FIELDS.healthyThreshold}
+							field="healthCheck.healthyThreshold"
 							value={hc.healthyThreshold}
 							integer
 							min={1}
-							errors={err("healthyThreshold")}
+							errors={err(
+								`model.nodes[${i}].config.healthCheck.healthyThreshold`,
+							)}
 							onChange={(v) =>
 								v !== null &&
 								update(
-									(e) => updateHealthCheck(e, { healthyThreshold: v }),
-									"hc.healthy",
+									(e) => updateHealthCheck(e, id, { healthyThreshold: v }),
+									`hc.healthy:${id}`,
 								)
 							}
 						/>
 						<NumberField
-							info={HEALTH_CHECK_FIELDS.probeTimeoutMs}
+							field="healthCheck.probeTimeoutMs"
 							value={hc.probeTimeoutMs}
 							integer
 							min={10}
 							step={100}
-							errors={err("probeTimeoutMs")}
+							errors={err(
+								`model.nodes[${i}].config.healthCheck.probeTimeoutMs`,
+							)}
 							onChange={(v) =>
 								v !== null &&
 								update(
-									(e) => updateHealthCheck(e, { probeTimeoutMs: v }),
-									"hc.timeout",
+									(e) => updateHealthCheck(e, id, { probeTimeoutMs: v }),
+									`hc.timeout:${id}`,
 								)
 							}
 						/>
 						<p className="rounded-md bg-gap-soft p-3 text-xs leading-relaxed">
-							<span className="font-medium">Expected detection delay.</span> A
-							server that refuses connections is noticed {formatMs(minDetect)}{" "}
-							to {formatMs(maxDetect)} after it crashes, depending on where in
-							the probe cycle the crash lands. A hanging server takes up to{" "}
-							{formatMs(hc.probeTimeoutMs)} longer, because each probe waits for
-							its timeout.
+							{t("inspector.detectionHint", {
+								min: formatMs(minDetect),
+								max: formatMs(maxDetect),
+								probeTimeout: formatMs(hc.probeTimeoutMs),
+							})}
 						</p>
 					</>
 				) : (
 					<p className="rounded-md bg-gap-soft p-3 text-xs leading-relaxed">
-						Without health checks the load balancer cannot notice a dead
-						backend. Every request it sends there fails until the server comes
-						back.
+						{t("inspector.noDetectionHint")}
 					</p>
 				)}
 			</FieldGroup>
-			<ConnectionNote />
 		</div>
 	);
 }
 
-function ServerSettings({ server }: { server: ServerNode }) {
-	const { experiment, update, validation, selectNode, setInspectorTab } =
-		useWorkbench();
-	const i = nodeIndex(experiment, server.id);
-	const err = (f: string) =>
-		validation.byPath.get(`model.nodes[${i}].config.${f}`);
-	const c = server.config;
+function WorkerSettings({ id }: { id: string }) {
+	const { t } = useTranslation();
+	const { experiment, update } = useWorkbench();
+	const err = useFieldErrors();
+	const node = experiment.model.nodes.find((n) => n.id === id);
+	if (!node || node.kind === "client" || node.kind === "load-balancer")
+		return null;
+	const i = nodeIndex(experiment, id);
+	const c = node.config;
 	const maxRps = (c.capacity * 1000) / c.serviceTimeMs;
-	const faults = experiment.faults.filter((f) => f.target === server.id);
-	const onlyServer = servers(experiment).length <= 1;
+	const isQueue = node.kind === "queue";
+	return (
+		<FieldGroup title={t("inspector.capacity")}>
+			<NumberField
+				field="worker.capacity"
+				labelKey={isQueue ? "queue.consumers" : undefined}
+				value={c.capacity}
+				integer
+				min={1}
+				errors={err(`model.nodes[${i}].config.capacity`)}
+				onChange={(v) =>
+					v !== null &&
+					update((e) => updateWorkerConfig(e, id, { capacity: v }), `cap:${id}`)
+				}
+			/>
+			<NumberField
+				field="worker.serviceTimeMs"
+				value={c.serviceTimeMs}
+				min={0.1}
+				step={10}
+				errors={err(`model.nodes[${i}].config.serviceTimeMs`)}
+				onChange={(v) =>
+					v !== null &&
+					update(
+						(e) => updateWorkerConfig(e, id, { serviceTimeMs: v }),
+						`svc:${id}`,
+					)
+				}
+			/>
+			<SelectField
+				field="worker.serviceTimeDistribution"
+				value={c.serviceTimeDistribution}
+				onChange={(v) =>
+					update((e) =>
+						updateWorkerConfig(e, id, { serviceTimeDistribution: v }),
+					)
+				}
+			/>
+			<NumberField
+				field="worker.queueCapacity"
+				labelKey={isQueue ? "queue.backlog" : undefined}
+				value={c.queueCapacity}
+				integer
+				min={0}
+				step={10}
+				errors={err(`model.nodes[${i}].config.queueCapacity`)}
+				onChange={(v) =>
+					v !== null &&
+					update(
+						(e) => updateWorkerConfig(e, id, { queueCapacity: v }),
+						`queue:${id}`,
+					)
+				}
+			/>
+			{node.kind === "cache" && (
+				<NumberField
+					field="cache.hitRatio"
+					value={node.config.hitRatio}
+					percent
+					min={0}
+					step={5}
+					errors={err(`model.nodes[${i}].config.hitRatio`)}
+					onChange={(v) =>
+						v !== null &&
+						update(
+							(e) =>
+								updateWorkerConfig(e, id, {
+									hitRatio: Math.max(0, Math.min(1, v)),
+								} as never),
+							`hit:${id}`,
+						)
+					}
+				/>
+			)}
+			{Number.isFinite(maxRps) && maxRps > 0 && (
+				<p className="rounded-md bg-muted p-3 text-xs leading-relaxed">
+					{t(
+						isQueue ? "inspector.queueCapacityHint" : "inspector.capacityHint",
+						{
+							rps: formatCount(maxRps),
+							slots: c.capacity,
+							time: formatMs(c.serviceTimeMs),
+							avg:
+								c.serviceTimeDistribution === "exponential"
+									? t("inspector.onAverage")
+									: "",
+						},
+					)}
+				</p>
+			)}
+		</FieldGroup>
+	);
+}
 
-	const remove = () => {
-		const { experiment: next, removedFaults } = removeServer(
-			experiment,
-			server.id,
-		);
-		update(() => next);
-		selectNode(null);
-		toast(`Removed ${server.label ?? server.id}`, {
-			description: removedFaults
-				? `Also removed ${removedFaults} fault${removedFaults === 1 ? "" : "s"} that targeted it. Undo with Ctrl+Z.`
-				: "Undo with Ctrl+Z.",
-		});
-	};
-
+function LinkSettings({ linkId }: { linkId: string }) {
+	const { t } = useTranslation();
+	const { experiment, update, select } = useWorkbench();
+	const err = useFieldErrors();
+	const link = experiment.model.links.find((l) => l.id === linkId);
+	if (!link) return null;
+	const i = linkIndex(experiment, linkId);
+	const label = (id: string) =>
+		experiment.model.nodes.find((n) => n.id === id)?.label ?? id;
+	const breaker = link.circuitBreaker;
 	return (
 		<div className="grid gap-6">
-			<FieldGroup title="Capacity">
+			<div className="flex items-center justify-between gap-2">
+				<div>
+					<p className="text-muted-foreground text-xs">{t("inspector.link")}</p>
+					<h2 className="font-semibold">
+						{label(link.source)}{" "}
+						<ArrowRight className="inline size-4" aria-hidden="true" />{" "}
+						{label(link.target)}
+					</h2>
+				</div>
+				<Button
+					variant="ghost"
+					size="sm"
+					onClick={() => select({ type: "node", id: link.source })}
+				>
+					{label(link.source)}
+				</Button>
+			</div>
+			<p className="text-muted-foreground text-xs">{t("inspector.linkHint")}</p>
+			<FieldGroup title={t("inspector.network")}>
 				<NumberField
-					info={SERVER_FIELDS.capacity}
-					value={c.capacity}
+					field="link.latencyMs"
+					value={link.latencyMs}
+					min={0}
+					step={5}
+					errors={err(`model.links[${i}].latencyMs`)}
+					onChange={(v) =>
+						v !== null &&
+						update(
+							(e) => updateLink(e, linkId, { latencyMs: v }),
+							`lat:${linkId}`,
+						)
+					}
+				/>
+			</FieldGroup>
+			<FieldGroup title={t("inspector.resilience")}>
+				<NumberField
+					field="link.timeoutMs"
+					value={link.timeoutMs}
+					nullable
+					nullLabel={t("common.none")}
 					integer
 					min={1}
-					errors={err("capacity")}
+					step={100}
+					showSeconds
+					errors={err(`model.links[${i}].timeoutMs`)}
 					onChange={(v) =>
-						v !== null &&
 						update(
-							(e) => updateServerConfig(e, server.id, { capacity: v }),
-							`cap:${server.id}`,
+							(e) => updateLink(e, linkId, { timeoutMs: v }),
+							`to:${linkId}`,
 						)
 					}
 				/>
 				<NumberField
-					info={SERVER_FIELDS.serviceTimeMs}
-					value={c.serviceTimeMs}
-					min={1}
-					step={10}
-					errors={err("serviceTimeMs")}
-					onChange={(v) =>
-						v !== null &&
-						update(
-							(e) => updateServerConfig(e, server.id, { serviceTimeMs: v }),
-							`svc:${server.id}`,
-						)
-					}
-				/>
-				<SelectField
-					info={SERVER_FIELDS.serviceTimeDistribution}
-					value={c.serviceTimeDistribution}
-					options={DISTRIBUTION_LABELS}
-					onChange={(v) =>
-						update((e) =>
-							updateServerConfig(e, server.id, { serviceTimeDistribution: v }),
-						)
-					}
-				/>
-				<NumberField
-					info={SERVER_FIELDS.queueCapacity}
-					value={c.queueCapacity}
+					field="link.retries"
+					value={link.retries}
 					integer
 					min={0}
-					step={10}
-					errors={err("queueCapacity")}
+					errors={err(`model.links[${i}].retries`)}
 					onChange={(v) =>
 						v !== null &&
 						update(
-							(e) => updateServerConfig(e, server.id, { queueCapacity: v }),
-							`queue:${server.id}`,
+							(e) => updateLink(e, linkId, { retries: v }),
+							`retries:${linkId}`,
 						)
 					}
 				/>
-				{Number.isFinite(maxRps) && maxRps > 0 && (
-					<p className="rounded-md bg-muted p-3 text-xs leading-relaxed">
-						At most about{" "}
-						<span className="font-medium tabular">
-							{formatCount(maxRps)} req/s
-						</span>{" "}
-						({c.capacity} slots ÷ {formatMs(c.serviceTimeMs)}
-						{c.serviceTimeDistribution === "exponential" ? " on average" : ""}).
-						More than that and the queue grows.
+				<SwitchField
+					field="breaker.enabled"
+					checked={breaker.enabled}
+					onChange={(enabled) =>
+						update((e) =>
+							updateLink(e, linkId, {
+								circuitBreaker: { ...breaker, enabled },
+							}),
+						)
+					}
+				/>
+				{breaker.enabled && (
+					<>
+						<NumberField
+							field="breaker.failureThreshold"
+							value={breaker.failureThreshold}
+							integer
+							min={1}
+							errors={err(`model.links[${i}].circuitBreaker.failureThreshold`)}
+							onChange={(v) =>
+								v !== null &&
+								update(
+									(e) =>
+										updateLink(e, linkId, {
+											circuitBreaker: { ...breaker, failureThreshold: v },
+										}),
+									`cb.t:${linkId}`,
+								)
+							}
+						/>
+						<NumberField
+							field="breaker.openMs"
+							value={breaker.openMs}
+							integer
+							min={10}
+							step={1000}
+							showSeconds
+							errors={err(`model.links[${i}].circuitBreaker.openMs`)}
+							onChange={(v) =>
+								v !== null &&
+								update(
+									(e) =>
+										updateLink(e, linkId, {
+											circuitBreaker: { ...breaker, openMs: v },
+										}),
+									`cb.o:${linkId}`,
+								)
+							}
+						/>
+					</>
+				)}
+				{link.retries > 0 && link.timeoutMs === null && (
+					<p className="rounded-md bg-gap-soft p-3 text-xs leading-relaxed">
+						{t("inspector.retriesNoTimeout")}
 					</p>
 				)}
 			</FieldGroup>
-
-			<div className="grid gap-2">
-				<h3 className="font-semibold text-sm">Faults on this server</h3>
-				{faults.length === 0 ? (
-					<p className="text-muted-foreground text-sm">None scheduled.</p>
-				) : (
-					<ul className="grid gap-1 text-sm">
-						{faults.map((f) => (
-							<li key={f.id} className="text-muted-foreground">
-								Fails at {formatMs(f.atMs)}
-								{f.recoverAtMs === null
-									? ", never recovers"
-									: `, recovers at ${formatMs(f.recoverAtMs)}`}{" "}
-								({BEHAVIOR_LABELS[f.behavior].toLowerCase()})
-							</li>
-						))}
-					</ul>
-				)}
-				<Button
-					variant="outline"
-					size="sm"
-					className="w-fit"
-					onClick={() => setInspectorTab("faults")}
-				>
-					Edit faults
-				</Button>
-			</div>
-
 			<div className="border-t pt-4">
 				<Button
 					variant="outline"
 					className="text-down"
-					onClick={remove}
-					disabled={onlyServer}
+					onClick={() => {
+						update((e) => removeLink(e, linkId));
+						select({ type: "node", id: link.source });
+						toast(t("inspector.linkRemoved"), {
+							description: t("inspector.undoHint"),
+						});
+					}}
 				>
-					<Trash2 aria-hidden="true" />
-					Remove server
+					<Unplug aria-hidden="true" />
+					{t("inspector.removeLink")}
 				</Button>
-				{onlyServer && (
-					<p className="mt-2 text-muted-foreground text-xs">
-						An experiment needs at least one server.
-					</p>
-				)}
 			</div>
 		</div>
 	);
 }
 
 function TrafficPanel() {
-	const { experiment, update, validation } = useWorkbench();
+	const { t } = useTranslation();
+	const { experiment, update } = useWorkbench();
+	const err = useFieldErrors();
 	const w = experiment.workload;
-	const err = (f: string) => validation.byPath.get(`workload.${f}`);
-	const setWorkload = (patch: Partial<Experiment["workload"]>, key?: string) =>
+	const setWorkload = (patch: Partial<typeof w>, key?: string) =>
 		update((e) => ({ ...e, workload: { ...e.workload, ...patch } }), key);
 	const offered = estimateOfferedRequests(experiment);
-	const totalCapacity = servers(experiment).reduce(
-		(sum, s) => sum + (s.config.capacity * 1000) / s.config.serviceTimeMs,
-		0,
+	const entry = experiment.model.links.find(
+		(l) =>
+			l.source === experiment.model.nodes.find((n) => n.kind === "client")?.id,
 	);
-	const load = totalCapacity > 0 ? w.offeredRps / totalCapacity : 0;
-
+	const first = entry
+		? experiment.model.nodes.find((n) => n.id === entry.target)
+		: undefined;
+	const firstCapacity =
+		first && first.kind !== "client" && first.kind !== "load-balancer"
+			? (first.config.capacity * 1000) / first.config.serviceTimeMs
+			: first?.kind === "load-balancer"
+				? experiment.model.links
+						.filter((l) => l.source === first.id)
+						.map((l) => experiment.model.nodes.find((n) => n.id === l.target))
+						.reduce(
+							(sum, n) =>
+								sum +
+								(n && n.kind !== "client" && n.kind !== "load-balancer"
+									? (n.config.capacity * 1000) / n.config.serviceTimeMs
+									: 0),
+							0,
+						)
+				: 0;
 	return (
 		<div className="grid gap-6">
-			<FieldGroup title="Steady traffic">
+			<FieldGroup title={t("inspector.steadyTraffic")}>
 				<SelectField
-					info={WORKLOAD_FIELDS.arrival}
+					field="workload.arrival"
 					value={w.arrival}
-					options={ARRIVAL_LABELS}
 					onChange={(arrival) => setWorkload({ arrival })}
 				/>
 				<NumberField
-					info={WORKLOAD_FIELDS.offeredRps}
+					field="workload.offeredRps"
 					value={w.offeredRps}
 					min={1}
 					step={10}
-					errors={err("offeredRps")}
+					errors={err("workload.offeredRps")}
 					onChange={(v) => v !== null && setWorkload({ offeredRps: v }, "rps")}
 				/>
 				<NumberField
-					info={WORKLOAD_FIELDS.durationMs}
+					field="workload.durationMs"
 					value={w.durationMs}
 					integer
 					min={1}
 					step={1000}
 					showSeconds
-					errors={err("durationMs")}
+					errors={err("workload.durationMs")}
 					onChange={(v) =>
 						v !== null && setWorkload({ durationMs: v }, "duration")
 					}
 				/>
 				<NumberField
-					info={WORKLOAD_FIELDS.startMs}
+					field="workload.startMs"
 					value={w.startMs}
 					integer
 					min={0}
 					step={1000}
 					showSeconds
-					errors={err("startMs")}
+					errors={err("workload.startMs")}
 					onChange={(v) => v !== null && setWorkload({ startMs: v }, "start")}
 				/>
 				<NumberField
-					info={WORKLOAD_FIELDS.timeoutMs}
+					field="workload.timeoutMs"
 					value={w.timeoutMs}
 					integer
 					min={1}
 					step={100}
 					showSeconds
-					errors={err("timeoutMs")}
+					errors={err("workload.timeoutMs")}
 					onChange={(v) =>
 						v !== null && setWorkload({ timeoutMs: v }, "timeout")
 					}
 				/>
 				<p className="rounded-md bg-muted p-3 text-xs leading-relaxed">
-					About{" "}
-					<span className="font-medium tabular">{formatCount(offered)}</span>{" "}
-					requests in total
-					{w.arrival === "poisson" ? " on average" : ""}. All servers together
-					finish about{" "}
-					<span className="tabular">{formatCount(totalCapacity)} req/s</span>,
-					so steady traffic uses{" "}
-					<span className="font-medium tabular">{Math.round(load * 100)}%</span>{" "}
-					of capacity while every server is up.
+					{t("inspector.trafficHint", {
+						requests: formatCount(offered),
+						avg: w.arrival === "poisson" ? t("inspector.onAverage") : "",
+					})}
+					{firstCapacity > 0 &&
+						` ${t("inspector.entryCapacityHint", { name: first?.label ?? first?.id, rps: formatCount(firstCapacity), load: Math.round((w.offeredRps / firstCapacity) * 100) })}`}
 				</p>
 			</FieldGroup>
 
 			<FieldGroup
-				title="Bursts"
-				description="Extra traffic on top of the steady rate for a while."
+				title={t("inspector.bursts")}
+				description={t("inspector.burstsHelp")}
 			>
 				{w.bursts.length === 0 && (
-					<p className="text-muted-foreground text-sm">No bursts.</p>
+					<p className="text-muted-foreground text-sm">
+						{t("inspector.noBursts")}
+					</p>
 				)}
 				{w.bursts.map((b, i) => (
 					<div
@@ -591,11 +937,13 @@ function TrafficPanel() {
 						className="grid gap-3 rounded-md border p-3"
 					>
 						<div className="flex items-center justify-between">
-							<h4 className="font-medium text-sm">Burst {i + 1}</h4>
+							<h4 className="font-medium text-sm">
+								{t("inspector.burst", { n: i + 1 })}
+							</h4>
 							<Button
 								variant="ghost"
 								size="icon-sm"
-								aria-label={`Remove burst ${i + 1}`}
+								aria-label={t("inspector.removeBurst", { n: i + 1 })}
 								onClick={() =>
 									setWorkload({ bursts: w.bursts.filter((_, j) => j !== i) })
 								}
@@ -606,13 +954,13 @@ function TrafficPanel() {
 						{(["atMs", "durationMs", "extraRps"] as const).map((field) => (
 							<NumberField
 								key={field}
-								info={BURST_FIELDS[field]}
+								field={`burst.${field}` as FieldKey}
 								value={b[field]}
 								integer={field !== "extraRps"}
 								min={field === "atMs" ? 0 : 1}
 								step={field === "extraRps" ? 10 : 1000}
 								showSeconds={field !== "extraRps"}
-								errors={err(`bursts[${i}].${field}`)}
+								errors={err(`workload.bursts[${i}].${field}`)}
 								onChange={(v) =>
 									v !== null &&
 									setWorkload(
@@ -647,134 +995,212 @@ function TrafficPanel() {
 					}
 				>
 					<Plus aria-hidden="true" />
-					Add burst
+					{t("inspector.addBurst")}
 				</Button>
 			</FieldGroup>
 		</div>
 	);
 }
 
+const FAULT_KINDS: FaultKind[] = [
+	"node-failure",
+	"slowdown",
+	"error-rate",
+	"capacity",
+	"link-latency",
+	"link-loss",
+	"cache-flush",
+];
+
 function FaultsPanel() {
-	const { experiment, update, validation } = useWorkbench();
-	const serverList = servers(experiment);
-	const serverOptions = Object.fromEntries(
-		serverList.map((s) => [s.id, s.label ?? s.id]),
-	) as Record<string, string>;
-	const err = (i: number, f: string) =>
-		validation.byPath.get(`faults[${i}].${f}`);
+	const { t } = useTranslation();
+	const { experiment, update } = useWorkbench();
+	const err = useFieldErrors();
+	const [newKind, setNewKind] = useState<FaultKind>("node-failure");
+	const kindId = useId();
+	const label = (id: string): string => {
+		const node = experiment.model.nodes.find((n) => n.id === id);
+		if (node) return node.label ?? node.id;
+		const link = experiment.model.links.find((l) => l.id === id);
+		if (link) return `${label(link.source)} → ${label(link.target)}`;
+		return id;
+	};
+	const targetsFor = (kind: FaultKind) =>
+		faultTargets(experiment, kind).map((id) => ({
+			value: id,
+			label: label(id),
+		}));
+	const canAddKind = targetsFor(newKind).length > 0;
 
 	return (
 		<div className="grid gap-4">
 			<p className="text-muted-foreground text-sm">
-				A fault crashes one server at a simulated time. In-flight work on it is
-				lost; recovery brings it back with an empty queue.
+				{t("inspector.faultsIntro")}
 			</p>
 			{experiment.faults.length === 0 && (
 				<p className="rounded-md border border-dashed p-4 text-center text-muted-foreground text-sm">
-					No faults. Without one, this experiment is a healthy reference run.
+					{t("inspector.noFaults")}
 				</p>
 			)}
-			{experiment.faults.map((f, i) => (
-				<div
-					key={`${f.id}-${i.toString()}`}
-					className="grid gap-3 rounded-md border p-3"
-				>
-					<div className="flex items-center justify-between gap-2">
-						<h3 className="flex items-center gap-2 font-medium font-mono text-sm">
-							<Server
-								className="size-4 text-muted-foreground"
-								aria-hidden="true"
-							/>
-							{f.id}
-						</h3>
-						<Button
-							variant="ghost"
-							size="icon-sm"
-							aria-label={`Remove fault ${f.id}`}
-							onClick={() =>
-								update((e) => ({
-									...e,
-									faults: e.faults.filter((_, j) => j !== i),
-								}))
+			{experiment.faults.map((f, i) => {
+				const isLink = LINK_FAULT_KINDS.includes(f.kind);
+				const fields = FAULT_FIELDS[f.kind] ?? [];
+				return (
+					<div
+						key={`${f.id}-${i.toString()}`}
+						className="grid gap-3 rounded-md border p-3"
+					>
+						<div className="flex items-center justify-between gap-2">
+							<h3 className="font-medium text-sm">
+								{t(`faultKinds.${f.kind}.label`)}{" "}
+								<span className="font-mono font-normal text-muted-foreground text-xs">
+									{f.id}
+								</span>
+							</h3>
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								aria-label={t("inspector.removeFault", { id: f.id })}
+								onClick={() =>
+									update((e) => ({
+										...e,
+										faults: e.faults.filter((_, j) => j !== i),
+									}))
+								}
+							>
+								<Trash2 />
+							</Button>
+						</div>
+						<p className="-mt-2 text-muted-foreground text-xs">
+							{t(`faultKinds.${f.kind}.help`)}
+						</p>
+						<SelectField
+							field="fault.target"
+							value={f.target}
+							options={targetsFor(f.kind)}
+							errors={err(`faults[${i}].target`)}
+							labelOverride={t(
+								isLink
+									? "fields.fault.targetLink.label"
+									: "fields.fault.target.label",
+							)}
+							onChange={(target) =>
+								update((e) => updateFault(e, i, { target }))
 							}
-						>
-							<Trash2 />
-						</Button>
+						/>
+						<NumberField
+							field="fault.atMs"
+							value={f.atMs}
+							integer
+							min={0}
+							step={1000}
+							showSeconds
+							errors={err(`faults[${i}].atMs`)}
+							onChange={(v) =>
+								v !== null &&
+								update((e) => updateFault(e, i, { atMs: v }), `fault:${i}:at`)
+							}
+						/>
+						{fields.map((field) => {
+							const prop = field.replace("fault.", "") as keyof typeof f;
+							if (field === "fault.behavior")
+								return (
+									<SelectField
+										key={field}
+										field="fault.behavior"
+										value={(f as { behavior: "refuse" | "hang" }).behavior}
+										onChange={(behavior) =>
+											update((e) => updateFault(e, i, { behavior } as never))
+										}
+									/>
+								);
+							const isPercent = field === "fault.rate";
+							const nullable =
+								field === "fault.recoverAtMs" || field === "fault.untilMs";
+							return (
+								<NumberField
+									key={field}
+									field={field}
+									value={(f as Record<string, unknown>)[prop] as number | null}
+									nullable={nullable}
+									nullLabel={t("common.never")}
+									percent={isPercent}
+									integer={field.endsWith("Ms") || field === "fault.capacity"}
+									min={field === "fault.factor" ? 1 : 0}
+									step={field.endsWith("Ms") ? 1000 : isPercent ? 5 : 1}
+									showSeconds={field.endsWith("Ms") && field !== "fault.addMs"}
+									errors={err(`faults[${i}].${prop}`)}
+									onChange={(v) =>
+										(nullable || v !== null) &&
+										update(
+											(e) => updateFault(e, i, { [prop]: v } as never),
+											`fault:${i}:${prop}`,
+										)
+									}
+								/>
+							);
+						})}
 					</div>
-					<SelectField
-						info={FAULT_FIELDS.target}
-						value={f.target}
-						options={serverOptions}
-						errors={err(i, "target")}
-						onChange={(target) => update((e) => updateFault(e, i, { target }))}
-					/>
-					<NumberField
-						info={FAULT_FIELDS.atMs}
-						value={f.atMs}
-						integer
-						min={0}
-						step={1000}
-						showSeconds
-						errors={err(i, "atMs")}
-						onChange={(v) =>
-							v !== null &&
-							update((e) => updateFault(e, i, { atMs: v }), `fault:${i}:at`)
-						}
-					/>
-					<NumberField
-						info={FAULT_FIELDS.recoverAtMs}
-						value={f.recoverAtMs}
-						nullable
-						nullLabel="never"
-						integer
-						min={1}
-						step={1000}
-						showSeconds
-						errors={err(i, "recoverAtMs")}
-						onChange={(v) =>
-							update(
-								(e) => updateFault(e, i, { recoverAtMs: v }),
-								`fault:${i}:recover`,
-							)
-						}
-					/>
-					<SelectField
-						info={FAULT_FIELDS.behavior}
-						value={f.behavior}
-						options={BEHAVIOR_LABELS}
-						onChange={(behavior) =>
-							update((e) => updateFault(e, i, { behavior }))
-						}
-					/>
-				</div>
-			))}
-			<Button
-				variant="outline"
-				className="w-fit"
-				disabled={
-					experiment.faults.length >= LIMITS.maxFaults ||
-					serverList.length === 0
-				}
-				onClick={() => update((e) => addFault(e).experiment)}
-			>
-				<Plus aria-hidden="true" />
-				Add fault
-			</Button>
+				);
+			})}
+			<div className="grid gap-2 rounded-md border border-dashed p-3">
+				<Label htmlFor={kindId} className="text-xs">
+					{t("inspector.newFaultKind")}
+				</Label>
+				<select
+					id={kindId}
+					className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+					value={newKind}
+					onChange={(e) => setNewKind(e.target.value as FaultKind)}
+				>
+					{FAULT_KINDS.map((kind) => (
+						<option key={kind} value={kind}>
+							{t(`faultKinds.${kind}.label`)}
+						</option>
+					))}
+				</select>
+				<p className="text-muted-foreground text-xs">
+					{t(`faultKinds.${newKind}.help`)}
+				</p>
+				<Button
+					variant="outline"
+					className="w-fit"
+					disabled={experiment.faults.length >= LIMITS.maxFaults || !canAddKind}
+					onClick={() => {
+						const added = addFault(experiment, newKind);
+						if (added) update(() => added.experiment);
+					}}
+				>
+					<Plus aria-hidden="true" />
+					{t("inspector.addFault")}
+				</Button>
+				{!canAddKind && (
+					<p className="text-muted-foreground text-xs">
+						{t("inspector.noTargetForKind")}
+					</p>
+				)}
+			</div>
 		</div>
 	);
 }
 
 function RunPanel() {
-	const { experiment, update, validation } = useWorkbench();
+	const { t } = useTranslation();
+	const { experiment, update } = useWorkbench();
+	const err = useFieldErrors();
+	const auto = effectiveHorizonMs({
+		...experiment,
+		run: { ...experiment.run, horizonMs: undefined },
+	});
 	return (
 		<div className="grid gap-6">
-			<FieldGroup title="Reproducibility">
+			<FieldGroup title={t("inspector.reproducibility")}>
 				<NumberField
-					info={RUN_FIELDS.seed}
+					field="run.seed"
 					value={experiment.seed}
 					integer
 					min={0}
-					errors={validation.byPath.get("seed")}
+					errors={err("seed")}
 					onChange={(v) =>
 						v !== null && update((e) => ({ ...e, seed: v }), "seed")
 					}
@@ -786,28 +1212,23 @@ function RunPanel() {
 					onClick={() => update((e) => ({ ...e, seed: randomSeed() }))}
 				>
 					<Dices aria-hidden="true" />
-					Try another seed
+					{t("inspector.anotherSeed")}
 				</Button>
 				<p className="text-muted-foreground text-xs">
-					The seed only matters with Poisson arrivals or exponential service
-					times. With constant traffic and fixed service times every seed gives
-					the same result.
+					{t("inspector.seedHint")}
 				</p>
 			</FieldGroup>
-			<FieldGroup title="Time">
+			<FieldGroup title={t("inspector.time")}>
 				<NumberField
-					info={{
-						...RUN_FIELDS.horizonMs,
-						help: `${RUN_FIELDS.horizonMs.help} Leave empty for auto (${formatMs(effectiveHorizonMs({ ...experiment, run: { ...experiment.run, horizonMs: undefined } }))}).`,
-					}}
+					field="run.horizonMs"
 					value={experiment.run.horizonMs ?? null}
 					nullable
-					nullLabel="auto"
+					nullLabel={`${t("common.auto")} (${formatMs(auto)})`}
 					integer
 					min={1}
 					step={1000}
 					showSeconds
-					errors={validation.byPath.get("run.horizonMs")}
+					errors={err("run.horizonMs")}
 					onChange={(v) =>
 						update(
 							(e) => ({
@@ -819,12 +1240,12 @@ function RunPanel() {
 					}
 				/>
 				<NumberField
-					info={RUN_FIELDS.sampleWindowMs}
+					field="run.sampleWindowMs"
 					value={experiment.run.sampleWindowMs}
 					integer
 					min={100}
 					step={250}
-					errors={validation.byPath.get("run.sampleWindowMs")}
+					errors={err("run.sampleWindowMs")}
 					onChange={(v) =>
 						v !== null &&
 						update(
@@ -839,26 +1260,28 @@ function RunPanel() {
 }
 
 function NotesPanel() {
-	const { experiment, update, validation } = useWorkbench();
+	const { t } = useTranslation();
+	const { experiment, update } = useWorkbench();
+	const err = useFieldErrors();
 	return (
 		<div className="grid gap-5">
 			<TextField
-				label="Title"
+				label={t("notes.title")}
 				value={experiment.title}
 				maxLength={120}
-				errors={validation.byPath.get("title")}
+				errors={err("title")}
 				onChange={(title) => update((e) => ({ ...e, title }), "title")}
 			/>
 			<TextField
-				label="Question"
+				label={t("notes.question")}
 				multiline
 				value={experiment.question}
 				maxLength={300}
-				help="The one thing this experiment should answer."
+				help={t("notes.questionHelp")}
 				onChange={(question) => update((e) => ({ ...e, question }), "question")}
 			/>
 			<TextField
-				label="Description"
+				label={t("notes.description")}
 				multiline
 				value={experiment.description}
 				maxLength={2000}
@@ -867,16 +1290,16 @@ function NotesPanel() {
 				}
 			/>
 			<LinesField
-				label="Expected observations"
-				help="Teaching hypotheses, one per line. They are shown next to results but never computed or checked automatically."
+				label={t("notes.expected")}
+				help={t("notes.expectedHelp")}
 				value={experiment.expectedObservations}
 				onChange={(expectedObservations) =>
 					update((e) => ({ ...e, expectedObservations }), "expected")
 				}
 			/>
 			<LinesField
-				label="Assumptions"
-				help="Simplifications this model makes, one per line. They are exported with every result."
+				label={t("notes.assumptions")}
+				help={t("notes.assumptionsHelp")}
 				value={experiment.assumptions}
 				onChange={(assumptions) =>
 					update((e) => ({ ...e, assumptions }), "assumptions")
@@ -892,6 +1315,7 @@ function NotesPanel() {
 
 /** The experiment id doubles as its file name, so it can be changed until it is shared. */
 function IdField() {
+	const { t } = useTranslation();
 	const { id } = useWorkbench();
 	const [draft, setDraft] = useState(id);
 	const [error, setError] = useState<string | null>(null);
@@ -907,19 +1331,17 @@ function IdField() {
 			return;
 		}
 		if (!/^[a-z0-9][a-z0-9-]{0,47}$/.test(next)) {
-			setError(
-				"Use 1–48 lowercase letters, digits or hyphens, starting with a letter or digit.",
-			);
+			setError(t("messages.validation.id"));
 			return;
 		}
 		const done = rename(id, next);
 		if (!done) {
-			setError(`Another experiment already uses ${next}.`);
+			setError(t("notes.idTaken", { id: next }));
 			return;
 		}
 		setError(null);
-		toast.success(`Renamed to ${next}`, {
-			description: `Exports are now called ${next}.experiment.json.`,
+		toast.success(t("notes.renamed", { id: next }), {
+			description: t("notes.renamedHint", { id: next }),
 		});
 		void navigate({
 			to: "/experiments/$experimentId",
@@ -932,32 +1354,31 @@ function IdField() {
 	return (
 		<div className="grid gap-1.5">
 			<Label htmlFor={inputId} className="font-medium text-sm">
-				File name (id)
+				{t("notes.id")}
 			</Label>
-			<div className="flex gap-2">
-				<Input
-					id={inputId}
-					value={draft}
-					onChange={(e) => setDraft(e.target.value)}
-					onBlur={commit}
-					onKeyDown={(e) => {
-						if (e.key === "Enter") commit();
-					}}
-					className="font-mono"
-					aria-invalid={error !== null}
-					aria-describedby={`${inputId}-help`}
-					spellCheck={false}
-				/>
-			</div>
+			<Input
+				id={inputId}
+				value={draft}
+				onChange={(e) => setDraft(e.target.value)}
+				onBlur={commit}
+				onKeyDown={(e) => {
+					if (e.key === "Enter") commit();
+				}}
+				className="font-mono"
+				aria-invalid={error !== null}
+				aria-describedby={`${inputId}-help`}
+				spellCheck={false}
+			/>
 			<p
 				id={`${inputId}-help`}
 				className={
 					error ? "text-down text-xs" : "text-muted-foreground text-xs"
 				}
 			>
-				{error ??
-					`Exports are named ${draft || id}.experiment.json. Faults and comparisons refer to it, so rename before sharing.`}
+				{error ?? t("notes.idHelp", { id: draft || id })}
 			</p>
 		</div>
 	);
 }
+
+export { useFieldErrors, workers };

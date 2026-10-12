@@ -1,14 +1,17 @@
 import {
-	addServer,
-	canAddServer,
+	addLink,
+	addNode,
+	canAddNode,
 	type Experiment,
 	LIMITS,
-	servers,
+	type NodeKind,
 } from "@faultworks/experiment";
 import {
+	addEdge,
 	applyNodeChanges,
 	Background,
 	BaseEdge,
+	type Connection,
 	Controls,
 	type Edge,
 	EdgeLabelRenderer,
@@ -23,31 +26,54 @@ import {
 	ReactFlowProvider,
 	useReactFlow,
 } from "@xyflow/react";
-import { Plus, Radio, Server, Waypoints } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { Plus, Zap } from "lucide-react";
+import {
+	type CSSProperties,
+	memo,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "#/components/ui/button.tsx";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "#/components/ui/dropdown-menu.tsx";
 import { formatCount, formatMs } from "#/lib/format.ts";
-import { serverColor } from "#/lib/series.ts";
+import { ADDABLE_KINDS, NODE_ICONS, seriesColor } from "#/lib/nodes.ts";
+import { useMediaQuery } from "#/lib/use-media-query.ts";
 import { cn } from "#/lib/utils.ts";
 import { useWorkbench } from "./context.tsx";
-import { loadBalancer } from "./mutations.ts";
+import { layerNodes, orderedWorkers } from "./layers.ts";
 import { usePlayback } from "./playback-store.ts";
-import { type Snapshot, snapshotAt } from "./state-at.ts";
+import {
+	type LinkSnapshot,
+	type NodeSnapshot,
+	type Snapshot,
+	snapshotAt,
+} from "./state-at.ts";
 import { StatusBadge } from "./status-badge.tsx";
 
-type NodeData = { serverIndex: number };
+type NodeData = { workerIndex: number };
 type FlowNode = Node<NodeData>;
+type FlowEdge = Edge<{ linkId: string }>;
 
 function defaultPosition(
 	experiment: Experiment,
 	id: string,
 ): { x: number; y: number } {
-	const node = experiment.model.nodes.find((n) => n.id === id);
-	if (node?.kind === "client") return { x: 0, y: 0 };
-	if (node?.kind === "load-balancer") return { x: 300, y: 0 };
-	const list = servers(experiment);
-	const i = list.findIndex((s) => s.id === id);
-	return { x: 620, y: (i - (list.length - 1) / 2) * 150 };
+	const layers = layerNodes(experiment);
+	for (let d = 0; d < layers.length; d++) {
+		const layer = layers[d] as Experiment["model"]["nodes"];
+		const i = layer.findIndex((n) => n.id === id);
+		if (i !== -1) return { x: d * 300, y: (i - (layer.length - 1) / 2) * 150 };
+	}
+	return { x: 0, y: 0 };
 }
 
 /** Live snapshot for the current replay time, or null when there is no current result. */
@@ -60,20 +86,59 @@ function useSnapshot(): Snapshot | null {
 	);
 }
 
+function nodeSnapshot(
+	snap: Snapshot | null,
+	id: string,
+	ids: string[] | undefined,
+): NodeSnapshot | undefined {
+	if (!snap || !ids) return undefined;
+	const i = ids.indexOf(id);
+	return i === -1 ? undefined : snap.nodes[i];
+}
+
+/** One short shake when a node goes down; nothing otherwise. */
+function useCrashShake(status: NodeSnapshot["status"] | undefined) {
+	const prev = useRef(status);
+	const [shake, setShake] = useState(false);
+	useEffect(() => {
+		const wasUp =
+			prev.current === undefined ||
+			prev.current === "up" ||
+			prev.current === "degraded" ||
+			prev.current === "recovering";
+		if (wasUp && (status === "down-routed" || status === "down-removed")) {
+			setShake(true);
+			const t = setTimeout(() => setShake(false), 600);
+			return () => clearTimeout(t);
+		}
+		prev.current = status;
+	}, [status]);
+	useEffect(() => {
+		prev.current = status;
+	}, [status]);
+	return shake;
+}
+
 function NodeFrame({
 	selected,
 	children,
 	className,
+	shake,
+	pulse,
 }: {
 	selected: boolean;
 	children: React.ReactNode;
 	className?: string;
+	shake?: boolean;
+	pulse?: boolean;
 }) {
 	return (
 		<div
 			className={cn(
 				"rounded-lg border bg-card px-3 py-2.5 text-card-foreground shadow-xs transition-[border-color,box-shadow]",
 				selected ? "border-ring ring-2 ring-ring/30" : "hover:border-input",
+				shake && "crash-shake",
+				pulse && "pulse-ring",
 				className,
 			)}
 		>
@@ -82,83 +147,86 @@ function NodeFrame({
 	);
 }
 
-const hiddenHandle = "!size-1 !min-h-0 !min-w-0 !border-0 !bg-transparent";
+const handleClass =
+	"!size-3 !rounded-full !border-2 !border-card !bg-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 [.react-flow__node.selected_&]:opacity-100";
 
-const ClientNode = memo(function ClientNode({ selected }: NodeProps<FlowNode>) {
-	const { experiment } = useWorkbench();
+const ClientNode = memo(function ClientNode({
+	id,
+	selected,
+}: NodeProps<FlowNode>) {
+	const { t } = useTranslation();
+	const { experiment, result } = useWorkbench();
 	const snap = useSnapshot();
-	const client = experiment.model.nodes.find((n) => n.kind === "client");
+	const node = experiment.model.nodes.find((n) => n.id === id);
 	const w = experiment.workload;
+	const Icon = NODE_ICONS.client;
+	void result;
 	return (
-		<NodeFrame selected={selected} className="w-44">
+		<NodeFrame selected={selected} className="group w-44">
 			<div className="flex items-center gap-2 font-medium text-sm">
-				<Radio className="size-4 text-muted-foreground" aria-hidden="true" />
-				{client?.label ?? "Client"}
+				<Icon className="size-4 text-muted-foreground" aria-hidden="true" />
+				{node?.label ?? t("kinds.client")}
 			</div>
 			<p className="mt-1 text-muted-foreground text-xs tabular">
-				{snap ? (
-					<>Sending {formatCount(snap.offeredRps)} req/s</>
-				) : (
-					<>
-						{w.offeredRps} req/s for {formatMs(w.durationMs)}
-					</>
-				)}
+				{snap
+					? t("canvas.sending", { rps: formatCount(snap.offeredRps) })
+					: t("canvas.clientPlan", {
+							rps: w.offeredRps,
+							duration: formatMs(w.durationMs),
+						})}
 			</p>
 			<p className="text-muted-foreground text-xs">
-				timeout {formatMs(w.timeoutMs)}
+				{t("canvas.timeout", { timeout: formatMs(w.timeoutMs) })}
 			</p>
-			<Handle
-				type="source"
-				position={Position.Right}
-				className={hiddenHandle}
-				isConnectable={false}
-			/>
+			<Handle type="source" position={Position.Right} className={handleClass} />
 		</NodeFrame>
 	);
 });
 
-const LoadBalancerNode = memo(function LoadBalancerNode({
+const BalancerNode = memo(function BalancerNode({
+	id,
 	selected,
 }: NodeProps<FlowNode>) {
-	const { experiment } = useWorkbench();
+	const { t } = useTranslation();
+	const { experiment, result } = useWorkbench();
 	const snap = useSnapshot();
-	const lb = loadBalancer(experiment);
-	const hc = lb?.config.healthCheck;
-	const total = servers(experiment).length;
+	const node = experiment.model.nodes.find((n) => n.id === id);
+	if (node?.kind !== "load-balancer") return null;
+	const hc = node.config.healthCheck;
+	const backends = experiment.model.links
+		.filter((l) => l.source === id)
+		.map((l) => l.target);
+	const ids = result?.topology.nodeIds;
+	const inRotation =
+		snap && ids
+			? backends.filter((b) =>
+					["up", "down-routed", "degraded"].includes(
+						nodeSnapshot(snap, b, ids)?.status ?? "up",
+					),
+				).length
+			: backends.length;
+	const Icon = NODE_ICONS["load-balancer"];
 	return (
-		<NodeFrame selected={selected} className="w-48">
-			<Handle
-				type="target"
-				position={Position.Left}
-				className={hiddenHandle}
-				isConnectable={false}
-			/>
+		<NodeFrame selected={selected} className="group w-48">
+			<Handle type="target" position={Position.Left} className={handleClass} />
 			<div className="flex items-center gap-2 font-medium text-sm">
-				<Waypoints
-					className="size-4 text-muted-foreground"
-					aria-hidden="true"
-				/>
-				{lb?.label ?? "Load balancer"}
+				<Icon className="size-4 text-muted-foreground" aria-hidden="true" />
+				{node.label ?? t("kinds.load-balancer")}
 			</div>
 			<p className="mt-1 text-muted-foreground text-xs">
-				Round robin ·{" "}
-				{hc?.enabled ? (
-					`probes every ${formatMs(hc.intervalMs)}`
+				{t(`options.balancer.algorithm.${node.config.algorithm}`)} ·{" "}
+				{hc.enabled ? (
+					t("canvas.probes", { interval: formatMs(hc.intervalMs) })
 				) : (
-					<span className="text-gap">no health checks</span>
+					<span className="text-gap">{t("canvas.noHealthChecks")}</span>
 				)}
 			</p>
 			{snap && (
 				<p className="mt-1 text-xs tabular">
-					Routing to {snap.inRotation} of {total}
+					{t("canvas.routingTo", { n: inRotation, total: backends.length })}
 				</p>
 			)}
-			<Handle
-				type="source"
-				position={Position.Right}
-				className={hiddenHandle}
-				isConnectable={false}
-			/>
+			<Handle type="source" position={Position.Right} className={handleClass} />
 		</NodeFrame>
 	);
 });
@@ -183,7 +251,7 @@ function Meter({
 				aria-hidden="true"
 			>
 				<span
-					className="block h-full rounded-full"
+					className="block h-full rounded-full transition-[width] duration-300 ease-out motion-reduce:transition-none"
 					style={{ width: `${ratio * 100}%`, background: tone }}
 				/>
 			</span>
@@ -194,100 +262,238 @@ function Meter({
 	);
 }
 
-const ServerNode = memo(function ServerNode({
+const WorkerNode = memo(function WorkerNode({
 	id,
 	data,
 	selected,
 }: NodeProps<FlowNode>) {
-	const { experiment } = useWorkbench();
+	const { t } = useTranslation();
+	const { experiment, result } = useWorkbench();
 	const snap = useSnapshot();
 	const node = experiment.model.nodes.find((n) => n.id === id);
-	if (node?.kind !== "server") return null;
+	const s = nodeSnapshot(snap, id, result?.topology.nodeIds);
+	const shake = useCrashShake(s?.status);
+	if (!node || node.kind === "client" || node.kind === "load-balancer")
+		return null;
 	const c = node.config;
-	const s = snap?.servers[data.serverIndex];
-	const fault = experiment.faults.find((f) => f.target === id);
+	const faults = experiment.faults.filter((f) => f.target === id);
+	const Icon = NODE_ICONS[node.kind];
+	const color = seriesColor(data.workerIndex);
+	const saturated =
+		s !== undefined && c.queueCapacity > 0 && s.queue >= c.queueCapacity;
+	const activeFaultKinds =
+		s?.activeFaults.map((i) => experiment.faults[i]?.kind).filter(Boolean) ??
+		[];
 	return (
-		<NodeFrame selected={selected} className="w-52">
-			<Handle
-				type="target"
-				position={Position.Left}
-				className={hiddenHandle}
-				isConnectable={false}
-			/>
+		<NodeFrame
+			selected={selected}
+			className="group w-52"
+			shake={shake}
+			pulse={saturated}
+		>
+			<Handle type="target" position={Position.Left} className={handleClass} />
 			<div className="flex min-w-0 items-center gap-2 font-medium text-sm">
 				<span
 					className="size-2.5 shrink-0 rounded-full"
-					style={{ background: serverColor(data.serverIndex) }}
+					style={{ background: color }}
+					aria-hidden="true"
+				/>
+				<Icon
+					className="size-4 shrink-0 text-muted-foreground"
 					aria-hidden="true"
 				/>
 				<span className="truncate">{node.label ?? id}</span>
 			</div>
-			{s && <StatusBadge status={s.status} className="mt-1.5" />}
+			{s && (
+				<div className="mt-1.5 flex flex-wrap items-center gap-1">
+					<StatusBadge status={s.status} />
+					{activeFaultKinds.map((k) => (
+						<span
+							key={k}
+							className="inline-flex items-center gap-1 rounded-full bg-gap-soft px-2 py-0.5 text-[11px] text-gap"
+						>
+							<Zap className="size-3" aria-hidden="true" />
+							{t(`faultKinds.${k}.short`)}
+						</span>
+					))}
+				</div>
+			)}
 			<p className="mt-1 text-muted-foreground text-xs tabular">
-				{c.capacity} slots · {formatMs(c.serviceTimeMs)} · queue{" "}
-				{c.queueCapacity}
+				{node.kind === "queue"
+					? t("canvas.queueSpec", {
+							consumers: c.capacity,
+							time: formatMs(c.serviceTimeMs),
+							backlog: c.queueCapacity,
+						})
+					: t("canvas.workerSpec", {
+							slots: c.capacity,
+							time: formatMs(c.serviceTimeMs),
+							queue: c.queueCapacity,
+						})}
+				{node.kind === "cache" &&
+					` · ${t("canvas.hit", { pct: Math.round(node.config.hitRatio * 100) })}`}
 			</p>
 			{s ? (
 				<div className="mt-2 grid gap-1">
 					<Meter
 						value={s.busy}
 						max={c.capacity}
-						label="Busy"
-						tone={serverColor(data.serverIndex)}
+						label={t("canvas.busy")}
+						tone={color}
 					/>
 					<Meter
 						value={s.queue}
 						max={Math.max(1, c.queueCapacity)}
-						label="Queue"
-						tone={
-							s.queue >= c.queueCapacity && c.queueCapacity > 0
-								? "var(--down)"
-								: "var(--muted-foreground)"
+						label={
+							node.kind === "queue" ? t("canvas.backlog") : t("canvas.queue")
 						}
+						tone={saturated ? "var(--down)" : "var(--muted-foreground)"}
 					/>
 				</div>
 			) : (
-				fault && (
+				faults.length > 0 && (
 					<p className="mt-1.5 flex items-center gap-1.5 text-gap text-xs">
-						<Server className="size-3" aria-hidden="true" />
-						Fails at {formatMs(fault.atMs)}
-						{fault.recoverAtMs !== null
-							? `, back at ${formatMs(fault.recoverAtMs)}`
-							: ", stays down"}
+						<Zap className="size-3" aria-hidden="true" />
+						{faults
+							.map(
+								(f) => `${t(`faultKinds.${f.kind}.short`)} ${formatMs(f.atMs)}`,
+							)
+							.join(", ")}
 					</p>
 				)
 			)}
+			{node.kind !== "cache" ||
+			experiment.model.links.filter((l) => l.source === id).length === 0 ? (
+				<Handle
+					type="source"
+					position={Position.Right}
+					className={handleClass}
+				/>
+			) : null}
 		</NodeFrame>
 	);
 });
 
-type FlowEdge = Edge<{ serverIndex: number | null }>;
+/** Dots travelling along a link during replay. Rate decides how many and how fast. */
+function FlowDots({
+	path,
+	rps,
+	color,
+	maxRps,
+}: {
+	path: string;
+	rps: number;
+	color: string;
+	maxRps: number;
+}) {
+	const reduced = useMediaQuery("(prefers-reduced-motion: reduce)");
+	if (reduced || rps <= 0) return null;
+	const share = Math.min(1, rps / Math.max(1, maxRps));
+	const count = Math.max(1, Math.round(share * 6));
+	const duration = 2.2 - share * 1.2;
+	return (
+		<EdgeLabelRenderer>
+			{Array.from({ length: count }, (_, i) => (
+				<span
+					// biome-ignore lint/suspicious/noArrayIndexKey: dots are interchangeable
+					key={i}
+					className="flow-dot pointer-events-none absolute top-0 left-0 size-2 rounded-full"
+					aria-hidden="true"
+					style={
+						{
+							"--flow-path": `"${path}"`,
+							"--flow-duration": `${duration}s`,
+							"--flow-delay": `${(-i * duration) / count}s`,
+							background: color,
+							boxShadow: "0 0 0 1.5px var(--card)",
+						} as CSSProperties
+					}
+				/>
+			))}
+		</EdgeLabelRenderer>
+	);
+}
 
 const TrafficEdge = memo(function TrafficEdge(props: EdgeProps<FlowEdge>) {
+	const { t } = useTranslation();
+	const { experiment, result, selection } = useWorkbench();
 	const snap = useSnapshot();
 	const [path, labelX, labelY] = getBezierPath(props);
-	const serverIndex = props.data?.serverIndex ?? null;
-	let rps: number | null = null;
-	let tone = "var(--chart-axis)";
-	let width = 1.5;
-	let note: string | null = null;
-	if (snap) {
-		if (serverIndex === null) rps = snap.offeredRps;
-		else {
-			const s = snap.servers[serverIndex];
-			rps = s?.routedRps ?? 0;
-			if (s?.status === "down-routed") {
-				tone = "var(--gap-band)";
-				note = "lost";
-			} else if (s?.status === "down-removed" || s?.status === "recovering")
-				note = "not routed";
-		}
-		width = 1.5 + Math.min(4, (rps / Math.max(1, snap.offeredRps)) * 4);
-	}
+	const linkId = props.data?.linkId ?? "";
+	const linkIndex = result?.topology.linkIds.indexOf(linkId) ?? -1;
+	const ls: LinkSnapshot | undefined =
+		snap && linkIndex !== -1 ? snap.links[linkIndex] : undefined;
+	const link = experiment.model.links.find((l) => l.id === linkId);
+	const target = link
+		? experiment.model.nodes.find((n) => n.id === link.target)
+		: undefined;
+	const targetSnap =
+		snap && result && target
+			? nodeSnapshot(snap, target.id, result.topology.nodeIds)
+			: undefined;
+	const workersList = orderedWorkers(experiment);
+	const targetIndex = target
+		? workersList.findIndex((w) => w.id === target.id)
+		: -1;
+	const selected = selection?.type === "link" && selection.id === linkId;
+	const lost = targetSnap?.status === "down-routed";
+	const tone = selected
+		? "var(--ring)"
+		: ls?.breaker === "open"
+			? "var(--series-7)"
+			: lost
+				? "var(--gap-band)"
+				: "var(--chart-axis)";
+	const width = selected
+		? 2.5
+		: ls
+			? 1.5 +
+				Math.min(4, (ls.callsRps / Math.max(1, snap?.offeredRps ?? 1)) * 4)
+			: 1.5;
+	const policy = link
+		? [
+				link.timeoutMs !== null
+					? t("canvas.edgeTimeout", { ms: link.timeoutMs })
+					: null,
+				link.retries > 0 ? t("canvas.edgeRetries", { n: link.retries }) : null,
+				link.circuitBreaker.enabled ? t("canvas.edgeBreaker") : null,
+				link.latencyMs > 0
+					? t("canvas.edgeLatency", { ms: link.latencyMs })
+					: null,
+			]
+				.filter(Boolean)
+				.join(" · ")
+		: "";
+	const activeFaults =
+		ls?.activeFaults.map((i) => experiment.faults[i]?.kind).filter(Boolean) ??
+		[];
+	const dotColor = lost
+		? "var(--down)"
+		: targetSnap && targetSnap.failedRps > 0
+			? "var(--gap-band)"
+			: targetIndex >= 0
+				? seriesColor(targetIndex)
+				: "var(--muted-foreground)";
 	return (
 		<>
-			<BaseEdge path={path} style={{ stroke: tone, strokeWidth: width }} />
-			{rps !== null && (
+			<BaseEdge
+				path={path}
+				style={{
+					stroke: tone,
+					strokeWidth: width,
+					strokeDasharray: ls?.breaker === "open" ? "6 4" : undefined,
+				}}
+				interactionWidth={24}
+			/>
+			{ls && (
+				<FlowDots
+					path={path}
+					rps={ls.callsRps}
+					color={dotColor}
+					maxRps={snap?.offeredRps ?? 1}
+				/>
+			)}
+			{(ls || policy || activeFaults.length > 0) && (
 				<EdgeLabelRenderer>
 					<div
 						className="nodrag nopan pointer-events-none absolute rounded border bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground tabular"
@@ -295,9 +501,19 @@ const TrafficEdge = memo(function TrafficEdge(props: EdgeProps<FlowEdge>) {
 							transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
 						}}
 					>
-						{note === "not routed"
-							? note
-							: `${formatCount(rps)} req/s${note ? ` · ${note}` : ""}`}
+						{ls ? (
+							<>
+								{ls.breaker === "open"
+									? t("canvas.breakerOpen")
+									: lost
+										? t("canvas.lost", { rps: formatCount(ls.callsRps) })
+										: `${formatCount(ls.callsRps)} req/s`}
+								{activeFaults.length > 0 &&
+									` · ${activeFaults.map((k) => t(`faultKinds.${k}.short`)).join(", ")}`}
+							</>
+						) : (
+							policy
+						)}
 					</div>
 				</EdgeLabelRenderer>
 			)}
@@ -307,61 +523,65 @@ const TrafficEdge = memo(function TrafficEdge(props: EdgeProps<FlowEdge>) {
 
 const nodeTypes = {
 	client: ClientNode,
-	"load-balancer": LoadBalancerNode,
-	server: ServerNode,
+	"load-balancer": BalancerNode,
+	service: WorkerNode,
+	database: WorkerNode,
+	cache: WorkerNode,
+	queue: WorkerNode,
 };
 const edgeTypes = { traffic: TrafficEdge };
 
 function buildNodes(
 	experiment: Experiment,
-	selected: string | null,
+	selection: { type: string; id: string } | null,
 ): FlowNode[] {
-	const list = servers(experiment);
+	const list = orderedWorkers(experiment);
 	return experiment.model.nodes.map((n) => ({
 		id: n.id,
 		type: n.kind,
 		position: experiment.layout?.[n.id] ?? defaultPosition(experiment, n.id),
-		data: { serverIndex: list.findIndex((s) => s.id === n.id) },
-		selected: n.id === selected,
-		ariaLabel: `${n.label ?? n.id} (${n.kind === "load-balancer" ? "load balancer" : n.kind})`,
+		data: { workerIndex: list.findIndex((w) => w.id === n.id) },
+		selected: selection?.type === "node" && selection.id === n.id,
+		ariaLabel: `${n.label ?? n.id} (${n.kind})`,
 		deletable: false,
 	}));
 }
 
-function buildEdges(experiment: Experiment): FlowEdge[] {
-	const list = servers(experiment);
+function buildEdges(
+	experiment: Experiment,
+	selection: { type: string; id: string } | null,
+): FlowEdge[] {
 	return experiment.model.links.map((l) => ({
-		id: `${l.source}->${l.target}`,
+		id: l.id,
 		source: l.source,
 		target: l.target,
 		type: "traffic",
-		data: {
-			serverIndex:
-				list.findIndex((s) => s.id === l.target) === -1
-					? null
-					: list.findIndex((s) => s.id === l.target),
-		},
-		selectable: false,
-		focusable: false,
+		data: { linkId: l.id },
+		selected: selection?.type === "link" && selection.id === l.id,
 		deletable: false,
+		focusable: true,
 	}));
 }
 
 function CanvasInner() {
-	const { experiment, update, selectedNode, selectNode, setInspectorTab } =
+	const { t } = useTranslation();
+	const { experiment, update, selection, select, setInspectorTab } =
 		useWorkbench();
 	const [nodes, setNodes] = useState<FlowNode[]>(() =>
-		buildNodes(experiment, selectedNode),
+		buildNodes(experiment, selection),
 	);
-	const edges = useMemo(() => buildEdges(experiment), [experiment]);
+	const edges = useMemo(
+		() => buildEdges(experiment, selection),
+		[experiment, selection],
+	);
 	const { fitView } = useReactFlow();
 	const nodeCount = experiment.model.nodes.length;
 
 	useEffect(() => {
-		setNodes(buildNodes(experiment, selectedNode));
-	}, [experiment, selectedNode]);
+		setNodes(buildNodes(experiment, selection));
+	}, [experiment, selection]);
 
-	// Refit when servers are added or removed so new nodes are never off-screen.
+	// Refit when components are added or removed so new ones are never off-screen.
 	useEffect(() => {
 		if (nodeCount > 0) void fitView({ padding: 0.2, duration: 200 });
 	}, [nodeCount, fitView]);
@@ -392,7 +612,6 @@ function CanvasInner() {
 		(changes: NodeChange<FlowNode>[]) => {
 			setNodes((current) => {
 				const next = applyNodeChanges(changes, current);
-				// Keyboard moves arrive without a drag; commit them immediately.
 				const keyboardMoved = changes.filter(
 					(c) =>
 						c.type === "position" && c.dragging === undefined && c.position,
@@ -411,14 +630,31 @@ function CanvasInner() {
 			});
 			for (const c of changes)
 				if (c.type === "select" && c.selected) {
-					selectNode(c.id);
+					select({ type: "node", id: c.id });
 					setInspectorTab("component");
 				}
 		},
-		[commitPositions, selectNode, setInspectorTab],
+		[commitPositions, select, setInspectorTab],
 	);
 
-	const canAdd = canAddServer(experiment);
+	const onConnect = useCallback(
+		(connection: Connection) => {
+			if (!connection.source || !connection.target) return;
+			const { experiment: next, id } = addLink(
+				experiment,
+				connection.source,
+				connection.target,
+			);
+			if (!id) return;
+			update(() => next);
+			select({ type: "link", id });
+			setInspectorTab("component");
+			void addEdge;
+		},
+		[experiment, update, select, setInspectorTab],
+	);
+
+	const canAdd = canAddNode(experiment);
 
 	return (
 		<div className="relative h-full w-full">
@@ -429,8 +665,13 @@ function CanvasInner() {
 				edgeTypes={edgeTypes}
 				onNodesChange={onNodesChange}
 				onNodeDragStop={(_, __, dragged) => commitPositions(dragged)}
-				onPaneClick={() => selectNode(null)}
-				nodesConnectable={false}
+				onPaneClick={() => select(null)}
+				onEdgeClick={(_, edge) => {
+					select({ type: "link", id: edge.id });
+					setInspectorTab("component");
+				}}
+				onConnect={onConnect}
+				nodesConnectable
 				deleteKeyCode={null}
 				selectionKeyCode={null}
 				multiSelectionKeyCode={null}
@@ -438,39 +679,68 @@ function CanvasInner() {
 				fitViewOptions={{ padding: 0.2 }}
 				minZoom={0.3}
 				maxZoom={1.75}
-				proOptions={{ hideAttribution: false }}
+				connectionLineStyle={{ stroke: "var(--ring)", strokeWidth: 2 }}
 				ariaLabelConfig={{
-					"node.a11yDescription.default":
-						"Press Enter or Space to select this component and open its settings. Use the arrow keys to move it.",
+					"node.a11yDescription.default": t("canvas.a11yNode"),
 				}}
 			>
 				<Background gap={24} size={1} color="var(--chart-grid)" />
 				<Controls
 					showInteractive={false}
 					position="bottom-right"
-					aria-label="Canvas zoom controls"
+					aria-label={t("canvas.zoom")}
 				/>
 			</ReactFlow>
 			<div className="absolute top-3 left-3 flex gap-2">
-				<Button
-					variant="outline"
-					size="sm"
-					className="bg-card"
-					disabled={!canAdd}
-					title={
-						canAdd ? undefined : `Up to ${LIMITS.maxServers} servers in v0.1`
-					}
-					onClick={() => {
-						const { experiment: next, id } = addServer(experiment);
-						update(() => next);
-						selectNode(id);
-						setInspectorTab("component");
-					}}
-				>
-					<Plus aria-hidden="true" />
-					Add server
-				</Button>
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button
+							variant="outline"
+							size="sm"
+							className="bg-card"
+							disabled={!canAdd}
+							title={
+								canAdd
+									? undefined
+									: t("inspector.maxNodes", { max: LIMITS.maxNodes })
+							}
+						>
+							<Plus aria-hidden="true" />
+							{t("canvas.addComponent")}
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="start">
+						{ADDABLE_KINDS.map((kind: NodeKind) => {
+							const Icon = NODE_ICONS[kind];
+							return (
+								<DropdownMenuItem
+									key={kind}
+									onSelect={() => {
+										const from =
+											selection?.type === "node" ? selection.id : undefined;
+										const { experiment: next, id } = addNode(experiment, kind, {
+											from,
+											label: t(`defaults.${kind}`),
+										});
+										update(() => next);
+										select({ type: "node", id });
+										setInspectorTab("component");
+									}}
+								>
+									<Icon aria-hidden="true" />
+									{t(`kinds.${kind}`)}
+									<span className="ml-auto text-muted-foreground text-xs">
+										{t(`kindHints.${kind}`)}
+									</span>
+								</DropdownMenuItem>
+							);
+						})}
+					</DropdownMenuContent>
+				</DropdownMenu>
 			</div>
+			<p className="pointer-events-none absolute right-3 bottom-3 left-3 hidden text-center text-muted-foreground text-xs sm:block">
+				{t("canvas.hint")}
+			</p>
 		</div>
 	);
 }

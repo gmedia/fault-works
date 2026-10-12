@@ -7,6 +7,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { FileUp, TriangleAlert } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -20,6 +21,7 @@ import {
 } from "#/components/ui/dialog.tsx";
 import { Label } from "#/components/ui/label.tsx";
 import { Textarea } from "#/components/ui/textarea.tsx";
+import { useMessage } from "#/features/workbench/fields.tsx";
 import { cn } from "#/lib/utils.ts";
 import { useLibrary } from "#/state/library.ts";
 import { useRuns } from "#/state/runs.ts";
@@ -35,7 +37,7 @@ interface Placed {
  * Adds an imported experiment, or reuses an existing one that already has the same title and the
  * same behavior, so importing a file twice never creates look-alike duplicates.
  */
-function place(experiment: Experiment): Placed {
+function place(experiment: Experiment, importedSuffix: string): Placed {
 	const { entries, add } = useLibrary.getState();
 	const key = validate(experiment).runKey;
 	const twin = Object.values(entries).find(
@@ -52,7 +54,10 @@ function place(experiment: Experiment): Placed {
 	const clash = entries[experiment.experimentId] !== undefined;
 	const id = add(
 		clash
-			? { ...experiment, title: `${experiment.title} (imported)`.slice(0, 120) }
+			? {
+					...experiment,
+					title: `${experiment.title} (${importedSuffix})`.slice(0, 120),
+				}
 			: experiment,
 		"imported",
 	);
@@ -63,30 +68,14 @@ function place(experiment: Experiment): Placed {
 	};
 }
 
-function describePlacement(
-	title: string,
-	placed: Placed,
-	migratedFrom: string | null,
-): string {
-	return [
-		placed.reused
-			? `“${title}” is already in this browser with the same settings, so the existing copy is used.`
-			: null,
-		placed.renamedFrom
-			? `A different experiment already uses the id ${placed.renamedFrom}, so this one is saved as ${placed.id} and marked “(imported)”.`
-			: null,
-		migratedFrom ? `Upgraded from schema ${migratedFrom}.` : null,
-	]
-		.filter(Boolean)
-		.join(" ");
-}
-
 /**
  * Import from a file (picker or drop) or pasted JSON. Accepts experiment, result and comparison
  * files. Input is parsed as data only: it is size-limited, schema-validated and never executed.
  * Result claims (digests, counts) are queued so the next run can verify them.
  */
 export function ImportDialog({ trigger }: { trigger: ReactNode }) {
+	const { t } = useTranslation();
+	const message = useMessage();
 	const [open, setOpen] = useState(false);
 	const [text, setText] = useState("");
 	const [result, setResult] = useState<ImportResult | null>(null);
@@ -104,6 +93,21 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 		setSource(null);
 	};
 
+	const describePlacement = (
+		title: string,
+		placed: Placed,
+		migratedFrom: string | null,
+	) =>
+		[
+			placed.reused ? t("import.reused", { title }) : null,
+			placed.renamedFrom
+				? t("import.renamed", { from: placed.renamedFrom, id: placed.id })
+				: null,
+			migratedFrom ? t("import.upgraded", { from: migratedFrom }) : null,
+		]
+			.filter(Boolean)
+			.join(" ");
+
 	const queueVerification = (id: string, run: ImportedRun, from: string) => {
 		if (run.claimed) setVerification(id, { ...run.claimed, source: from });
 	};
@@ -114,11 +118,11 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 		setOpen(false);
 		reset();
 		if (parsed.kind === "comparison") {
-			const a = place(parsed.a.experiment);
-			const b = place(parsed.b.experiment);
+			const a = place(parsed.a.experiment, t("import.suffix"));
+			const b = place(parsed.b.experiment, t("import.suffix"));
 			queueVerification(a.id, parsed.a, from);
 			queueVerification(b.id, parsed.b, from);
-			toast.success("Imported a comparison", {
+			toast.success(t("import.comparisonDone"), {
 				description:
 					[
 						describePlacement(
@@ -133,18 +137,17 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 						),
 					]
 						.filter(Boolean)
-						.join(" ") ||
-					"Both experiments run again now so their results can be checked.",
+						.join(" ") || t("import.comparisonHint"),
 			});
 			void navigate({ to: "/compare", search: { a: a.id, b: b.id } });
 			return;
 		}
-		const placed = place(parsed.experiment);
+		const placed = place(parsed.experiment, t("import.suffix"));
 		queueVerification(placed.id, parsed, from);
 		toast.success(
 			parsed.kind === "result"
-				? `Imported the experiment inside the result file “${parsed.experiment.title}”`
-				: `Imported “${parsed.experiment.title}”`,
+				? t("import.resultDone", { title: parsed.experiment.title })
+				: t("import.done", { title: parsed.experiment.title }),
 			{
 				description:
 					[
@@ -153,9 +156,7 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 							placed,
 							parsed.migratedFrom,
 						),
-						parsed.kind === "result"
-							? "It runs again now and the numbers are checked against the file."
-							: null,
+						parsed.kind === "result" ? t("import.resultHint") : null,
 					]
 						.filter(Boolean)
 						.join(" ") || undefined,
@@ -175,7 +176,10 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 				issues: [
 					{
 						path: "",
-						message: `${file.name} is ${Math.ceil(file.size / 1024)} KB, which is more than FaultWorks ever exports.`,
+						message: {
+							key: "import.tooLargeBundle",
+							params: { kb: Math.ceil(file.size / 1024) },
+						},
 					},
 				],
 			});
@@ -197,13 +201,8 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 			<DialogTrigger asChild>{trigger}</DialogTrigger>
 			<DialogContent className="sm:max-w-xl">
 				<DialogHeader>
-					<DialogTitle>Import an experiment</DialogTitle>
-					<DialogDescription>
-						Choose a FaultWorks <span className="font-mono">.json</span> file or
-						paste its contents: an experiment, a result (it is re-run and
-						checked) or a comparison (both sides come in). Files are checked
-						against the schema and stay in this browser.
-					</DialogDescription>
+					<DialogTitle>{t("import.title")}</DialogTitle>
+					<DialogDescription>{t("import.description")}</DialogDescription>
 				</DialogHeader>
 
 				{/* biome-ignore lint/a11y/noStaticElementInteractions: dropping is a pointer shortcut; the "Choose file" button and the paste field are the keyboard paths. */}
@@ -225,14 +224,14 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 					)}
 				>
 					<FileUp className="size-5 text-muted-foreground" aria-hidden="true" />
-					<p className="text-sm">Drop a file here, or</p>
+					<p className="text-sm">{t("import.drop")}</p>
 					<Button
 						type="button"
 						variant="outline"
 						size="sm"
 						onClick={() => fileInput.current?.click()}
 					>
-						Choose file
+						{t("import.chooseFile")}
 					</Button>
 					<input
 						ref={fileInput}
@@ -253,7 +252,7 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 				</div>
 
 				<div className="grid gap-2">
-					<Label htmlFor={textId}>Or paste JSON</Label>
+					<Label htmlFor={textId}>{t("import.paste")}</Label>
 					<Textarea
 						id={textId}
 						value={text}
@@ -265,7 +264,7 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 						rows={6}
 						spellCheck={false}
 						className="max-h-60 font-mono text-xs"
-						placeholder='{ "schemaVersion": "0.1.0", … }'
+						placeholder='{ "schemaVersion": "0.2.0", … }'
 						aria-describedby={result && !result.ok ? errorId : undefined}
 						aria-invalid={result !== null && !result.ok}
 					/>
@@ -279,21 +278,21 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 					>
 						<p className="flex items-center gap-2 font-medium text-down">
 							<TriangleAlert className="size-4" aria-hidden="true" />
-							This experiment can’t be imported yet ({result.issues.length}{" "}
-							problem
-							{result.issues.length === 1 ? "" : "s"})
+							{t("import.failed", { count: result.issues.length })}
 						</p>
 						<ul className="mt-2 space-y-1">
 							{result.issues.slice(0, 12).map((issue) => (
-								<li key={`${issue.path}:${issue.message}`}>
+								<li key={`${issue.path}:${issue.message.key}`}>
 									{issue.path && (
 										<span className="font-mono text-xs">{issue.path}: </span>
 									)}
-									{issue.message}
+									{message(issue)}
 								</li>
 							))}
 							{result.issues.length > 12 && (
-								<li>…and {result.issues.length - 12} more.</li>
+								<li>
+									{t("import.more", { count: result.issues.length - 12 })}
+								</li>
 							)}
 						</ul>
 					</div>
@@ -301,13 +300,13 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 
 				<DialogFooter>
 					<Button variant="outline" onClick={() => setOpen(false)}>
-						Cancel
+						{t("common.cancel")}
 					</Button>
 					<Button
 						disabled={text.trim() === "" || (result !== null && !result.ok)}
-						onClick={() => accept(parseImportJson(text), "pasted JSON")}
+						onClick={() => accept(parseImportJson(text), t("import.pasted"))}
 					>
-						Import
+						{t("import.action")}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

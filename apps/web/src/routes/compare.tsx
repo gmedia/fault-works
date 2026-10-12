@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowLeftRight } from "lucide-react";
 import { useEffect, useId } from "react";
+import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { Button } from "#/components/ui/button.tsx";
 import { Label } from "#/components/ui/label.tsx";
@@ -40,6 +41,7 @@ function Picker({
 	onChange: (id: string) => void;
 	color: string;
 }) {
+	const { t } = useTranslation();
 	const id = useId();
 	const entries = useLibrary((s) => s.entries);
 	const order = useLibrary((s) => s.order);
@@ -62,7 +64,7 @@ function Picker({
 					className="w-full bg-card"
 					aria-describedby={`${id}-hint`}
 				>
-					<SelectValue placeholder="Choose an experiment" />
+					<SelectValue placeholder={t("compare.choose")} />
 				</SelectTrigger>
 				<SelectContent>
 					{order
@@ -82,16 +84,19 @@ function Picker({
 }
 
 function ComparePage() {
+	const { t } = useTranslation();
 	const { a, b } = Route.useSearch();
 	const navigate = useNavigate({ from: Route.fullPath });
 	const entryA = useLibrary((s) => (a ? s.entries[a] : undefined));
 	const entryB = useLibrary((s) => (b ? s.entries[b] : undefined));
 	useDocumentTitle(
 		entryA && entryB
-			? `Compare: ${entryA.experiment.title} vs ${entryB.experiment.title}`
-			: "Compare",
+			? t("compare.docTitle", {
+					a: entryA.experiment.title,
+					b: entryB.experiment.title,
+				})
+			: t("nav.compare"),
 	);
-
 	const set = (patch: { a?: string; b?: string }) =>
 		void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
 
@@ -111,17 +116,15 @@ function ComparePage() {
 	return (
 		<div className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
 			<h1 className="font-semibold text-3xl tracking-tight">
-				Compare two experiments
+				{t("compare.title")}
 			</h1>
 			<p className="mt-3 max-w-2xl text-muted-foreground">
-				Pick a baseline (A) and a variant (B). A comparison teaches the most
-				when exactly one behavior setting differs between them.
+				{t("compare.lead")}
 			</p>
-
 			<div className="mt-8 flex flex-col gap-4 rounded-lg border bg-muted/40 p-4 sm:flex-row sm:items-start">
 				<Picker
-					label="A · baseline"
-					hint="What you compare against"
+					label={t("compare.a")}
+					hint={t("compare.aHint")}
 					value={a}
 					exclude={b}
 					onChange={(v) => set({ a: v })}
@@ -131,22 +134,21 @@ function ComparePage() {
 					variant="outline"
 					size="icon"
 					className="self-center sm:mt-6"
-					aria-label="Swap A and B"
+					aria-label={t("compare.swap")}
 					disabled={!a && !b}
 					onClick={() => set({ a: b, b: a })}
 				>
 					<ArrowLeftRight />
 				</Button>
 				<Picker
-					label="B · variant"
-					hint="The version with one change"
+					label={t("compare.b")}
+					hint={t("compare.bHint")}
 					value={b}
 					exclude={a}
 					onChange={(v) => set({ b: v })}
 					color="var(--series-2)"
 				/>
 			</div>
-
 			<div className="mt-10">
 				{entryA && entryB ? (
 					<CompareView
@@ -157,8 +159,8 @@ function ComparePage() {
 				) : (
 					<p className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
 						{(a && !entryA) || (b && !entryB)
-							? "One of the experiments in this link is not in this browser. Choose another one above."
-							: "Choose two experiments above. Both run automatically in your browser."}
+							? t("compare.missing")
+							: t("compare.pickTwo")}
 					</p>
 				)}
 			</div>

@@ -7,6 +7,7 @@ import {
 	SkipForward,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "#/components/ui/button.tsx";
 import {
 	Select,
@@ -19,15 +20,9 @@ import { faultBands } from "#/features/charts/bands.ts";
 import { formatClock, formatSeconds } from "#/lib/format.ts";
 import type { RunResult } from "#/workers/protocol.ts";
 import { usePlayback } from "./playback-store.ts";
+import { stateChangeTimes } from "./state-at.ts";
 
 const SPEEDS = [1, 2, 5, 10, 20];
-
-/** Times worth stopping at: every crash, detection, recovery and return to rotation. */
-export function stateChangeTimes(result: RunResult): number[] {
-	return [...new Set(result.metrics.transitions.map((t) => t.tMs))].sort(
-		(a, b) => a - b,
-	);
-}
 
 /**
  * Replays a finished run over simulated time. The replay only moves a cursor over recorded
@@ -40,6 +35,7 @@ export function PlaybackBar({
 	result: RunResult;
 	disabled?: boolean;
 }) {
+	const { t } = useTranslation();
 	const { timeMs, playing, speed, setTime, setPlaying, setSpeed } =
 		usePlayback();
 	const horizon = result.horizonMs;
@@ -58,8 +54,8 @@ export function PlaybackBar({
 		const tick = (now: number) => {
 			const prev = last.current ?? now;
 			last.current = now;
-			const { timeMs: t, speed: s } = usePlayback.getState();
-			const next = Math.min(horizon, t + (now - prev) * s);
+			const { timeMs: tm, speed: s } = usePlayback.getState();
+			const next = Math.min(horizon, tm + (now - prev) * s);
 			usePlayback.getState().setTime(next);
 			if (next >= horizon) {
 				usePlayback.getState().setPlaying(false);
@@ -71,8 +67,8 @@ export function PlaybackBar({
 		return () => cancelAnimationFrame(frame);
 	}, [playing, horizon]);
 
-	const nextChange = changes.find((t) => t > timeMs + 0.5);
-	const prevChange = [...changes].reverse().find((t) => t < timeMs - 0.5);
+	const nextChange = changes.find((x) => x > timeMs + 0.5);
+	const prevChange = [...changes].reverse().find((x) => x < timeMs - 0.5);
 
 	return (
 		<div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t bg-card px-3 py-2">
@@ -80,8 +76,8 @@ export function PlaybackBar({
 				<Button
 					variant="ghost"
 					size="icon-sm"
-					aria-label="Previous state change"
-					title="Previous state change (Shift + ←)"
+					aria-label={t("playback.prevChange")}
+					title={`${t("playback.prevChange")} (Shift + ←)`}
 					disabled={disabled || prevChange === undefined}
 					onClick={() => prevChange !== undefined && setTime(prevChange)}
 				>
@@ -90,8 +86,8 @@ export function PlaybackBar({
 				<Button
 					variant="ghost"
 					size="icon-sm"
-					aria-label="Back one window"
-					title="Back one window (←)"
+					aria-label={t("playback.back")}
+					title={`${t("playback.back")} (←)`}
 					disabled={disabled || timeMs <= 0}
 					onClick={() => setTime(Math.max(0, timeMs - windowMs))}
 				>
@@ -99,8 +95,8 @@ export function PlaybackBar({
 				</Button>
 				<Button
 					size="icon-sm"
-					aria-label={playing ? "Pause replay" : "Play replay"}
-					title={playing ? "Pause (Space)" : "Play (Space)"}
+					aria-label={playing ? t("playback.pause") : t("playback.play")}
+					title={`${playing ? t("playback.pause") : t("playback.play")} (${t("shortcuts.space")})`}
 					disabled={disabled}
 					onClick={() => {
 						if (!playing && timeMs >= horizon) setTime(0);
@@ -112,8 +108,8 @@ export function PlaybackBar({
 				<Button
 					variant="ghost"
 					size="icon-sm"
-					aria-label="Forward one window"
-					title="Forward one window (→)"
+					aria-label={t("playback.forward")}
+					title={`${t("playback.forward")} (→)`}
 					disabled={disabled || timeMs >= horizon}
 					onClick={() => setTime(Math.min(horizon, timeMs + windowMs))}
 				>
@@ -122,8 +118,8 @@ export function PlaybackBar({
 				<Button
 					variant="ghost"
 					size="icon-sm"
-					aria-label="Next state change"
-					title="Next state change (Shift + →)"
+					aria-label={t("playback.nextChange")}
+					title={`${t("playback.nextChange")} (Shift + →)`}
 					disabled={disabled || nextChange === undefined}
 					onClick={() => nextChange !== undefined && setTime(nextChange)}
 				>
@@ -133,7 +129,7 @@ export function PlaybackBar({
 
 			<div className="relative order-last flex h-8 min-w-0 basis-full items-center sm:order-none sm:basis-auto sm:flex-1">
 				<label htmlFor={sliderId} className="sr-only">
-					Replay position
+					{t("playback.position")}
 				</label>
 				<div
 					className="pointer-events-none absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 overflow-hidden rounded-full bg-muted"
@@ -141,13 +137,15 @@ export function PlaybackBar({
 				>
 					{bands.map((b) => (
 						<span
-							key={`${b.kind}-${b.fromMs}`}
+							key={`${b.kind}-${b.fromMs}-${b.label}`}
 							className={
 								b.kind === "gap"
 									? "gap-hatch absolute inset-y-0"
 									: b.kind === "down"
 										? "down-hatch absolute inset-y-0 bg-down-soft"
-										: "absolute inset-y-0 bg-off-soft"
+										: b.kind === "breaker"
+											? "absolute inset-y-0 bg-gap-soft"
+											: "absolute inset-y-0 bg-off-soft"
 							}
 							style={{
 								left: `${(b.fromMs / horizon) * 100}%`,
@@ -160,11 +158,11 @@ export function PlaybackBar({
 						style={{ width: `${(timeMs / horizon) * 100}%` }}
 					/>
 				</div>
-				{changes.map((t) => (
+				{changes.map((x) => (
 					<span
-						key={t}
+						key={x}
 						className="pointer-events-none absolute top-1/2 h-3.5 w-px -translate-y-1/2 bg-muted-foreground"
-						style={{ left: `${(t / horizon) * 100}%` }}
+						style={{ left: `${(x / horizon) * 100}%` }}
 						aria-hidden="true"
 					/>
 				))}
@@ -180,7 +178,10 @@ export function PlaybackBar({
 						setPlaying(false);
 						setTime(Number(e.target.value));
 					}}
-					aria-valuetext={`${formatSeconds(timeMs)} of ${formatSeconds(horizon)}`}
+					aria-valuetext={t("playback.valueText", {
+						time: formatSeconds(timeMs),
+						total: formatSeconds(horizon),
+					})}
 					className="relative z-10 h-8 w-full cursor-pointer appearance-none bg-transparent focus-visible:outline-none [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-card [&::-moz-range-thumb]:bg-foreground [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-card [&::-webkit-slider-thumb]:bg-foreground [&::-webkit-slider-thumb]:shadow focus-visible:[&::-webkit-slider-thumb]:ring-2 focus-visible:[&::-webkit-slider-thumb]:ring-ring"
 				/>
 			</div>
@@ -193,7 +194,7 @@ export function PlaybackBar({
 				<SelectTrigger
 					size="sm"
 					className="w-[4.75rem]"
-					aria-label="Replay speed"
+					aria-label={t("playback.speed")}
 				>
 					<SelectValue />
 				</SelectTrigger>

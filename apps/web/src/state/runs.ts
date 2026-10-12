@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { runInWorker } from "#/workers/client.ts";
 import type { RunResult } from "#/workers/protocol.ts";
-import { safeStorage } from "./library.ts";
+import { safeStorage } from "./storage.ts";
 
 export interface RunRecord {
 	status: "running" | "done" | "error";
@@ -121,7 +121,7 @@ export const useRuns = create<RunState>()(
 		}),
 		{
 			name: "faultworks.runs",
-			version: 1,
+			version: 2,
 			storage: createJSONStorage(() => safeStorage),
 			partialize: (state) => ({ ranKeys: state.ranKeys }),
 		},

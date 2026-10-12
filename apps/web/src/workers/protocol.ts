@@ -18,7 +18,6 @@ import {
 export interface RunResult {
 	experiment: Experiment;
 	topology: TopologyInfo;
-	healthChecks: boolean;
 	horizonMs: number;
 	metrics: RunMetrics;
 	log: EventLogData | null;
@@ -51,10 +50,7 @@ function prepare(experiment: Experiment) {
 	const parsed = parseExperiment(experiment);
 	if (!parsed.ok)
 		throw new Error(
-			`The experiment is not valid: ${parsed.issues
-				.slice(0, 3)
-				.map((i) => i.message)
-				.join(" ")}`,
+			`invalid experiment: ${parsed.issues.map((i) => `${i.path} ${i.message.key}`).join(", ")}`,
 		);
 	return {
 		experiment: parsed.experiment,
@@ -65,14 +61,13 @@ function prepare(experiment: Experiment) {
 export function executeRun(input: Experiment, recordLog: boolean): RunResult {
 	const { experiment, compiled } = prepare(input);
 	const output = runSimulation(compiled.engine, {
-		labels: compiled.topology.servers.map((s) => s.label),
+		labels: compiled.topology.nodeLabels,
 		windowMs: compiled.sampleWindowMs,
 		recordLog,
 	});
 	return {
 		experiment,
 		topology: compiled.topology,
-		healthChecks: compiled.engine.healthCheck !== null,
 		horizonMs: compiled.horizonMs,
 		metrics: output.metrics,
 		log: output.log,
@@ -91,7 +86,7 @@ export function executeSweep(input: Experiment, seeds: number[]): SweepPoint[] {
 		const output = runSimulation(
 			{ ...compiled.engine, seed },
 			{
-				labels: compiled.topology.servers.map((s) => s.label),
+				labels: compiled.topology.nodeLabels,
 				windowMs: compiled.sampleWindowMs,
 				recordLog: false,
 			},
@@ -136,7 +131,8 @@ export function transferablesOf(response: WorkerResponse): Transferable[] {
 		log.t.buffer,
 		log.kind.buffer,
 		log.req.buffer,
-		log.server.buffer,
+		log.node.buffer,
+		log.edge.buffer,
 		log.a.buffer,
 		log.b.buffer,
 	];

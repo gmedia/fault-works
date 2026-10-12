@@ -1,0 +1,1360 @@
+{
+	"common": {
+		"on": "on",
+		"off": "off",
+		"none": "none",
+		"never": "never",
+		"auto": "auto",
+		"cancel": "Cancel",
+		"undo": "Undo"
+	},
+	"units": {
+		"s": "s",
+		"ms": "ms",
+		"req/s": "req/s",
+		"requests": "requests",
+		"slots": "slots",
+		"probes": "probes",
+		"attempts": "attempts",
+		"calls": "calls",
+		"%": "%",
+		"x": "×"
+	},
+	"time": {
+		"justNow": "just now"
+	},
+	"nav": {
+		"experiments": "Experiments",
+		"compare": "Compare",
+		"guide": "Model guide",
+		"skip": "Skip to content",
+		"home": "FaultWorks home",
+		"main": "Main",
+		"breadcrumb": "Breadcrumb",
+		"experimentsShort": "Experiments",
+		"compareShort": "Compare",
+		"guideShort": "Guide"
+	},
+	"language": {
+		"label": "Language"
+	},
+	"theme": {
+		"label": "Theme",
+		"light": "Light",
+		"dark": "Dark",
+		"system": "Match system"
+	},
+	"footer": {
+		"local": "FaultWorks runs entirely in your browser. Nothing is sent anywhere; experiments are saved in this browser only.",
+		"model": "Results are outputs of an abstract model, not measurements of real systems. Open source under Apache-2.0:",
+		"source": "source on GitHub"
+	},
+	"shortcuts": {
+		"title": "Keyboard shortcuts",
+		"description": "These work in the experiment workbench when you are not typing in a field.",
+		"run": "Run the experiment",
+		"space": "Space",
+		"play": "Play or pause the replay",
+		"step": "Step the replay back or forward one window",
+		"jump": "Jump to the previous or next state change",
+		"undo": "Undo",
+		"redo": "Redo",
+		"delete": "Remove the selected component or link",
+		"list": "Show this list"
+	},
+	"home": {
+		"title": "Failure experiments",
+		"lead": "Design any small system you like, break one part on purpose, and see what changes. Every run is reproducible from its file and seed.",
+		"import": "Import",
+		"new": "New experiment",
+		"inBrowser": "In this browser",
+		"filter": "Filter by title or question",
+		"filterLabel": "Filter experiments",
+		"emptyTitle": "No experiments in this browser",
+		"emptyBody": "Bring back the built-in examples, import a file, or start from a template.",
+		"restore": "Restore examples",
+		"noMatch": "No experiment matches “{{query}}”.",
+		"clearFilter": "Clear the filter",
+		"someRemoved": "Some built-in examples were removed.",
+		"restoreThem": "Restore them"
+	},
+	"starter": {
+		"kicker": "Start here · about 5 minutes",
+		"title": "What do health checks actually save you?",
+		"body": "Two experiments that differ in exactly one setting. Server B crashes for 20 seconds while the client sends 100 requests per second. In the first, the load balancer never checks its backends. In the second, it probes them every 5 seconds and needs two failed probes, so it notices the crash after 5 to 10 seconds.",
+		"steps": [
+			"Run the baseline and look at the failed requests.",
+			"Run the version with health checks.",
+			"Compare them and read why the numbers differ."
+		],
+		"note": "In both, the crashed server refuses connections, so requests fail instantly and latency barely moves. For a failure that also makes clients wait, open the “Hanging backend” example.",
+		"open": "Open the baseline",
+		"compare": "Compare the pair",
+		"figure": "Timeline: Server B is down from 20 to 40 seconds. Without health checks it receives traffic the whole time; with checks it is removed after about 5 seconds.",
+		"noChecks": "No health checks",
+		"withChecks": "With health checks",
+		"outOfRotation": "out of rotation"
+	},
+	"library": {
+		"meta": "{{nodes}} components · {{faults}} faults · {{rps}} req/s · edited {{when}}",
+		"variantOf": "variant of {{title}}",
+		"actionsFor": "Actions for {{title}}",
+		"deleted": "Deleted “{{title}}”",
+		"restored_one": "Restored {{count}} built-in example",
+		"restored_other": "Restored {{count}} built-in examples"
+	},
+	"origin": {
+		"built-in": "Example",
+		"imported": "Imported",
+		"variant": "Variant",
+		"created": "Yours"
+	},
+	"new": {
+		"title": "New experiment",
+		"description": "Pick a starting shape. Everything can change later: add components, connect them any way you like, and break any part.",
+		"template": "Template",
+		"titlePlaceholder": "e.g. Lab 3: three servers, one crashes",
+		"fileName": "File name:",
+		"untitled": "Untitled experiment",
+		"untitledId": "new-experiment",
+		"create": "Create"
+	},
+	"templates": {
+		"blank": {
+			"title": "Blank",
+			"description": "Just a client. Build everything yourself."
+		},
+		"load-balanced": {
+			"title": "Load balancer",
+			"description": "Client, load balancer, two servers with health checks."
+		},
+		"api-database": {
+			"title": "API and database",
+			"description": "A two-hop chain: every API request calls the database."
+		},
+		"cache-database": {
+			"title": "Cache in front of a database",
+			"description": "The API reads through a cache; misses go to the database."
+		},
+		"worker-queue": {
+			"title": "Worker queue",
+			"description": "The API stores jobs in a queue; workers process them and call the database."
+		},
+		"microservices": {
+			"title": "Microservices",
+			"description": "Load balancer, two APIs, a shared auth service and a shared database."
+		}
+	},
+	"defaults": {
+		"client": "Client",
+		"load-balancer": "Load balancer",
+		"service": "Service",
+		"database": "Database",
+		"cache": "Cache",
+		"queue": "Worker queue",
+		"api": "API",
+		"auth": "Auth",
+		"worker": "Worker",
+		"server": "Server {{letter}}",
+		"assumptions": [
+			"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+			"Each component has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+			"Health probes bypass the request queue and answer instantly when the component is up.",
+			"Components do not know when their caller gave up; they finish the work and the answer is discarded.",
+			"Numbers are scenario inputs, not measured performance of any product."
+		]
+	},
+	"kinds": {
+		"client": "Client",
+		"load-balancer": "Load balancer",
+		"service": "Service",
+		"database": "Database",
+		"cache": "Cache",
+		"queue": "Worker queue"
+	},
+	"kindHints": {
+		"load-balancer": "spreads traffic over backends",
+		"service": "slots, a queue, calls other components",
+		"database": "a service with a connection pool",
+		"cache": "answers a share from memory",
+		"queue": "answers at once, works later"
+	},
+	"faultKinds": {
+		"node-failure": {
+			"label": "Component crash",
+			"short": "crash",
+			"help": "The component crashes at a given time. Work in progress is lost; when it recovers, its queue is empty."
+		},
+		"slowdown": {
+			"label": "Slowdown",
+			"short": "slow",
+			"help": "The component's service time is multiplied by a factor and/or a fixed time is added for a window."
+		},
+		"error-rate": {
+			"label": "Error rate",
+			"short": "errors",
+			"help": "A share of calls arriving at the component fail at once with an error, like a bug that hits only some requests."
+		},
+		"capacity": {
+			"label": "Capacity drop",
+			"short": "capacity",
+			"help": "The component's concurrency drops to a number, for example half of its instances are gone."
+		},
+		"link-latency": {
+			"label": "Link latency",
+			"short": "latency",
+			"help": "Extra one-way latency on a link, like a congested network."
+		},
+		"link-loss": {
+			"label": "Link loss",
+			"short": "loss",
+			"help": "A share of calls over the link are lost: they never arrive and wait until the caller's timeout."
+		},
+		"cache-flush": {
+			"label": "Cache flush",
+			"short": "flush",
+			"help": "The cache answers nothing from memory during this window (a cold cache, a restart or a flush)."
+		}
+	},
+	"fields": {
+		"worker.capacity": {
+			"label": "Concurrency",
+			"help": "How many requests the component works on at the same time."
+		},
+		"worker.queueCapacity": {
+			"label": "Queue size",
+			"help": "Requests that may wait for a free slot. When the queue is full, new requests are rejected."
+		},
+		"worker.serviceTimeMs": {
+			"label": "Service time",
+			"help": "Time one request occupies a slot for the component's own work, not counting waits on other components. With an exponential distribution this is the mean."
+		},
+		"worker.serviceTimeDistribution": {
+			"label": "Service time distribution",
+			"help": "Fixed gives every request the same time. Exponential draws a random time per request from the seed."
+		},
+		"queue.consumers": {
+			"label": "Workers",
+			"help": "How many jobs are processed at the same time."
+		},
+		"queue.backlog": {
+			"label": "Backlog limit",
+			"help": "Jobs that may wait in the queue. When it is full, new requests are rejected."
+		},
+		"cache.hitRatio": {
+			"label": "Hit ratio",
+			"help": "Share of lookups answered from memory without calling the component behind it."
+		},
+		"balancer.algorithm": {
+			"label": "Algorithm",
+			"help": "How a backend is chosen. Round robin takes turns; least connections picks the one with the fewest open calls; random draws from the seed."
+		},
+		"balancer.retries": {
+			"label": "Retry on another backend",
+			"help": "Extra attempts on another backend when a backend fails a call."
+		},
+		"healthCheck.enabled": {
+			"label": "Health checks",
+			"help": "When off, the load balancer keeps routing to every backend, even dead ones."
+		},
+		"healthCheck.intervalMs": {
+			"label": "Probe interval",
+			"help": "Time between probes to each backend. Longer intervals detect failures later."
+		},
+		"healthCheck.probeTimeoutMs": {
+			"label": "Probe timeout",
+			"help": "How long a probe to a hanging backend waits before counting as failed. Refused probes fail at once."
+		},
+		"healthCheck.unhealthyThreshold": {
+			"label": "Unhealthy after",
+			"help": "Consecutive failed probes before the backend is taken out of rotation."
+		},
+		"healthCheck.healthyThreshold": {
+			"label": "Healthy after",
+			"help": "Consecutive successful probes before a recovered backend gets traffic again."
+		},
+		"link.latencyMs": {
+			"label": "Network latency",
+			"help": "One-way latency added to every call and every answer over this link."
+		},
+		"link.timeoutMs": {
+			"label": "Call timeout",
+			"help": "The caller gives up after this long and counts the call as failed. Leave empty to wait until the request deadline."
+		},
+		"link.retries": {
+			"label": "Retries",
+			"help": "Extra attempts after a call over this link fails. Careful: retrying while the component behind it is sick can make things worse."
+		},
+		"breaker.enabled": {
+			"label": "Circuit breaker",
+			"help": "After a number of consecutive failures, calls are rejected immediately for a while, then one trial call is let through."
+		},
+		"breaker.failureThreshold": {
+			"label": "Opens after",
+			"help": "Consecutive failed calls before the breaker opens."
+		},
+		"breaker.openMs": {
+			"label": "Stays open for",
+			"help": "How long the breaker rejects calls before letting one trial call through."
+		},
+		"workload.arrival": {
+			"label": "Arrival pattern",
+			"help": "Constant sends requests at exact intervals. Poisson draws random gaps from the seed with the same average rate."
+		},
+		"workload.offeredRps": {
+			"label": "Offered rate",
+			"help": "Requests the client sends per second, whether or not they succeed."
+		},
+		"workload.startMs": {
+			"label": "Traffic starts at",
+			"help": "Simulated time when the client starts sending."
+		},
+		"workload.durationMs": {
+			"label": "Traffic duration",
+			"help": "How long the client keeps sending at this rate."
+		},
+		"workload.timeoutMs": {
+			"label": "Client timeout",
+			"help": "A request without a response after this long counts as failed. A response arriving later is discarded."
+		},
+		"burst.atMs": {
+			"label": "Burst starts at",
+			"help": "Simulated time the extra traffic begins."
+		},
+		"burst.durationMs": {
+			"label": "Burst length",
+			"help": "How long the extra traffic lasts."
+		},
+		"burst.extraRps": {
+			"label": "Extra rate",
+			"help": "Added on top of the base rate during the burst."
+		},
+		"fault.kind": {
+			"label": "Fault kind",
+			"help": ""
+		},
+		"fault.target": {
+			"label": "Component",
+			"help": "The component that is affected."
+		},
+		"fault.targetLink": {
+			"label": "Link",
+			"help": "The link that is affected."
+		},
+		"fault.atMs": {
+			"label": "Starts at",
+			"help": "Simulated time the fault begins."
+		},
+		"fault.recoverAtMs": {
+			"label": "Recovers at",
+			"help": "Simulated time the component comes back with an empty queue. Leave empty to keep it down."
+		},
+		"fault.untilMs": {
+			"label": "Ends at",
+			"help": "Simulated time the fault stops. Leave empty to keep it until the end."
+		},
+		"fault.behavior": {
+			"label": "Failure behavior",
+			"help": "Refuse: connections are rejected at once (process crashed). Hang: no answer until the caller gives up (host unreachable)."
+		},
+		"fault.factor": {
+			"label": "Slowdown factor",
+			"help": "Service time is multiplied by this. 1 means unchanged."
+		},
+		"fault.addMs": {
+			"label": "Added time",
+			"help": "Fixed milliseconds added to every call."
+		},
+		"fault.rate": {
+			"label": "Share",
+			"help": "Share of calls affected, drawn from the seed."
+		},
+		"fault.capacity": {
+			"label": "Capacity during the fault",
+			"help": "The component's concurrency during the fault window."
+		},
+		"run.seed": {
+			"label": "Seed",
+			"help": "Same seed, same inputs and same engine version always give identical results."
+		},
+		"run.horizonMs": {
+			"label": "Horizon",
+			"help": "Simulated time the run stops. Auto: end of traffic plus one client timeout."
+		},
+		"run.sampleWindowMs": {
+			"label": "Chart window",
+			"help": "Width of the time buckets used for charts. Does not change the simulation."
+		},
+		"errors": {
+			"required": "Enter a number.",
+			"notNumber": "“{{text}}” is not a number.",
+			"integer": "Use a whole number.",
+			"requiredUnit": "Enter a number in {{unit}}."
+		}
+	},
+	"options": {
+		"worker.serviceTimeDistribution": {
+			"fixed": "Fixed",
+			"exponential": "Exponential (random)"
+		},
+		"balancer.algorithm": {
+			"round-robin": "Round robin",
+			"least-connections": "Least connections",
+			"random": "Random"
+		},
+		"workload.arrival": {
+			"constant": "Constant",
+			"poisson": "Poisson (random)"
+		},
+		"fault.behavior": {
+			"refuse": "Refuse connections",
+			"hang": "Hang (no response)"
+		},
+		"fault.kind": {
+			"node-failure": "Component crash",
+			"slowdown": "Slowdown",
+			"error-rate": "Error rate",
+			"capacity": "Capacity drop",
+			"link-latency": "Link latency",
+			"link-loss": "Link loss",
+			"cache-flush": "Cache flush"
+		}
+	},
+	"inspector": {
+		"settings": "Settings",
+		"settingsDescription": "Change the components, traffic, faults and notes of the experiment.",
+		"tabs": {
+			"component": "Component",
+			"traffic": "Traffic",
+			"faults": "Faults",
+			"run": "Run",
+			"notes": "Notes"
+		},
+		"problems": "problems",
+		"pickComponent": "Select a component on the canvas, or pick one here, to see and change its settings.",
+		"allComponents": "All components",
+		"addComponent": "Add a component",
+		"addDownstream": "Add a component called from here",
+		"connectTo": "Connect to an existing one",
+		"choose": "Choose…",
+		"linksHint": "Links follow the direction of calls: the client calls the first component, and every component calls everything behind it in order.",
+		"maxNodes": "Up to {{max}} components per experiment",
+		"name": "Name",
+		"nameHelp": "Display name only. The id {{id}} is what faults and exports refer to.",
+		"connections": "Outgoing calls",
+		"noIncoming": "Nothing calls this component yet, so it will never receive traffic. Connect it from another component.",
+		"removeLinkTo": "Remove the link to {{target}}",
+		"removeComponent": "Remove component",
+		"removed": "Removed {{name}}",
+		"removedWithFaults_one": "Also removed {{count}} fault that targeted it. Undo with Ctrl+Z.",
+		"removedWithFaults_other": "Also removed {{count}} faults that targeted it. Undo with Ctrl+Z.",
+		"undoHint": "Undo with Ctrl+Z.",
+		"needOneComponent": "An experiment needs at least one component besides the client.",
+		"clientSummary": "The client sends {{rps}} req/s for {{duration}} and gives up after {{timeout}}.",
+		"editTraffic": "Edit traffic",
+		"routing": "Routing",
+		"detection": "Failure detection",
+		"detectionHint": "Expected detection delay. A component that refuses connections is noticed {{min}} to {{max}} after it crashes, depending on where in the probe cycle the crash lands. A hanging component takes up to {{probeTimeout}} longer, because each probe waits for its timeout.",
+		"noDetectionHint": "Without health checks the load balancer cannot notice a dead backend. Every request it sends there fails until the component comes back.",
+		"capacity": "Capacity",
+		"capacityHint": "At most about {{rps}} req/s ({{slots}} slots ÷ {{time}}{{avg}}). More than that and the queue grows.",
+		"queueCapacityHint": "Workers finish about {{rps}} jobs/s ({{slots}} workers ÷ {{time}}{{avg}}). More than that and the backlog grows.",
+		"onAverage": " on average",
+		"link": "Link",
+		"linkHint": "These settings apply to every call from the first component to the second.",
+		"network": "Network",
+		"resilience": "Resilience",
+		"retriesNoTimeout": "Retries without a timeout only kick in when a call fails immediately. To retry slow calls, add a timeout.",
+		"linkRemoved": "Link removed",
+		"removeLink": "Remove link",
+		"steadyTraffic": "Steady traffic",
+		"trafficHint": "About {{requests}} requests{{avg}} in total.",
+		"entryCapacityHint": "{{name}} can handle about {{rps}} req/s, so steady traffic uses {{load}}% of its capacity.",
+		"bursts": "Bursts",
+		"burstsHelp": "Extra traffic on top of the steady rate for a while.",
+		"noBursts": "No bursts.",
+		"burst": "Burst {{n}}",
+		"removeBurst": "Remove burst {{n}}",
+		"addBurst": "Add burst",
+		"faultsIntro": "A fault changes how one component or link behaves at a given time. Pick a kind, then a target.",
+		"noFaults": "No faults. Without one, this experiment is a healthy reference run.",
+		"removeFault": "Remove fault {{id}}",
+		"newFaultKind": "New fault kind",
+		"addFault": "Add fault",
+		"noTargetForKind": "There is no component or link this fault kind can target yet.",
+		"reproducibility": "Reproducibility",
+		"anotherSeed": "Try another seed",
+		"seedHint": "The seed only matters for the random parts: Poisson arrivals, exponential service times, caches, random routing and share-based faults. Without those, every seed gives the same result.",
+		"time": "Time"
+	},
+	"notes": {
+		"title": "Title",
+		"question": "Question",
+		"questionHelp": "The one thing this experiment should answer.",
+		"description": "Description",
+		"expected": "Expected observations",
+		"expectedHelp": "Teaching hypotheses, one per line. They are shown next to results but never computed or checked automatically.",
+		"assumptions": "Assumptions",
+		"assumptionsHelp": "Simplifications this model makes, one per line. They are exported with every result.",
+		"id": "File name (id)",
+		"idHelp": "Exports are named {{id}}.experiment.json. Faults and comparisons refer to it, so rename before sharing.",
+		"idTaken": "Another experiment already uses {{id}}.",
+		"renamed": "Renamed to {{id}}",
+		"renamedHint": "Exports are now called {{id}}.experiment.json."
+	},
+	"canvas": {
+		"addComponent": "Add component",
+		"hint": "Drag from the dot on a component's right side to another component to connect them. Click a link to set its timeout, retries and circuit breaker.",
+		"a11yNode": "Press Enter or Space to select this component and open its settings. Use the arrow keys to move it.",
+		"zoom": "Canvas zoom controls",
+		"sending": "Sending {{rps}} req/s",
+		"clientPlan": "{{rps}} req/s for {{duration}}",
+		"timeout": "timeout {{timeout}}",
+		"probes": "probes every {{interval}}",
+		"noHealthChecks": "no health checks",
+		"routingTo": "Routing to {{n}} of {{total}}",
+		"workerSpec": "{{slots}} slots · {{time}} · queue {{queue}}",
+		"queueSpec": "{{consumers}} workers · {{time}} · backlog {{backlog}}",
+		"hit": "{{pct}}% hits",
+		"busy": "Busy",
+		"queue": "Queue",
+		"backlog": "Backlog",
+		"edgeTimeout": "timeout {{ms}} ms",
+		"edgeRetries": "{{n}}× retry",
+		"edgeBreaker": "breaker",
+		"edgeLatency": "+{{ms}} ms",
+		"breakerOpen": "breaker open",
+		"lost": "{{rps}} req/s · lost"
+	},
+	"stacked": {
+		"layer": "Layer {{n}}",
+		"linksFrom": "Calls from {{node}}"
+	},
+	"status": {
+		"up": {
+			"label": "Up",
+			"description": "Running and receiving traffic."
+		},
+		"degraded": {
+			"label": "Degraded",
+			"description": "Running, but a fault is active on it."
+		},
+		"down-routed": {
+			"label": "Down, still routed",
+			"description": "Crashed, but the load balancer has not noticed and still sends it requests."
+		},
+		"down-removed": {
+			"label": "Down, removed",
+			"description": "Crashed, and the load balancer has taken it out of rotation."
+		},
+		"recovering": {
+			"label": "Back, not routed yet",
+			"description": "Running again, waiting for enough successful probes to get traffic."
+		}
+	},
+	"actions": {
+		"run": "Run",
+		"runAgain": "Run again",
+		"variant": "Create variant",
+		"compare": "Compare",
+		"compareOriginal": "With the original ({{title}})",
+		"compareOther": "With another experiment (this one as B)…",
+		"export": "Export",
+		"more": "More actions",
+		"reset": "Reset to original example",
+		"resetDone": "Reset to the original example",
+		"delete": "Delete experiment"
+	},
+	"export": {
+		"experiment": "Experiment (.json)",
+		"share": "share this",
+		"fromResults": "From the current results",
+		"runFirst": "Run first to export results",
+		"result": "Result with metrics (.json)",
+		"events": "Event log (.csv)"
+	},
+	"variant": {
+		"suffix": "variant",
+		"created": "Variant created",
+		"createdHint": "Change one setting, run it, then compare it with the original.",
+		"descriptionPrompt": "Variant of “{{title}}”. Describe the one setting you changed and why."
+	},
+	"state": {
+		"running": "Running…",
+		"problems_one": "{{count}} problem to fix",
+		"problems_other": "{{count}} problems to fix",
+		"notRun": "Not run yet",
+		"stale": "Settings changed since the last run",
+		"current": "Results match these settings",
+		"fixFirst": "Fix the problems listed below first",
+		"runFailed": "The run failed.",
+		"runFinished": "Run finished. {{succeeded}} of {{offered}} requests succeeded, {{failed}} failed.",
+		"nothingToUndo": "Nothing to undo",
+		"nothingToRedo": "Nothing to redo"
+	},
+	"phone": {
+		"build": "Build",
+		"replay": "Replay",
+		"results": "Results",
+		"screens": "Screens",
+		"runFirst": "Run the experiment first to replay how it went."
+	},
+	"playback": {
+		"prevChange": "Previous state change",
+		"back": "Back one window",
+		"play": "Play",
+		"pause": "Pause",
+		"forward": "Forward one window",
+		"nextChange": "Next state change",
+		"position": "Replay position",
+		"valueText": "{{time}} of {{total}}",
+		"speed": "Replay speed"
+	},
+	"results": {
+		"heading": "Results",
+		"errorTitle": "The run could not finish",
+		"errorHint": "Your settings are unchanged. Fix the input or try again.",
+		"tryAgain": "Try again",
+		"running": "Running the simulation…",
+		"noneTitle": "No results yet",
+		"noneBody": "Run the experiment to see what happens to every request: a timeline of successes and failures, latency, queues, and an explanation built from the simulated events. It takes about a second and runs in your browser.",
+		"runExperiment": "Run experiment",
+		"shortcut": "Shortcut:",
+		"staleTitle": "Settings changed since this run.",
+		"staleBody": "The results below still show the previous settings.",
+		"staleFix_one": "Fix {{count}} problem to run again.",
+		"staleFix_other": "Fix {{count}} problems to run again.",
+		"fixFirst_one": "Fix {{count}} problem before running",
+		"fixFirst_other": "Fix {{count}} problems before running",
+		"openTab": "Open the {{tab}} tab",
+		"tabs": {
+			"overview": "Over time",
+			"explain": "What happened",
+			"events": "Events",
+			"checks": "Engine checks"
+		}
+	},
+	"summary": {
+		"failed": "Failed requests",
+		"ofOffered": "{{pct}} of offered",
+		"byReason": "Failures by reason",
+		"origin": "Most ({{pct}}) originated at {{node}}",
+		"succeeded": "Succeeded",
+		"ofOfferedCount": "{{pct}} of {{offered}} offered",
+		"latency": "Latency p50 / p95",
+		"latencyDetail": "successful requests, n = {{n}}",
+		"noSuccess": "no successful requests",
+		"endedP95": "p95 of all ended requests: {{value}}",
+		"p95Help": "p95 means 95 of every 100 requests took this long or less.",
+		"detection": "Detection delay",
+		"noCrash": "No crash in this run",
+		"never": "Never",
+		"noChecks": "No health checks watch it",
+		"notDetected": "Not detected",
+		"recoveredFirst": "Recovered before detection",
+		"beforeEnd": "The run ended first",
+		"possible": "Possible with these settings: {{min}} to {{max}}",
+		"onTick": "(crash hit a probe, the shortest case)",
+		"inFlight": "Still in flight",
+		"inFlightSome": "no outcome at {{at}}; not counted as success or failure",
+		"inFlightNone": "every request ended by {{at}}"
+	},
+	"series": {
+		"offered": "Offered",
+		"succeeded": "Succeeded",
+		"failed": "Failed",
+		"p50": "p50, successful",
+		"p95": "p95, successful",
+		"endedP95": "p95, all ended (incl. failures)"
+	},
+	"charts": {
+		"requests": "Requests per second",
+		"requestsSub": "Counted per {{window}} ms window by when they ended (offered: by arrival)",
+		"latency": "Latency",
+		"latencySub": "Nearest-rank percentiles of requests that ended in each window. Timeouts count as the full timeout.",
+		"calls": "Calls per second, by component",
+		"callsSub": "Calls arriving at each component, retries included",
+		"queue": "Queue depth",
+		"queueSub": "Peak requests waiting per window, by component",
+		"busy": "Busy slots",
+		"busySub": "Peak slots in use per window, by component",
+		"shading": "Chart shading"
+	},
+	"chart": {
+		"showChart": "Chart",
+		"showTable": "Table",
+		"tableCaption": "{{title}}, per {{window}} window",
+		"window": "Window",
+		"noData": "no data"
+	},
+	"bands": {
+		"gap": "{{node}} down, still routed ({{from}} – {{to}})",
+		"crashed": "{{node}} crashed at {{at}}",
+		"crashedShort": "{{node}} crashed",
+		"removed": "{{node}} down, removed from rotation",
+		"detected": "{{node}} marked unhealthy at {{at}}",
+		"detectedShort": "{{node}} detected",
+		"recovered": "{{node}} recovered at {{at}}",
+		"waitingHealthy": "{{node}} back, waiting for healthy probes",
+		"fault": "{{kind}} on {{target}} ({{from}} – {{to}})",
+		"faultStart": "{{kind}} on {{target}} from {{at}}",
+		"faultShort": "{{kind}}: {{target}}",
+		"breakerOpen": "Breaker {{link}} open",
+		"legend": {
+			"gap": "Down, but the load balancer still sends it requests",
+			"down": "Down, removed from rotation",
+			"off": "Back, waiting for healthy probes",
+			"fault": "Another fault active",
+			"breaker": "Circuit breaker open",
+			"cursor": "Replay position (click a chart to move it)"
+		}
+	},
+	"perNode": {
+		"title": "Per component",
+		"component": "Component",
+		"calls": "Calls",
+		"failedHere": "Failed here",
+		"callLatency": "Call latency p50 / p95",
+		"late": "Late responses",
+		"peakQueue": "Peak queue",
+		"busy": "Slots busy",
+		"extra": "More",
+		"hitRatio": "{{pct}} hits",
+		"jobs": "{{done}} jobs done, {{failed}} failed, longest wait {{wait}}",
+		"note": "“Failed here” counts requests whose failure originated at that component. “Slots busy” is busy slot-time over the whole run."
+	},
+	"perLink": {
+		"title": "Per link",
+		"link": "Link",
+		"calls": "Calls",
+		"retries": "Retries",
+		"failed": "Failed",
+		"breakerOpens": "Breaker opened"
+	},
+	"explain": {
+		"title": "What happened",
+		"intro": "Generated from this run's events and counts. It describes what the model did, not why a real system would.",
+		"replayFrom": "Replay from {{at}}",
+		"expectedIntro": "Written with the experiment as hypotheses. Check them against the results yourself; they are not evaluated automatically.",
+		"noExpected": "None written. Add some in the Notes tab.",
+		"assumptions": "Model assumptions ({{count}})",
+		"tone": {
+			"good": "Good",
+			"neutral": "Note",
+			"warning": "Watch",
+			"critical": "Problem"
+		}
+	},
+	"insight": {
+		"outcome": {
+			"title": "{{successPct}}% of requests succeeded",
+			"body": "{{succeeded}} of {{offered}} offered requests succeeded and {{failed}} failed.",
+			"body_inflight": "{{succeeded}} of {{offered}} offered requests succeeded and {{failed}} failed; {{inFlight}} were still in flight when the run stopped at {{measuredMs}}."
+		},
+		"origin": {
+			"title": "Failures mostly originated at {{node}}",
+			"body": "{{count}} of all failed requests ({{pct}}%) first went wrong at {{node}}: that is where they were refused, timed out or lost, even though the client saw them as errors from the component in front of it.",
+			"body_reason": "{{count}} of all failed requests ({{pct}}%) first went wrong at {{node}}, mostly as {{reason}} ({{reasonCount}}). The components in front of it only passed the failure on."
+		},
+		"crashDetected": {
+			"title": "{{node}} crashed at {{atMs}}",
+			"body_tick": "{{node}} went down at {{atMs}}, {{behavior}}. The load balancer marked it unhealthy at {{detectedAtMs}}, {{delayMs}} after the crash. That is the shortest delay these settings allow, because the crash landed exactly on a probe; a crash just after a probe would take up to {{maxMs}}. {{lost}} requests failed because they were lost in the crash or sent there before the failure was noticed.",
+			"body_range": "{{node}} went down at {{atMs}}, {{behavior}}. The load balancer marked it unhealthy at {{detectedAtMs}}, {{delayMs}} after the crash. With these settings detection takes between {{minMs}} and {{maxMs}}, depending on where in the probe cycle the crash lands. {{lost}} requests failed because they were lost in the crash or sent there before the failure was noticed.",
+			"body_tick_restored": "{{node}} went down at {{atMs}}, {{behavior}}. The load balancer marked it unhealthy at {{detectedAtMs}}, {{delayMs}} after the crash, the shortest delay possible because the crash landed exactly on a probe; a crash just after a probe would take up to {{maxMs}}. {{lost}} requests failed before that was noticed. It recovered at {{recoveredAtMs}} and got traffic again at {{restoredAtMs}}, {{restoreDelayMs}} after recovering.",
+			"body_range_restored": "{{node}} went down at {{atMs}}, {{behavior}}. The load balancer marked it unhealthy at {{detectedAtMs}}, {{delayMs}} after the crash; with these settings detection takes {{minMs}} to {{maxMs}}. {{lost}} requests failed before that was noticed. It recovered at {{recoveredAtMs}} and got traffic again at {{restoredAtMs}}, {{restoreDelayMs}} after recovering.",
+			"body_tick_notRestored": "{{node}} went down at {{atMs}}, {{behavior}}. The load balancer marked it unhealthy at {{detectedAtMs}}, {{delayMs}} after the crash (the fastest case; up to {{maxMs}} is possible). {{lost}} requests failed before that was noticed. It recovered at {{recoveredAtMs}} but had not been put back into rotation when the run ended.",
+			"body_range_notRestored": "{{node}} went down at {{atMs}}, {{behavior}}. The load balancer marked it unhealthy at {{detectedAtMs}}, {{delayMs}} after the crash ({{minMs}} to {{maxMs}} is possible). {{lost}} requests failed before that was noticed. It recovered at {{recoveredAtMs}} but had not been put back into rotation when the run ended."
+		},
+		"crashRecoveredFirst": {
+			"title": "{{node}} crashed at {{atMs}}",
+			"body": "{{node}} went down at {{atMs}}, {{behavior}}, and recovered at {{recoveredAtMs}} before the health checks noticed. {{lost}} requests failed meanwhile."
+		},
+		"crashNeverDetected": {
+			"title": "{{node}} crashed at {{atMs}}",
+			"body": "{{node}} went down at {{atMs}}, {{behavior}}. The health checks never marked it unhealthy before the run ended. {{lost}} requests failed because of it."
+		},
+		"crashUnwatched": {
+			"title": "{{node}} crashed at {{atMs}}",
+			"body_recovered": "{{node}} went down at {{atMs}}, {{behavior}}. No health check watches it, so traffic kept going there until it recovered at {{recoveredAtMs}}. {{lost}} requests failed because they were lost in the crash or sent there while it was down.",
+			"body_down": "{{node}} went down at {{atMs}}, {{behavior}}. No health check watches it, so traffic kept going there for the rest of the run. {{lost}} requests failed because they were lost in the crash or sent there while it was down."
+		},
+		"fault": {
+			"slowdown": {
+				"title": "{{target}} slowed down at {{atMs}}",
+				"body": "From {{atMs}} to {{untilMs}} {{target}}'s service time was longer than usual. Every component calling it held its slot longer, so queues in front of it grew too."
+			},
+			"error-rate": {
+				"title": "{{target}} returned errors from {{atMs}}",
+				"body": "From {{atMs}} to {{untilMs}} a share of calls to {{target}} failed at once. Its callers gave up or retried, depending on their link settings."
+			},
+			"capacity": {
+				"title": "{{target}} lost capacity at {{atMs}}",
+				"body": "From {{atMs}} to {{untilMs}} {{target}} had fewer slots. Work in progress finished; new work queued or was rejected."
+			},
+			"link-latency": {
+				"title": "Link {{target}} slowed down at {{atMs}}",
+				"body": "From {{atMs}} to {{untilMs}} every call and answer over {{target}} carried extra latency."
+			},
+			"link-loss": {
+				"title": "Link {{target}} lost calls from {{atMs}}",
+				"body": "From {{atMs}} to {{untilMs}} a share of calls over {{target}} never arrived. Callers only found out when their timeout ran out."
+			},
+			"cache-flush": {
+				"title": "{{target}} was flushed at {{atMs}}",
+				"body": "From {{atMs}} to {{untilMs}} {{target}} answered nothing from memory, so every lookup fell through to the component behind it."
+			}
+		},
+		"failureMix": {
+			"title": "Most failures: {{reason}}",
+			"body": "{{count}} of {{failed}} failures ({{pct}}%) were “{{reason}}”.",
+			"body_others": "{{count}} of {{failed}} failures ({{pct}}%) were “{{reason}}”. Others: {{others}}."
+		},
+		"saturated": {
+			"title": "{{node}} ran out of room",
+			"body": "{{node}}'s queue reached its limit of {{queueCapacity}} requests. Its slots were busy {{utilizationPct}}% of the run.",
+			"body_rejected": "{{node}}'s queue reached its limit of {{queueCapacity}} requests and {{rejected}} requests were rejected. Its slots were busy {{utilizationPct}}% of the run."
+		},
+		"nearlySaturated": {
+			"title": "{{node}} was nearly saturated",
+			"body": "{{node}}'s slots were busy {{utilizationPct}}% of the run; peak queue {{peakQueue}} of {{queueCapacity}}."
+		},
+		"cache": {
+			"title": "{{node}} answered {{hitPct}}% from memory",
+			"body": "Of {{lookups}} lookups, {{hitPct}}% were answered without calling the component behind it. The rest fell through."
+		},
+		"queue": {
+			"title": "{{node}} processed {{done}} jobs",
+			"body": "{{done}} jobs finished and {{failed}} failed. The backlog peaked at {{peakBacklog}}; jobs waited {{meanWaitMs}} on average and {{maxWaitMs}} at most, although their clients were answered at once."
+		},
+		"retries": {
+			"title": "Retries multiplied the calls to {{target}}",
+			"body": "Of {{calls}} calls to {{target}}, {{retries}} ({{pct}}%) were retries. While the component behind is slow, retries add load exactly when it can least cope."
+		},
+		"breaker": {
+			"title": "The circuit breaker {{source}} → {{target}} opened {{opens}} times",
+			"body": "While open, {{rejected}} calls were rejected at once without waiting. That fails requests faster, but frees {{source}}'s slots and protects {{target}}."
+		},
+		"latencyFailuresSlow": {
+			"title": "Failed requests made clients wait longest",
+			"body": "Successful requests took {{p50Ms}} at the median and {{p95Ms}} at p95 (n = {{n}}). Counting every request that ended, failures included, p95 is {{endedP95Ms}} (n = {{endedN}}): a timed-out client waits the full timeout before it learns the request failed."
+		},
+		"latencyTail": {
+			"title": "Latency has a long tail",
+			"body": "Successful requests took {{p50Ms}} at the median and {{p95Ms}} at p95 (n = {{n}}). The gap comes from time spent waiting in queues."
+		},
+		"latencyFlat": {
+			"title": "Successful requests were consistently fast",
+			"body": "Successful requests took {{p50Ms}} at the median and {{p95Ms}} at p95 (n = {{n}})."
+		},
+		"probes": {
+			"title": "The load balancer sent {{probes}} health probes",
+			"body": "In this model probes are free: they skip the queue and use no capacity, so a shorter probe interval only shows its benefit. Real probes cost a little server and network time."
+		},
+		"late": {
+			"title": "{{late}} responses arrived too late",
+			"body": "Components finished {{late}} pieces of work after their caller had given up. That work used capacity but counts only as a failure."
+		},
+		"eventLimit": {
+			"title": "The run stopped early",
+			"body": "The run hit the event limit at {{measuredMs}}. Results cover only that part; shorten the traffic or lower the rate."
+		}
+	},
+	"reasons": {
+		"no-healthy-backend": {
+			"label": "No healthy backend",
+			"description": "The load balancer had no backend marked healthy to send the request to."
+		},
+		"refused": {
+			"label": "Refused",
+			"description": "The call was sent to a component that had crashed and refuses connections."
+		},
+		"queue-full": {
+			"label": "Queue full",
+			"description": "Every slot was busy and the queue had no room left."
+		},
+		"lost-in-crash": {
+			"label": "Lost in crash",
+			"description": "The request was being served or waiting in a queue when its component crashed."
+		},
+		"timeout": {
+			"label": "Timed out",
+			"description": "No response arrived before the client deadline or the call timeout."
+		},
+		"circuit-open": {
+			"label": "Breaker open",
+			"description": "The circuit breaker was open and rejected the call at once."
+		},
+		"injected-error": {
+			"label": "Error",
+			"description": "The component returned an error because of an error-rate fault."
+		}
+	},
+	"breaker": {
+		"open": "breaker open",
+		"half-open": "breaker half-open (trial)",
+		"closed": "breaker closed"
+	},
+	"events": {
+		"show": "Show",
+		"filters": {
+			"changes": "State changes",
+			"failures": "Failed requests",
+			"calls": "Calls between components",
+			"late": "Late responses",
+			"all": "All events"
+		},
+		"component": "Component",
+		"allComponents": "All components",
+		"traceRequest": "Trace request #",
+		"tracePlaceholder": "e.g. 2001",
+		"count_one": "{{formatted}} event",
+		"count_other": "{{formatted}} events",
+		"wholeNumber": "Enter a whole request number",
+		"truncated": "This run produced more request events than the table keeps. State changes are complete; later request-level events are not listed. Metrics are not affected.",
+		"time": "Time",
+		"event": "Event",
+		"detail": {
+			"failed": "{{reason}} after {{latency}}",
+			"succeeded": "in {{latency}}",
+			"attempt": "attempt {{n}}",
+			"ok": "ok",
+			"routed": "to {{to}}",
+			"waited": "waited {{latency}} in queue",
+			"noWait": "no wait",
+			"depth": "queue depth {{depth}}",
+			"evictedQueue": "was waiting in the queue",
+			"evictedService": "was being served",
+			"hit": "hit",
+			"miss": "miss",
+			"jobFailed": "failed",
+			"probeFailed": "failed",
+			"backInRotation": "back in rotation",
+			"removedFromRotation": "removed from rotation"
+		},
+		"noRequest": "No request #{{req}} in this run.",
+		"noEvents": "No events of this kind in this run.",
+		"list": "Simulation events",
+		"jump": "Move the replay to this moment",
+		"ordering": "Times are simulated. Events at the same instant are listed in the engine's fixed order: faults, probe results, transfers, completions, timeouts, then arrivals.",
+		"kinds": {
+			"arrival": "Arrived",
+			"succeeded": "Succeeded",
+			"failed": "Failed",
+			"late-response": "Late response discarded",
+			"call-start": "Call started",
+			"call-end": "Call ended",
+			"routed": "Routed",
+			"enqueued": "Queued",
+			"service-start": "Service started",
+			"service-end": "Service ended",
+			"evicted": "Dropped by crash",
+			"cache-hit": "Cache lookup",
+			"job-start": "Job started",
+			"job-done": "Job done",
+			"node-down": "Component crashed",
+			"node-up": "Component recovered",
+			"fault-start": "Fault started",
+			"fault-end": "Fault ended",
+			"probe": "Health probe",
+			"health-changed": "Health changed",
+			"breaker": "Circuit breaker"
+		},
+		"detailColumn": "Detail"
+	},
+	"checks": {
+		"title": "Model checks: {{passed}} of {{total}} passed",
+		"intro": "Checked independently from the event stream after every run. A failure here means a bug in the engine, not in your experiment.",
+		"passed": "Passed",
+		"failedLabel": "Failed",
+		"items": {
+			"conservation": "Every request is accounted for",
+			"single-terminal": "Each request ends exactly once",
+			"capacity": "Busy slots never exceed concurrency",
+			"queue-bounds": "Queues stay between 0 and their size",
+			"monotonic-time": "Simulated time never goes backwards"
+		},
+		"reproducibility": "Reproducibility",
+		"reproIntro": "Same settings, seed and engine version give the identical event trace on any machine. To check a copy, compare the behavior digest (it ignores ids, titles and notes) and the trace fingerprint. The file digest also covers names and notes, so it changes when a copy is renamed.",
+		"engine": "Engine",
+		"metrics": "Metric definitions",
+		"fileDigest": "File digest",
+		"events": "Events",
+		"took": "Run took",
+		"tookValue": "{{ms}} ms of wall-clock time (not part of the result)",
+		"runAgain": "Run again and compare",
+		"identical": "Identical. The second run produced trace {{digest}} and the same metrics.",
+		"different": "Different result ({{digest}}). This is a determinism bug; please report it with the exported experiment."
+	},
+	"verify": {
+		"title": "Result file check",
+		"dismiss": "Dismiss the file check",
+		"rerunning": "Re-running the experiment from {{source}} to check its results…",
+		"stale": "The settings were changed after import, so these results can no longer be checked against {{source}}.",
+		"behaviorDigest": "Behavior digest",
+		"traceDigest": "Trace fingerprint",
+		"ok": "Reproduced: this run matches {{source}}.",
+		"nothingToCheck": "{{source}} has no digests to check against.",
+		"mismatch": "Does not match {{source}}: {{fields}} differ.",
+		"inFile": "In the file",
+		"thisRun": "This run",
+		"engineDiffers": "The file was produced by engine {{file}}; this is engine {{here}}. Different engine versions may legitimately give different traces."
+	},
+	"rows": {
+		"offered": "Offered",
+		"succeeded": "Succeeded",
+		"failed": "Failed",
+		"success-ratio": "Success ratio",
+		"in-flight": "In flight at end",
+		"timed-out": "Timed out",
+		"p50": "p50 latency (successful)",
+		"p95": "p95 latency (successful)",
+		"p99": "p99 latency (successful)",
+		"ended-mean": "Mean latency (all ended requests)",
+		"failed-wait": "Client time spent on failed requests",
+		"ended-p95": "p95 latency (all ended requests)",
+		"success-rate": "Successful completions",
+		"calls": "Calls between components",
+		"late": "Late responses discarded",
+		"detection": "First detection delay"
+	},
+	"scope": {
+		"run": "Run",
+		"traffic": "Traffic",
+		"burst": "Burst",
+		"node": "Component",
+		"link": "Link",
+		"fault": "Fault"
+	},
+	"diff": {
+		"presence": "Presence",
+		"order": "Round-robin order",
+		"notPresent": "not present"
+	},
+	"compare": {
+		"title": "Compare two experiments",
+		"lead": "Pick a baseline (A) and a variant (B). A comparison teaches the most when exactly one behavior setting differs between them.",
+		"docTitle": "Compare: {{a}} vs {{b}}",
+		"a": "A · baseline",
+		"aHint": "What you compare against",
+		"b": "B · variant",
+		"bHint": "The version with one change",
+		"swap": "Swap A and B",
+		"choose": "Choose an experiment",
+		"missing": "One of the experiments in this link is not in this browser. Choose another one above.",
+		"pickTwo": "Choose two experiments above. Both run automatically in your browser.",
+		"whatChanged": "What changed from A to B",
+		"oneChange": "Exactly one behavior setting differs, so differences in the results can be attributed to it within this model.",
+		"noChange": "No behavior setting differs. The results will be identical, which makes this a reproducibility check.",
+		"manyChanges": "{{count}} behavior settings differ. A difference in the results cannot be attributed to any single one of them. For a clean comparison, create a variant and change only one thing.",
+		"setting": "Setting",
+		"ignored": "Titles, notes, names and canvas positions are ignored: they never affect results.",
+		"invalid": "“{{title}}” has settings that need fixing before it can run. Open it to see the problems.",
+		"running": "Running both experiments…",
+		"results": "Results",
+		"exportJson": "Export comparison (.json)",
+		"exportReport": "Report (.md)",
+		"metric": "Metric",
+		"change": "Change A → B",
+		"noChangeShort": "no change",
+		"points": "{{value}} pts",
+		"better": "(better)",
+		"worse": "(worse)",
+		"readNote": "(read the note in this row)",
+		"caution": {
+			"fewerSuccesses": "B has fewer successful requests. Failed requests are not in this number, so the remaining successes can look faster without anything improving.",
+			"moreSuccesses": "B completes requests that failed in A. Those extra successes can be slower, so a higher value here is not necessarily worse."
+		},
+		"percentileNote": "p50, p95 and p99: half, 95 and 99 of every 100 requests took this long or less. “Successful” rows leave failed requests out; “all ended” rows include them, with a timeout counted as the full timeout.",
+		"charts": {
+			"failed": "Failed requests per second",
+			"endedP95": "p95 latency, all ended requests",
+			"endedP95Sub": "Includes failures; a timed-out request counts as the full timeout",
+			"p95": "p95 latency, successful requests"
+		},
+		"markers": "Vertical lines on the charts:",
+		"bothSides": "A and B",
+		"differentWindows": "The two experiments use different chart windows, so their timelines are not overlaid. Set the same chart window in both (Run tab) to compare them over time.",
+		"whyA": "Why A behaved this way",
+		"whyB": "Why B behaved this way",
+		"caveatsTitle": "Before drawing conclusions",
+		"caveats": [
+			"Both runs come from the same abstract request-level model. They compare designs inside the model, not real products.",
+			"A difference is only attributable to a setting when that setting is the only one that changed.",
+			"Detection depends on where in the probe cycle a crash lands. A crash exactly on a probe is the fastest case; move the failure time to see the slower ones.",
+			"With random traffic or service times, a single seed is one sample. Use the seed check above.",
+			"Assumptions for each experiment are listed in its “What happened” tab and in every export."
+		],
+		"reportTitle": "Comparison: {{a}} vs {{b}}",
+		"reproduce": "Reproduce",
+		"reproduceHint": "Import the .comparison.json file into FaultWorks, or each side's experiment, and run it. The run must reproduce these fingerprints:",
+		"limitations": "Limitations"
+	},
+	"narrative": {
+		"sameFailed": "Both runs had {{failed}} failed requests.",
+		"failed": "Failed requests went from {{a}} in A to {{b}} in B{{pct}}.",
+		"hiddenWait": "Latency percentiles are the same in A and B, yet clients spent {{a}} waiting on failed requests in A and {{b}} in B. Percentiles hide this: once more than 5% of requests time out in both runs, p95 is simply the timeout in both.",
+		"fastFailures": "Latency did not change. The failures were rejected immediately (refused, no room, breaker or error), so they added almost no waiting time, and the requests that succeeded were served the same way. A backend that hangs instead of refusing does change latency: try the “Hanging backend” example.",
+		"sameLatency": "Latency percentiles are the same in A and B.",
+		"p95": "p95 latency of successful requests went from {{a}} in A to {{b}} in B.",
+		"calls": "Calls between components went from {{a}} in A to {{b}} in B; retries or breakers changed how much work reached the components behind.",
+		"detection": "The first failure was detected {{a}} in A and {{b}} in B."
+	},
+	"sweep": {
+		"title": "Is it the seed?",
+		"deterministic": "Both experiments use constant traffic and nothing random, so the seed has no effect: every seed gives exactly the same numbers. The difference above comes entirely from the settings.",
+		"intro": "At least one experiment has random parts, so a single run is one sample. Repeat both with the same {{n}} seeds ({{from}}–{{to}}) to see the spread.",
+		"run": "Repeat both with {{n}} seeds",
+		"caption": "Results across {{n}} seeds",
+		"colA": "A: median (min – max)",
+		"colB": "B: median (min – max)",
+		"bBetter": "B better than A",
+		"wins": "{{wins}} of {{n}}",
+		"ties": "({{ties}} tied)",
+		"note": "Seeds are paired: run i of A and run i of B use the same seed. Ten runs show the spread; they are not enough for confidence intervals."
+	},
+	"import": {
+		"title": "Import",
+		"description": "Choose a FaultWorks .json file or paste its contents: an experiment, a result (it is re-run and checked) or a comparison (both sides come in). Files are checked against the schema and stay in this browser.",
+		"drop": "Drop a file here, or",
+		"chooseFile": "Choose file",
+		"paste": "Or paste JSON",
+		"pasted": "pasted JSON",
+		"action": "Import",
+		"failed_one": "This experiment can't be imported yet ({{count}} problem)",
+		"failed_other": "This experiment can't be imported yet ({{count}} problems)",
+		"more": "…and {{count}} more.",
+		"suffix": "imported",
+		"reused": "“{{title}}” is already in this browser with the same settings, so the existing copy is used.",
+		"renamed": "A different experiment already uses the id {{from}}, so this one is saved as {{id}} and marked “(imported)”.",
+		"upgraded": "Upgraded from schema {{from}}.",
+		"done": "Imported “{{title}}”",
+		"resultDone": "Imported the experiment inside the result file “{{title}}”",
+		"resultHint": "It runs again now and the numbers are checked against the file.",
+		"comparisonDone": "Imported a comparison",
+		"comparisonHint": "Both experiments run again now so their results can be checked."
+	},
+	"missing": {
+		"title": "This experiment is not in this browser",
+		"body": "There is no experiment with the id {{id}} here. It may have been deleted, or it was created in another browser. Experiments are shared by exporting and importing their JSON file.",
+		"back": "Go to experiments"
+	},
+	"notFound": {
+		"title": "This address does not lead to anything",
+		"body": "The link may point to an experiment that was deleted from this browser, or it was typed incorrectly. Experiments are stored per browser, so a link from someone else only works if they also sent you the exported file.",
+		"guide": "Read the model guide"
+	},
+	"error": {
+		"title": "Something broke on this page",
+		"body": "Your experiments are saved in this browser and are not affected. Try again, or go back to the experiment list."
+	},
+	"thumbnail": {
+		"alt": "{{nodes}} components, {{faults}} faults"
+	},
+	"limitations": {
+		"abstract": "Abstract request-level discrete-event simulation; not packet-level networking or a model of any specific proxy.",
+		"singleSeed": "A single seed is a deterministic demonstration, not statistical evidence.",
+		"notMeasurement": "Simulated metrics are model outputs, not measurements of a real system."
+	},
+	"messages": {
+		"validation": {
+			"id": "Use 1–48 lowercase letters, digits or hyphens, starting with a letter or digit.",
+			"number": "{{field}} must be a number.",
+			"integer": "{{field}} must be a whole number.",
+			"gt": "{{field}} must be greater than {{value}} {{unit}}.",
+			"min": "{{field}} must be at least {{value}} {{unit}}.",
+			"max": "{{field}} must be at most {{value}} {{unit}}.",
+			"title": "Give the experiment a title.",
+			"generic": "Invalid input: {{detail}}"
+		},
+		"graph": {
+			"duplicateNodeId": "Two components use the id “{{id}}”. Ids must be unique.",
+			"oneClient": "An experiment needs exactly one client; this one has {{count}}.",
+			"duplicateLinkId": "Two links use the id “{{id}}”.",
+			"danglingLink": "The link {{source}} → {{target}} points to a component that does not exist.",
+			"selfLink": "{{node}} cannot call itself.",
+			"duplicateLink": "The link {{source}} → {{target}} is listed twice.",
+			"intoClient": "{{source}} calls the client. The client only sends; it is never called.",
+			"balancerToBalancer": "Load balancer {{source}} calls load balancer {{target}}. Put a component between them or connect the backends directly.",
+			"clientOneLink": "The client must call exactly one component; it calls {{count}}.",
+			"balancerNeedsBackend": "Load balancer {{node}} has no backends. Connect it to at least one component.",
+			"cacheOneDownstream": "Cache {{node}} can only call one component behind it.",
+			"unreachable": "Nothing calls {{node}}, so it would never receive traffic. Connect it or remove it.",
+			"cycle": "Calls go in a circle: {{cycle}}. A request must never be able to call itself."
+		},
+		"fault": {
+			"duplicateId": "Two faults use the id “{{id}}”.",
+			"targetNotLink": "Fault “{{id}}” targets “{{target}}”, which is not a link.",
+			"targetNotWorker": "Fault “{{id}}” targets “{{target}}”, which is not a service, database, cache or queue.",
+			"flushNeedsCache": "Fault “{{id}}” only applies to caches; “{{target}}” is not a cache.",
+			"capacityAboveNode": "The capacity during the fault ({{capacity}}) is above {{node}}'s capacity ({{nodeCapacity}}).",
+			"endBeforeStart": "The end ({{end}} ms) must come after the start ({{start}} ms).",
+			"overlappingCrash": "Two crashes of {{node}} overlap. Let the first one recover before the next starts."
+		},
+		"budget": {
+			"horizon": "The run would cover {{minutes}} min; the limit is {{limitMinutes}} min. Shorten the traffic or set a smaller horizon.",
+			"requests": "This would offer about {{requests}} requests; the limit is {{limit}}. Lower the rate or shorten the duration."
+		},
+		"import": {
+			"tooLarge": "The file is {{kb}} KB; experiments are limited to {{limitKb}} KB.",
+			"tooLargeBundle": "The file is {{kb}} KB, which is more than FaultWorks ever exports.",
+			"invalidJson": "This is not valid JSON ({{detail}}).",
+			"notObject": "An experiment must be a JSON object with a schemaVersion field.",
+			"noVersion": "The file has no schemaVersion, so it cannot be read safely. Export it again from FaultWorks or add the schema version.",
+			"unknownVersion": "This file uses schema version {{version}}. This version of FaultWorks reads {{supported}} (and upgrades {{migratable}}).",
+			"resultWithoutExperiment": "This is a FaultWorks result file, but it does not contain its experiment, so it cannot be re-run.",
+			"comparisonIncomplete": "This comparison file is missing its A or B result."
+		},
+		"checks": {
+			"conservation": {
+				"ok": "offered = succeeded + failed + in flight"
+			},
+			"single-terminal": {
+				"ok": "no double outcomes, late responses discarded"
+			},
+			"capacity": {
+				"ok": "per component, at every event"
+			},
+			"queue-bounds": {
+				"ok": "per component, at every event"
+			},
+			"monotonic-time": {
+				"ok": "event timestamps are non-decreasing"
+			},
+			"failed": "{{detail}}"
+		}
+	},
+	"guide": {
+		"title": "Model guide",
+		"lead": "FaultWorks runs an abstract, request-level discrete-event simulation. This page says exactly what that model does, so you can judge what a result does and does not tell you.",
+		"onThisPage": "On this page",
+		"sections": {
+			"what": "What is simulated",
+			"components": "Components",
+			"lifecycle": "Life of a request",
+			"faults": "Faults and health checks",
+			"resilience": "Timeouts, retries and circuit breakers",
+			"metrics": "Metric definitions",
+			"reproducibility": "Reproducibility",
+			"checks": "Correctness checks",
+			"limits": "Limits and what is not modeled"
+		},
+		"what": [
+			"An experiment is a directed graph: one client and up to 11 other components, connected by links that follow the direction of calls. The client calls one component; a load balancer forwards to one of its backends; services, databases and caches do their own work and then call every component behind them in order; a worker queue answers at once and does the work later.",
+			"Time is simulated in whole microseconds and moves from event to event; nothing depends on how fast your computer is or how fast the replay plays."
+		],
+		"components": {
+			"client": "Sends requests at a constant rate (exact intervals) or as a Poisson process (random gaps from the seed), plus optional bursts. Each request has a deadline: the client timeout.",
+			"load-balancer": "Picks a backend by round robin, least connections or at random among the backends it considers healthy. Without health checks it considers every backend healthy forever. It can retry on another backend when a backend fails a call.",
+			"service": "Has a number of slots (concurrency) and a FIFO queue. A call occupies a slot for its own service time plus all the time spent waiting on the components behind it.",
+			"database": "Behaves like a service; its slots stand for a connection pool. Kept separate only so your design reads well.",
+			"cache": "Answers a share of lookups from memory according to its hit ratio (drawn from the seed). Misses fall through to the single component behind it.",
+			"queue": "Stores work and answers the caller at once (or rejects it when the backlog is full). A number of workers process the backlog, call the components behind it, and their outcomes are recorded as jobs, not requests."
+		},
+		"lifecycle": {
+			"steps": [
+				"The request reaches the first component over the client's link. If the link has latency, the trip takes time.",
+				"A load balancer picks a backend. If none is marked healthy, the request fails at once (no healthy backend).",
+				"If the component has crashed with the refuse behavior, the call fails at once (refused). With hang, it waits until the caller's timeout.",
+				"If a slot is free the work starts; otherwise the call queues; if the queue is full it fails (queue full).",
+				"After its own work, the component calls every component behind it in order while still holding its slot. A failure anywhere in the chain fails that call, unless the link retries.",
+				"The request succeeds when its answer reaches the client at or before the deadline. Otherwise it fails with a timeout. Components do not know the client gave up: the work finishes later and the answer is discarded."
+			],
+			"note": [
+				"Every request ends exactly once. Events at the same instant are processed in a fixed order: faults, probe results, transfers over links, completions, timeouts, probe sends, arrivals. An answer landing exactly on the deadline counts as on time."
+			]
+		},
+		"faults": {
+			"intro": [
+				"A fault changes how one component or link behaves during a window. Seven kinds are available, and several faults may be active at once."
+			],
+			"health": [
+				"With health checks on, the load balancer probes every backend each interval, starting at time 0. Probes bypass the request queue and answer instantly from a running component. After the configured number of consecutive failed probes the backend is removed from rotation; after the configured number of successes it is added back. Probes are free in the model: they use no capacity, so a very short interval shows only its benefit. This is a simplified active check; it does not reproduce any specific proxy.",
+				"The period between a crash and its detection is the amber hatched band on every timeline: the component is down, but still receives traffic."
+			]
+		},
+		"resilience": [
+			"Every link can have a call timeout, retries and a circuit breaker. A timeout makes the caller give up and free its slot; the work at the called component continues and its answer is discarded as a late response.",
+			"Retries happen immediately, without backoff, to the same component. While that component is slow, every client request can become several calls: that is a retry storm.",
+			"A circuit breaker counts consecutive failures over a link. At the threshold it opens and rejects calls at once for a while. Then one trial call is let through: success closes the breaker, failure opens it again."
+		],
+		"metrics": {
+			"offered": {
+				"term": "Offered",
+				"def": "Requests the client generated, whether or not they succeeded."
+			},
+			"succeeded": {
+				"term": "Succeeded",
+				"def": "Requests whose answer arrived at or before their deadline."
+			},
+			"failed": {
+				"term": "Failed",
+				"def": "Requests that ended without success, broken down by reason and by the component where the failure originated."
+			},
+			"inFlight": {
+				"term": "Still in flight",
+				"def": "Requests without an outcome when the run stopped. Counted neither as success nor failure. Offered = succeeded + failed + still in flight."
+			},
+			"latency": {
+				"term": "Latency",
+				"def": "Completion time minus arrival time. “Successful” latency leaves failed requests out. “All ended” latency includes them, with a timeout counted as the full timeout and a refusal as almost zero, so fast failures can make it look better."
+			},
+			"percentiles": {
+				"term": "Percentiles (p50, p95, p99)",
+				"def": "p95 is the time within which 95 of every 100 requests finished; p50 is the median. The nearest-rank method is used, so the value is always a real sample, and the number of samples (n) is always shown."
+			},
+			"endedLatency": {
+				"term": "Call latency per component",
+				"def": "Time from sending a call to receiving its answer, measured at the caller, including the components behind it."
+			},
+			"failedWait": {
+				"term": "Client time spent on failed requests",
+				"def": "Total time clients waited on requests that eventually failed. Percentiles cannot show this once more than 5% of requests fail."
+			},
+			"calls": {
+				"term": "Calls",
+				"def": "Every attempt over a link. Retries count as extra calls, so calls can far exceed requests."
+			},
+			"detection": {
+				"term": "Detection delay",
+				"def": "Time the load balancer marked a component unhealthy minus the time it actually crashed."
+			},
+			"queue": {
+				"term": "Queue depth, busy slots, backlog",
+				"def": "Peak value within each chart window, per component. For a worker queue, the backlog is the jobs waiting for a worker."
+			}
+		},
+		"reasonsTitle": "Failure reasons",
+		"reproducibility": [
+			"The same experiment, seed and engine version produce the same event trace, byte for byte. Random numbers come from a seeded SFC32 generator with separate streams for arrivals, each component, each load balancer and each link, so adding a component does not change the random numbers another one sees.",
+			"Every result carries a behavior digest (SHA-256 of the settings that affect results) and a fingerprint of the full trace. The Engine checks tab can re-run an experiment and compare both.",
+			"A single seed is a deterministic demonstration, not statistical evidence. When an experiment has random parts, the Compare page can repeat both sides with ten paired seeds."
+		],
+		"checks": {
+			"intro": [
+				"After every run, the event stream is checked independently of the engine's own bookkeeping:"
+			],
+			"items": [
+				"every request is accounted for (offered = succeeded + failed + in flight);",
+				"each request ends exactly once, and late responses only follow a caller giving up;",
+				"busy slots never exceed concurrency;",
+				"queues stay between zero and their size;",
+				"simulated time never goes backwards."
+			],
+			"note": [
+				"The engine itself is covered by reference cases with hand-computed answers and by property-based tests over hundreds of random experiments on every test run."
+			]
+		},
+		"limits": {
+			"items": [
+				"No TCP, TLS, packets, connection pooling, keep-alive or DNS.",
+				"No retry backoff, rate limiting, bulkheads or autoscaling.",
+				"No CPU, memory, garbage collection or operating-system scheduling.",
+				"No claim of parity with NGINX, HAProxy, Envoy, Kafka or any product."
+			],
+			"budget": "Runs are limited to {{minutes}} minutes of simulated time, about {{requests}} offered requests and {{nodes}} components, so a browser tab never locks up.",
+			"note": [
+				"Use the results to understand and discuss failure dynamics. Do not use them as capacity plans, SLA estimates or predictions of production behavior."
+			]
+		}
+	}
+}

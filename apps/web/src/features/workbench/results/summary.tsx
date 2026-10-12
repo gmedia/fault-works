@@ -1,5 +1,6 @@
 import type { FailureReason } from "@faultworks/engine";
-import { FAILURE_REASON_INFO, type RunSummary } from "@faultworks/metrics";
+import type { RunSummary } from "@faultworks/metrics";
+import { useTranslation } from "react-i18next";
 import {
 	formatCount,
 	formatLatency,
@@ -38,79 +39,84 @@ function Tile({
 }
 
 /**
- * The run in six numbers. Failed requests lead because every v0.1 question is about them; the
- * breakdown by reason sits right under the number so "failed" is never a black box.
+ * The run in a few numbers. Failed requests lead because every question is about them; the
+ * breakdown by reason and by origin sits right under the number so "failed" is never a black box.
  */
-export function SummaryTiles({
-	summary,
-	healthChecks,
-}: {
-	summary: RunSummary;
-	healthChecks: boolean;
-}) {
+export function SummaryTiles({ summary }: { summary: RunSummary }) {
+	const { t } = useTranslation();
 	const reasons = (
 		Object.entries(summary.failedByReason) as Array<[FailureReason, number]>
 	)
 		.filter(([, n]) => n > 0)
 		.sort((a, b) => b[1] - a[1]);
 	const lat = summary.successLatency;
-	const fault = summary.faults[0];
+	const crash = summary.faults.find((f) => f.kind === "node-failure");
+	const origin = summary.failedByOrigin[0];
+	const originNode = origin ? summary.nodes[origin.node] : undefined;
 	let detection: { value: string; detail: string };
-	if (!fault) detection = { value: "–", detail: "No fault in this run" };
-	else if (!healthChecks)
-		detection = { value: "Never", detail: "Health checks are off" };
-	else if (fault.detectionDelayMs === null)
+	if (!crash) detection = { value: "–", detail: t("summary.noCrash") };
+	else if (!crash.possibleDetectionMs)
+		detection = { value: t("summary.never"), detail: t("summary.noChecks") };
+	else if (crash.detectionDelayMs === null)
 		detection = {
-			value: "Not detected",
+			value: t("summary.notDetected"),
 			detail:
-				fault.recoveredAtMs !== null
-					? "Recovered before detection"
-					: "Before the run ended",
+				crash.endedAtMs !== null
+					? t("summary.recoveredFirst")
+					: t("summary.beforeEnd"),
 		};
 	else
 		detection = {
-			value: formatMs(fault.detectionDelayMs),
-			detail: `${fault.serverLabel}, crash to removal${summary.faults.length > 1 ? ` (first of ${summary.faults.length} faults)` : ""}${
-				fault.possibleDetectionMs &&
-				fault.possibleDetectionMs.min !== fault.possibleDetectionMs.max
-					? `. Possible with these settings: ${formatMs(fault.possibleDetectionMs.min)} to ${formatMs(fault.possibleDetectionMs.max)}${fault.crashOnProbeTick ? "; this crash hit a probe, the shortest case" : ""}`
-					: ""
-			}`,
+			value: formatMs(crash.detectionDelayMs),
+			detail: `${crash.nodeLabel}${crash.possibleDetectionMs.min !== crash.possibleDetectionMs.max ? `. ${t("summary.possible", { min: formatMs(crash.possibleDetectionMs.min), max: formatMs(crash.possibleDetectionMs.max) })}${crash.crashOnProbeTick ? ` ${t("summary.onTick")}` : ""}` : ""}`,
 		};
 
 	return (
 		<dl className="grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-6">
 			<Tile
-				label="Failed requests"
+				label={t("summary.failed")}
 				value={formatCount(summary.failed)}
-				detail={`${formatPercent(summary.failed, summary.offered)} of offered`}
+				detail={t("summary.ofOffered", {
+					pct: formatPercent(summary.failed, summary.offered),
+				})}
 				className={cn("col-span-2", summary.failed > 0 && "border-down/40")}
 			>
 				{reasons.length > 0 && (
 					<ul
 						className="mt-2 flex flex-wrap gap-1.5"
-						aria-label="Failures by reason"
+						aria-label={t("summary.byReason")}
 					>
 						{reasons.map(([reason, n]) => (
 							<li
 								key={reason}
 								className="rounded-md bg-muted px-2 py-0.5 text-xs"
-								title={FAILURE_REASON_INFO[reason].description}
+								title={t(`reasons.${reason}.description`)}
 							>
-								{FAILURE_REASON_INFO[reason].label}{" "}
+								{t(`reasons.${reason}.label`)}{" "}
 								<span className="font-medium tabular">{formatCount(n)}</span>
 							</li>
 						))}
 					</ul>
 				)}
+				{originNode && summary.nodes.length > 2 && (
+					<span className="mt-2 block text-muted-foreground text-xs">
+						{t("summary.origin", {
+							node: originNode.label,
+							pct: formatPercent(origin?.count ?? 0, summary.failed),
+						})}
+					</span>
+				)}
 			</Tile>
 			<Tile
-				label="Succeeded"
+				label={t("summary.succeeded")}
 				value={formatCount(summary.succeeded)}
-				detail={`${formatPercent(summary.succeeded, summary.offered)} of ${formatCount(summary.offered)} offered`}
+				detail={t("summary.ofOfferedCount", {
+					pct: formatPercent(summary.succeeded, summary.offered),
+					offered: formatCount(summary.offered),
+				})}
 			/>
 			<Tile
-				label="Latency p50 / p95"
+				label={t("summary.latency")}
 				value={
 					lat
 						? `${formatLatency(lat.p50Ms)} / ${formatLatency(lat.p95Ms)}`
@@ -119,32 +125,31 @@ export function SummaryTiles({
 				detail={
 					<>
 						{lat
-							? `successful requests, n = ${formatCount(lat.n)}`
-							: "no successful requests"}
+							? t("summary.latencyDetail", { n: formatCount(lat.n) })
+							: t("summary.noSuccess")}
 						{summary.completedLatency && (
 							<span className="block">
-								p95 of all ended requests:{" "}
-								{formatLatency(summary.completedLatency.p95Ms)}
+								{t("summary.endedP95", {
+									value: formatLatency(summary.completedLatency.p95Ms),
+								})}
 							</span>
 						)}
-						<span className="mt-1 block">
-							p95 means 95 of every 100 requests took this long or less.
-						</span>
+						<span className="mt-1 block">{t("summary.p95Help")}</span>
 					</>
 				}
 			/>
 			<Tile
-				label="Detection delay"
+				label={t("summary.detection")}
 				value={detection.value}
 				detail={detection.detail}
 			/>
 			<Tile
-				label="Still in flight"
+				label={t("summary.inFlight")}
 				value={formatCount(summary.inFlight)}
 				detail={
 					summary.inFlight > 0
-						? `no outcome at ${formatMs(summary.measuredMs)}; not counted as success or failure`
-						: `every request ended by ${formatMs(summary.measuredMs)}`
+						? t("summary.inFlightSome", { at: formatMs(summary.measuredMs) })
+						: t("summary.inFlightNone", { at: formatMs(summary.measuredMs) })
 				}
 			/>
 		</dl>

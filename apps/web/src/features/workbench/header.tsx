@@ -1,4 +1,4 @@
-import { findBuiltIn } from "@faultworks/experiment";
+import { EXAMPLE_IDS, type Locale } from "@faultworks/experiment";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowRightLeft,
@@ -16,6 +16,7 @@ import {
 	Trash2,
 	Undo2,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -40,36 +41,37 @@ import {
 import { useWorkbench } from "./context.tsx";
 
 function RunState() {
+	const { t } = useTranslation();
 	const { result, stale, running, validation } = useWorkbench();
 	let content: { Icon: typeof CircleCheck; text: string; className: string };
 	if (running)
 		content = {
 			Icon: LoaderCircle,
-			text: "Running…",
+			text: t("state.running"),
 			className: "text-muted-foreground [&>svg]:animate-spin",
 		};
 	else if (!validation.valid)
 		content = {
 			Icon: CircleAlert,
-			text: `${validation.issues.length} problem${validation.issues.length === 1 ? "" : "s"} to fix`,
+			text: t("state.problems", { count: validation.issues.length }),
 			className: "text-down",
 		};
 	else if (!result)
 		content = {
 			Icon: CircleDashed,
-			text: "Not run yet",
+			text: t("state.notRun"),
 			className: "text-muted-foreground",
 		};
 	else if (stale)
 		content = {
 			Icon: CircleAlert,
-			text: "Settings changed since the last run",
+			text: t("state.stale"),
 			className: "text-gap",
 		};
 	else
 		content = {
 			Icon: CircleCheck,
-			text: "Results match these settings",
+			text: t("state.current"),
 			className: "text-ok",
 		};
 	return (
@@ -83,7 +85,8 @@ function RunState() {
 }
 
 export function WorkbenchHeader() {
-	const { id, experiment, validation, running, run, result, stale } =
+	const { t, i18n } = useTranslation();
+	const { id, experiment, validation, running, run, result, stale, phone } =
 		useWorkbench();
 	const entry = useEntry(id);
 	const canUndo = useCanUndo(id);
@@ -98,15 +101,18 @@ export function WorkbenchHeader() {
 		entry?.basedOn ? s.entries[entry.basedOn] : undefined,
 	);
 	const navigate = useNavigate();
-	const isBuiltIn = findBuiltIn(id) !== undefined;
+	const isBuiltIn = EXAMPLE_IDS.includes(id);
 	const currentResult = result && !stale ? result : null;
 
 	const variant = () => {
-		const newId = createVariant(id);
+		const newId = createVariant(
+			id,
+			t("variant.suffix"),
+			t("variant.descriptionPrompt", { title: experiment.title }),
+		);
 		if (!newId) return;
-		toast.success("Variant created", {
-			description:
-				"Change one setting, run it, then compare it with the original.",
+		toast.success(t("variant.created"), {
+			description: t("variant.createdHint"),
 		});
 		void navigate({
 			to: "/experiments/$experimentId",
@@ -116,14 +122,14 @@ export function WorkbenchHeader() {
 
 	return (
 		<div className="border-b bg-card/50">
-			<div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
+			<div className="mx-auto flex max-w-[1600px] flex-col gap-3 px-4 py-3 lg:flex-row lg:items-start lg:justify-between lg:py-4">
 				<div className="min-w-0">
 					<nav
-						aria-label="Breadcrumb"
+						aria-label={t("nav.breadcrumb")}
 						className="text-muted-foreground text-xs"
 					>
 						<Link to="/" className="hover:text-foreground hover:underline">
-							Experiments
+							{t("nav.experiments")}
 						</Link>
 						{original && (
 							<>
@@ -142,7 +148,7 @@ export function WorkbenchHeader() {
 						{experiment.title}
 					</h1>
 					{experiment.question && (
-						<p className="mt-1 max-w-3xl text-muted-foreground">
+						<p className="mt-1 max-w-3xl text-muted-foreground text-sm sm:text-base">
 							{experiment.question}
 						</p>
 					)}
@@ -156,8 +162,8 @@ export function WorkbenchHeader() {
 						<Button
 							variant="ghost"
 							size="icon"
-							aria-label="Undo"
-							title="Undo (Ctrl+Z)"
+							aria-label={t("shortcuts.undo")}
+							title={`${t("shortcuts.undo")} (Ctrl+Z)`}
 							disabled={!canUndo}
 							onClick={() => undo(id)}
 						>
@@ -166,8 +172,8 @@ export function WorkbenchHeader() {
 						<Button
 							variant="ghost"
 							size="icon"
-							aria-label="Redo"
-							title="Redo (Ctrl+Shift+Z)"
+							aria-label={t("shortcuts.redo")}
+							title={`${t("shortcuts.redo")} (Ctrl+Shift+Z)`}
 							disabled={!canRedo}
 							onClick={() => redo(id)}
 						>
@@ -175,92 +181,148 @@ export function WorkbenchHeader() {
 						</Button>
 					</div>
 
-					<Button variant="outline" onClick={variant}>
-						<Copy aria-hidden="true" />
-						<span>Create variant</span>
-					</Button>
+					<div className="hidden items-center gap-2 sm:flex">
+						<Button variant="outline" onClick={variant}>
+							<Copy aria-hidden="true" />
+							{t("actions.variant")}
+						</Button>
 
-					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<Button variant="outline">
-								<ArrowRightLeft aria-hidden="true" />
-								<span>Compare</span>
-								<ChevronDown className="opacity-60" aria-hidden="true" />
-							</Button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
-							{original && (
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<Button variant="outline">
+									<ArrowRightLeft aria-hidden="true" />
+									{t("actions.compare")}
+									<ChevronDown className="opacity-60" aria-hidden="true" />
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end">
+								{original && (
+									<DropdownMenuItem asChild>
+										<Link
+											to="/compare"
+											search={{ a: original.experiment.experimentId, b: id }}
+										>
+											{t("actions.compareOriginal", {
+												title: original.experiment.title,
+											})}
+										</Link>
+									</DropdownMenuItem>
+								)}
 								<DropdownMenuItem asChild>
-									<Link
-										to="/compare"
-										search={{ a: original.experiment.experimentId, b: id }}
-									>
-										With the original ({original.experiment.title})
+									<Link to="/compare" search={{ b: id }}>
+										{t("actions.compareOther")}
 									</Link>
 								</DropdownMenuItem>
-							)}
-							<DropdownMenuItem asChild>
-								<Link to="/compare" search={{ b: id }}>
-									With another experiment (this one as B)…
-								</Link>
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
+							</DropdownMenuContent>
+						</DropdownMenu>
+
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<Button variant="outline">
+									<Download aria-hidden="true" />
+									{t("actions.export")}
+									<ChevronDown className="opacity-60" aria-hidden="true" />
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end" className="w-72">
+								<DropdownMenuItem onSelect={() => exportExperiment(experiment)}>
+									{t("export.experiment")}
+									<span className="ml-auto text-muted-foreground text-xs">
+										{t("export.share")}
+									</span>
+								</DropdownMenuItem>
+								<DropdownMenuSeparator />
+								<DropdownMenuLabel className="font-normal text-muted-foreground text-xs">
+									{currentResult
+										? t("export.fromResults")
+										: t("export.runFirst")}
+								</DropdownMenuLabel>
+								<DropdownMenuItem
+									disabled={!currentResult}
+									onSelect={() => currentResult && exportResult(currentResult)}
+								>
+									{t("export.result")}
+								</DropdownMenuItem>
+								<DropdownMenuItem
+									disabled={!currentResult?.log}
+									onSelect={() =>
+										currentResult && exportEventsCsv(currentResult)
+									}
+								>
+									{t("export.events")}
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
+					</div>
 
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild>
-							<Button variant="outline">
-								<Download aria-hidden="true" />
-								<span>Export</span>
-								<ChevronDown className="opacity-60" aria-hidden="true" />
-							</Button>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end" className="w-64">
-							<DropdownMenuItem onSelect={() => exportExperiment(experiment)}>
-								Experiment (.json)
-								<span className="ml-auto text-muted-foreground text-xs">
-									input
-								</span>
-							</DropdownMenuItem>
-							<DropdownMenuSeparator />
-							<DropdownMenuLabel className="font-normal text-muted-foreground text-xs">
-								{currentResult
-									? "From the current results"
-									: "Run first to export results"}
-							</DropdownMenuLabel>
-							<DropdownMenuItem
-								disabled={!currentResult}
-								onSelect={() => currentResult && exportResult(currentResult)}
+							<Button
+								variant="ghost"
+								size="icon"
+								aria-label={t("actions.more")}
 							>
-								Result with metrics (.json)
-							</DropdownMenuItem>
-							<DropdownMenuItem
-								disabled={!currentResult?.log}
-								onSelect={() => currentResult && exportEventsCsv(currentResult)}
-							>
-								Event log (.csv)
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
-
-					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<Button variant="ghost" size="icon" aria-label="More actions">
 								<EllipsisVertical />
 							</Button>
 						</DropdownMenuTrigger>
-						<DropdownMenuContent align="end">
+						<DropdownMenuContent align="end" className="w-72">
+							<div className="sm:hidden">
+								<DropdownMenuItem onSelect={variant}>
+									<Copy aria-hidden="true" />
+									{t("actions.variant")}
+								</DropdownMenuItem>
+								{original && (
+									<DropdownMenuItem asChild>
+										<Link
+											to="/compare"
+											search={{ a: original.experiment.experimentId, b: id }}
+										>
+											<ArrowRightLeft aria-hidden="true" />
+											{t("actions.compareOriginal", {
+												title: original.experiment.title,
+											})}
+										</Link>
+									</DropdownMenuItem>
+								)}
+								<DropdownMenuItem asChild>
+									<Link to="/compare" search={{ b: id }}>
+										<ArrowRightLeft aria-hidden="true" />
+										{t("actions.compareOther")}
+									</Link>
+								</DropdownMenuItem>
+								<DropdownMenuItem onSelect={() => exportExperiment(experiment)}>
+									<Download aria-hidden="true" />
+									{t("export.experiment")}
+								</DropdownMenuItem>
+								<DropdownMenuItem
+									disabled={!currentResult}
+									onSelect={() => currentResult && exportResult(currentResult)}
+								>
+									<Download aria-hidden="true" />
+									{t("export.result")}
+								</DropdownMenuItem>
+								<DropdownMenuItem
+									disabled={!currentResult?.log}
+									onSelect={() =>
+										currentResult && exportEventsCsv(currentResult)
+									}
+								>
+									<Download aria-hidden="true" />
+									{t("export.events")}
+								</DropdownMenuItem>
+								<DropdownMenuSeparator />
+							</div>
 							{isBuiltIn && (
 								<DropdownMenuItem
 									onSelect={() => {
-										resetToBuiltIn(id);
-										toast("Reset to the original example", {
-											description: "Undo with Ctrl+Z.",
+										resetToBuiltIn(id, i18n.language as Locale);
+										toast(t("actions.resetDone"), {
+											description: t("inspector.undoHint"),
 										});
 									}}
 								>
 									<RotateCcw aria-hidden="true" />
-									Reset to original example
+									{t("actions.reset")}
 								</DropdownMenuItem>
 							)}
 							<DropdownMenuItem
@@ -269,37 +331,39 @@ export function WorkbenchHeader() {
 									const removed = remove(id);
 									if (!removed) return;
 									void navigate({ to: "/" });
-									toast(`Deleted “${experiment.title}”`, {
+									toast(t("library.deleted", { title: experiment.title }), {
 										action: {
-											label: "Undo",
+											label: t("common.undo"),
 											onClick: () => restoreEntry(removed.entry, removed.index),
 										},
 									});
 								}}
 							>
 								<Trash2 aria-hidden="true" />
-								Delete experiment
+								{t("actions.delete")}
 							</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>
 
-					<Button
-						onClick={() => run()}
-						disabled={!validation.valid || running}
-						title={
-							validation.valid
-								? "Run (Ctrl+Enter)"
-								: "Fix the problems listed below first"
-						}
-						className="min-w-28"
-					>
-						{running ? (
-							<LoaderCircle className="animate-spin" aria-hidden="true" />
-						) : (
-							<Play aria-hidden="true" />
-						)}
-						{result ? "Run again" : "Run"}
-					</Button>
+					{!phone && (
+						<Button
+							onClick={() => run()}
+							disabled={!validation.valid || running}
+							title={
+								validation.valid
+									? `${t("actions.run")} (Ctrl+Enter)`
+									: t("state.fixFirst")
+							}
+							className="min-w-28"
+						>
+							{running ? (
+								<LoaderCircle className="animate-spin" aria-hidden="true" />
+							) : (
+								<Play aria-hidden="true" />
+							)}
+							{result ? t("actions.runAgain") : t("actions.run")}
+						</Button>
+					)}
 				</div>
 			</div>
 		</div>

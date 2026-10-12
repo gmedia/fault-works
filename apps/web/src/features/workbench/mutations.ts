@@ -4,13 +4,17 @@ import type {
 	Fault,
 	HealthCheck,
 	LoadBalancerNode,
-	ServerNode,
+	WorkerNode,
 } from "@faultworks/experiment";
 
 /** Small immutable updaters used by the inspector. */
 
 export function nodeIndex(experiment: Experiment, id: string): number {
 	return experiment.model.nodes.findIndex((n) => n.id === id);
+}
+
+export function linkIndex(experiment: Experiment, id: string): number {
+	return experiment.model.links.findIndex((l) => l.id === id);
 }
 
 export function updateNode<N extends ExperimentNode>(
@@ -27,12 +31,24 @@ export function updateNode<N extends ExperimentNode>(
 	};
 }
 
-export function updateServerConfig(
+export function updateWorkerConfig(
 	experiment: Experiment,
 	id: string,
-	patch: Partial<ServerNode["config"]>,
+	patch: Partial<WorkerNode["config"]>,
 ): Experiment {
-	return updateNode<ServerNode>(experiment, id, (n) => ({
+	return updateNode<WorkerNode>(
+		experiment,
+		id,
+		(n) => ({ ...n, config: { ...n.config, ...patch } }) as WorkerNode,
+	);
+}
+
+export function updateBalancer(
+	experiment: Experiment,
+	id: string,
+	patch: Partial<LoadBalancerNode["config"]>,
+): Experiment {
+	return updateNode<LoadBalancerNode>(experiment, id, (n) => ({
 		...n,
 		config: { ...n.config, ...patch },
 	}));
@@ -40,25 +56,13 @@ export function updateServerConfig(
 
 export function updateHealthCheck(
 	experiment: Experiment,
+	id: string,
 	patch: Partial<HealthCheck>,
 ): Experiment {
-	return {
-		...experiment,
-		model: {
-			...experiment.model,
-			nodes: experiment.model.nodes.map((n) =>
-				n.kind === "load-balancer"
-					? ({
-							...n,
-							config: {
-								...n.config,
-								healthCheck: { ...n.config.healthCheck, ...patch },
-							},
-						} satisfies LoadBalancerNode)
-					: n,
-			),
-		},
-	};
+	return updateNode<LoadBalancerNode>(experiment, id, (n) => ({
+		...n,
+		config: { ...n.config, healthCheck: { ...n.config.healthCheck, ...patch } },
+	}));
 }
 
 export function updateFault(
@@ -69,7 +73,7 @@ export function updateFault(
 	return {
 		...experiment,
 		faults: experiment.faults.map((f, i) =>
-			i === index ? { ...f, ...patch } : f,
+			i === index ? ({ ...f, ...patch } as Fault) : f,
 		),
 	};
 }
@@ -86,12 +90,4 @@ export function setLabel(
 		else next.label = trimmed;
 		return next;
 	});
-}
-
-export function loadBalancer(
-	experiment: Experiment,
-): LoadBalancerNode | undefined {
-	return experiment.model.nodes.find(
-		(n): n is LoadBalancerNode => n.kind === "load-balancer",
-	);
 }

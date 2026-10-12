@@ -10,7 +10,7 @@ export interface Validation {
 	valid: boolean;
 	issues: ValidationIssue[];
 	/** Issues keyed by exact path, for messages next to fields. */
-	byPath: Map<string, string[]>;
+	byPath: Map<string, ValidationIssue[]>;
 	/** Only available for a valid experiment. */
 	runKey: string | null;
 }
@@ -18,9 +18,9 @@ export interface Validation {
 export function validate(experiment: Experiment): Validation {
 	const parsed = parseExperiment(experiment);
 	const issues = parsed.ok ? [] : parsed.issues;
-	const byPath = new Map<string, string[]>();
+	const byPath = new Map<string, ValidationIssue[]>();
 	for (const issue of issues)
-		byPath.set(issue.path, [...(byPath.get(issue.path) ?? []), issue.message]);
+		byPath.set(issue.path, [...(byPath.get(issue.path) ?? []), issue]);
 	return {
 		valid: parsed.ok,
 		issues,

@@ -10,6 +10,9 @@ export default defineConfig({
 	reporter: process.env.CI ? "github" : "list",
 	use: {
 		baseURL: "http://localhost:4173",
+		// The app follows the browser language and defaults to Indonesian; the specs pin English
+		// and switch languages explicitly where they test i18n.
+		locale: "en-US",
 		trace: "retain-on-failure",
 	},
 	projects: [

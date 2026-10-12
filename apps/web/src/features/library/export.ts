@@ -1,17 +1,17 @@
 import {
 	canonicalJson,
 	type Experiment,
+	FIELDS,
 	type SemanticChange,
 } from "@faultworks/experiment";
-import {
-	type ComparisonRow,
-	FAILURE_REASON_INFO,
-	readEventRow,
-} from "@faultworks/metrics";
+import { type ComparisonRow, readEventRow } from "@faultworks/metrics";
+import { i18next } from "#/i18n/index.ts";
 import { downloadText } from "#/lib/download.ts";
+import { formatLatency, formatUnitValue } from "#/lib/format.ts";
 import type { RunResult } from "#/workers/protocol.ts";
 
-export const RESULT_SCHEMA_VERSION = "0.1.0";
+export const RESULT_SCHEMA_VERSION = "0.2.0";
+export const COMPARISON_SCHEMA_VERSION = "0.2.0";
 
 export function experimentJson(experiment: Experiment): string {
 	return `${JSON.stringify(experiment, null, 2)}\n`;
@@ -24,10 +24,10 @@ export function exportExperiment(experiment: Experiment) {
 	);
 }
 
-const STANDARD_LIMITATIONS = [
-	"Abstract request-level discrete-event simulation; not packet-level networking or a model of any specific proxy.",
-	"A single seed is a deterministic demonstration, not statistical evidence.",
-	"Simulated metrics are model outputs, not measurements of a real system.",
+const standardLimitations = () => [
+	i18next.t("limitations.abstract"),
+	i18next.t("limitations.singleSeed"),
+	i18next.t("limitations.notMeasurement"),
 ];
 
 /**
@@ -53,7 +53,7 @@ export function resultArtifact(result: RunResult) {
 		metrics: metrics.summary,
 		checks: metrics.checks,
 		series: metrics.series,
-		limitations: [...STANDARD_LIMITATIONS, ...result.experiment.assumptions],
+		limitations: [...standardLimitations(), ...result.experiment.assumptions],
 		experiment: result.experiment,
 	};
 }
@@ -79,9 +79,9 @@ const csvCell = (v: string | number | null) => {
 export function exportEventsCsv(result: RunResult) {
 	const log = result.log;
 	if (!log) return;
-	const servers = result.topology.servers;
+	const { nodeIds, linkIds } = result.topology;
 	const faults = result.experiment.faults;
-	const lines = ["time_ms,event,request,server,reason,duration_ms,detail"];
+	const lines = ["time_ms,event,request,node,link,reason,duration_ms,detail"];
 	for (let i = 0; i < log.length; i++) {
 		const row = readEventRow(log, i);
 		let detail: string | null = null;
@@ -90,8 +90,17 @@ export function exportEventsCsv(result: RunResult) {
 		if (row.kind === "probe") detail = row.flag ? "ok" : "failed";
 		if (row.kind === "health-changed")
 			detail = row.flag ? "healthy" : "unhealthy";
+		if (row.kind === "call-start") detail = `attempt ${row.attempt}`;
+		if (row.kind === "cache-hit") detail = row.flag ? "hit" : "miss";
+		if (row.kind === "job-done") detail = row.flag ? "ok" : "failed";
+		if (row.kind === "breaker") detail = row.breakerState;
+		if (row.kind === "routed")
+			detail = `to ${nodeIds[row.via ?? -1] ?? row.via}`;
 		if (
-			(row.kind === "node-down" || row.kind === "node-up") &&
+			(row.kind === "node-down" ||
+				row.kind === "node-up" ||
+				row.kind === "fault-start" ||
+				row.kind === "fault-end") &&
 			row.fault !== null
 		)
 			detail = `fault ${faults[row.fault]?.id ?? row.fault}`;
@@ -100,8 +109,9 @@ export function exportEventsCsv(result: RunResult) {
 				row.tMs.toFixed(3),
 				row.kind,
 				row.req,
-				row.server === null ? null : (servers[row.server]?.id ?? row.server),
-				row.reason ? FAILURE_REASON_INFO[row.reason].label : null,
+				row.node === null ? null : (nodeIds[row.node] ?? row.node),
+				row.edge === null ? null : (linkIds[row.edge] ?? row.edge),
+				row.reason,
 				row.durationMs === null ? null : row.durationMs.toFixed(3),
 				detail,
 			]
@@ -116,14 +126,16 @@ export function exportEventsCsv(result: RunResult) {
 	);
 }
 
-export const COMPARISON_SCHEMA_VERSION = "0.1.0";
-
 function formatRowValue(row: ComparisonRow, v: number | null): string {
 	if (v === null) return "–";
-	const n = v.toLocaleString("en-US", {
-		maximumFractionDigits: row.unit === "requests" ? 0 : 1,
-	});
-	return row.unit === "requests" ? n : `${n} ${row.unit}`;
+	if (row.unit === "ms") return formatLatency(v);
+	if (row.unit === "%")
+		return `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+	if (row.unit === "req/s")
+		return `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })} req/s`;
+	if (row.unit === "s")
+		return `${v.toLocaleString(undefined, { maximumFractionDigits: 1 })} s`;
+	return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
 /**
@@ -149,6 +161,32 @@ export function exportComparison(
 	);
 }
 
+const changeLabel = (c: SemanticChange) => {
+	const scope =
+		c.scope === "run" || c.scope === "traffic"
+			? i18next.t(`scope.${c.scope}`)
+			: `${i18next.t(`scope.${c.scope}`)} ${c.scopeLabel}`;
+	const field =
+		c.field === "presence" || c.field === "order"
+			? i18next.t(`diff.${c.field}`)
+			: i18next.t(`fields.${c.field}.label`);
+	return `${scope} › ${field}`;
+};
+
+const changeValue = (c: SemanticChange, side: "before" | "after") => {
+	const raw = c[side];
+	const text = side === "before" ? c.beforeText : c.afterText;
+	if (text === null) return i18next.t("diff.notPresent");
+	if (c.field === "presence" || c.field === "order")
+		return c.field === "presence"
+			? i18next.t(`kinds.${String(raw)}`, { defaultValue: String(raw) })
+			: text;
+	const info = FIELDS[c.field];
+	if (info.options && typeof raw === "string")
+		return i18next.t(`options.${c.field}.${raw}`, { defaultValue: raw });
+	return formatUnitValue(raw, info.unit);
+};
+
 /** A human-readable report of the same comparison, for handouts, reviews and grading. */
 export function comparisonMarkdown(
 	a: RunResult,
@@ -157,9 +195,10 @@ export function comparisonMarkdown(
 	rows: ComparisonRow[],
 	narrative: string[],
 ): string {
+	const t = i18next.t.bind(i18next);
 	const lines: string[] = [];
 	lines.push(
-		`# Comparison: ${a.experiment.title} vs ${b.experiment.title}`,
+		`# ${t("compare.reportTitle", { a: a.experiment.title, b: b.experiment.title })}`,
 		"",
 	);
 	lines.push(
@@ -169,48 +208,51 @@ export function comparisonMarkdown(
 		`- **B:** ${b.experiment.title} (\`${b.experiment.experimentId}\`, seed ${b.experiment.seed})`,
 	);
 	lines.push(
-		`- Engine ${a.engineVersion}, metric definitions ${a.metricDefinitionsVersion}`,
+		`- Engine ${a.engineVersion}, metrics ${a.metricDefinitionsVersion}`,
 		"",
 	);
-	lines.push("## What changed", "");
-	if (changes.length === 0) lines.push("No behavior setting differs.", "");
+	lines.push(`## ${t("compare.whatChanged")}`, "");
+	if (changes.length === 0) lines.push(t("compare.noChange"), "");
 	else {
-		lines.push("| Setting | A | B |", "|---|---|---|");
+		lines.push(`| ${t("compare.setting")} | A | B |`, "|---|---|---|");
 		for (const c of changes)
 			lines.push(
-				`| ${c.scope} › ${c.field} | ${c.before ?? "not present"} | ${c.after ?? "not present"} |`,
+				`| ${changeLabel(c)} | ${changeValue(c, "before")} | ${changeValue(c, "after")} |`,
 			);
 		lines.push("");
 		if (changes.length > 1)
 			lines.push(
-				`> ${changes.length} settings differ, so a difference cannot be attributed to any single one.`,
+				`> ${t("compare.manyChanges", { count: changes.length })}`,
 				"",
 			);
 	}
-	lines.push("## Results", "");
+	lines.push(`## ${t("compare.results")}`, "");
 	for (const sentence of narrative) lines.push(sentence, "");
-	lines.push("| Metric | A | B | Change |", "|---|---|---|---|");
+	lines.push(
+		`| ${t("compare.metric")} | A | B | ${t("compare.change")} |`,
+		"|---|---|---|---|",
+	);
 	for (const r of rows) {
 		const delta =
 			r.delta === null
 				? "–"
 				: r.delta === 0
-					? "no change"
+					? t("compare.noChangeShort")
 					: `${r.delta > 0 ? "+" : "−"}${formatRowValue(r, Math.abs(r.delta))}`;
 		lines.push(
-			`| ${r.label}${r.samples ? ` (n = ${r.samples.a} / ${r.samples.b})` : ""} | ${formatRowValue(r, r.a)} | ${formatRowValue(r, r.b)} | ${delta}${r.caution ? " ⚠" : ""} |`,
+			`| ${t(`rows.${r.id}`)}${r.samples ? ` (n = ${r.samples.a} / ${r.samples.b})` : ""} | ${formatRowValue(r, r.a)} | ${formatRowValue(r, r.b)} | ${delta}${r.caution ? " ⚠" : ""} |`,
 		);
 	}
 	const cautions = rows.filter((r) => r.caution);
 	if (cautions.length) {
 		lines.push("");
-		for (const r of cautions) lines.push(`⚠ ${r.label}: ${r.caution}`);
+		for (const r of cautions)
+			lines.push(
+				`⚠ ${t(`rows.${r.id}`)}: ${t(`compare.caution.${r.caution}`)}`,
+			);
 	}
-	lines.push("", "## Reproduce", "");
-	lines.push(
-		"Import the `.comparison.json` file into FaultWorks, or each side's experiment, and run it. The run must reproduce these fingerprints:",
-		"",
-	);
+	lines.push("", `## ${t("compare.reproduce")}`, "");
+	lines.push(t("compare.reproduceHint"), "");
 	lines.push(
 		`- A: behavior \`sha256:${a.runKey}\`, trace \`fnv1a32x2:${a.metrics.traceDigest}\``,
 	);
@@ -218,9 +260,9 @@ export function comparisonMarkdown(
 		`- B: behavior \`sha256:${b.runKey}\`, trace \`fnv1a32x2:${b.metrics.traceDigest}\``,
 		"",
 	);
-	lines.push("## Limitations", "");
+	lines.push(`## ${t("compare.limitations")}`, "");
 	for (const l of new Set([
-		...STANDARD_LIMITATIONS,
+		...standardLimitations(),
 		...a.experiment.assumptions,
 		...b.experiment.assumptions,
 	]))

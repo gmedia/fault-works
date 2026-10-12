@@ -1,6 +1,11 @@
-import type { FieldInfo } from "@faultworks/experiment";
+import {
+	FIELDS,
+	type FieldKey,
+	type ValidationIssue,
+} from "@faultworks/experiment";
 import { CircleAlert } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Input } from "#/components/ui/input.tsx";
 import { Label } from "#/components/ui/label.tsx";
 import {
@@ -12,6 +17,24 @@ import {
 } from "#/components/ui/select.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
 import { cn } from "#/lib/utils.ts";
+
+/** Renders a package message (key + params) in the user's language. */
+export function useMessage() {
+	const { t } = useTranslation();
+	return (
+		issue: ValidationIssue | { key: string; params?: Record<string, unknown> },
+	) => {
+		const m = "message" in issue ? issue.message : issue;
+		const params = { ...(m.params ?? {}) } as Record<string, unknown>;
+		if (typeof params.field === "string")
+			params.field = t(`fields.${params.field}.label`, {
+				defaultValue: params.field,
+			});
+		if (typeof params.unit === "string")
+			params.unit = t(`units.${params.unit}`, { defaultValue: params.unit });
+		return t(`messages.${m.key}`, { ...params, defaultValue: m.key });
+	};
+}
 
 interface FieldShellProps {
 	id: string;
@@ -32,8 +55,6 @@ function FieldShell({
 	children,
 	inline,
 }: FieldShellProps) {
-	const helpId = `${id}-help`;
-	const errorId = `${id}-error`;
 	return (
 		<div
 			className={cn(
@@ -47,7 +68,7 @@ function FieldShell({
 			{children}
 			{(help || hint) && (
 				<p
-					id={helpId}
+					id={`${id}-help`}
 					className={cn(
 						"text-muted-foreground text-xs",
 						inline && "col-span-2",
@@ -59,7 +80,7 @@ function FieldShell({
 			)}
 			{errors && errors.length > 0 && (
 				<p
-					id={errorId}
+					id={`${id}-error`}
 					className={cn(
 						"flex items-start gap-1.5 text-down text-xs",
 						inline && "col-span-2",
@@ -82,11 +103,12 @@ function describedBy(id: string, help: boolean, errors?: string[]) {
 }
 
 interface NumberFieldProps {
-	info: Pick<FieldInfo, "label" | "unit" | "help">;
+	field: FieldKey;
+	/** Override the translated label (e.g. "Consumers" for a queue's capacity). */
+	labelKey?: FieldKey;
 	value: number | null | undefined;
 	onChange: (value: number | null) => void;
 	errors?: string[];
-	/** Allow clearing the field to `null` (e.g. "never recovers", "auto horizon"). */
 	nullable?: boolean;
 	nullLabel?: string;
 	integer?: boolean;
@@ -94,6 +116,8 @@ interface NumberFieldProps {
 	step?: number;
 	/** Show the value in seconds next to the unit for ms fields. */
 	showSeconds?: boolean;
+	/** Edit percentages as 0–100 while the model stores 0–1. */
+	percent?: boolean;
 }
 
 /**
@@ -102,29 +126,38 @@ interface NumberFieldProps {
  * field is focused.
  */
 export function NumberField({
-	info,
+	field,
+	labelKey,
 	value,
 	onChange,
 	errors,
 	nullable,
-	nullLabel = "none",
+	nullLabel,
 	integer,
 	min,
 	step,
 	showSeconds,
+	percent,
 }: NumberFieldProps) {
+	const { t, i18n } = useTranslation();
 	const id = useId();
-	const [draft, setDraft] = useState(
-		value === null || value === undefined ? "" : String(value),
-	);
+	const info = FIELDS[field];
+	const toDraft = (v: number | null | undefined) =>
+		v === null || v === undefined
+			? ""
+			: String(percent ? Math.round(v * 10000) / 100 : v);
+	const [draft, setDraft] = useState(toDraft(value));
 	const focused = useRef(false);
 	const [localError, setLocalError] = useState<string | null>(null);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: toDraft only depends on `percent`, which never changes for a field
 	useEffect(() => {
-		if (!focused.current)
-			setDraft(value === null || value === undefined ? "" : String(value));
+		if (!focused.current) setDraft(toDraft(value));
 	}, [value]);
 
+	const unitLabel = info.unit
+		? t(`units.${info.unit}`, { defaultValue: info.unit })
+		: "";
 	const commit = (text: string) => {
 		const trimmed = text.trim().replace(",", ".");
 		if (trimmed === "") {
@@ -132,33 +165,40 @@ export function NumberField({
 				setLocalError(null);
 				onChange(null);
 			} else
-				setLocalError(`Enter a number${info.unit ? ` in ${info.unit}` : ""}.`);
+				setLocalError(
+					unitLabel
+						? t("fields.errors.requiredUnit", { unit: unitLabel })
+						: t("fields.errors.required"),
+				);
 			return;
 		}
 		const n = Number(trimmed);
 		if (!Number.isFinite(n)) {
-			setLocalError(`“${text}” is not a number.`);
+			setLocalError(t("fields.errors.notNumber", { text }));
 			return;
 		}
 		if (integer && !Number.isInteger(n)) {
-			setLocalError("Use a whole number.");
+			setLocalError(t("fields.errors.integer"));
 			return;
 		}
 		setLocalError(null);
-		if (n !== value) onChange(n);
+		const next = percent ? n / 100 : n;
+		if (next !== value) onChange(next);
 	};
 
 	const allErrors = [...(localError ? [localError] : []), ...(errors ?? [])];
 	const seconds =
 		showSeconds && typeof value === "number" && value >= 1000
-			? `(${(value / 1000).toLocaleString("en-US", { maximumFractionDigits: 3 })} s)`
+			? `(${(value / 1000).toLocaleString(i18n.language, { maximumFractionDigits: 3 })} ${t("units.s")})`
 			: undefined;
+	const label = t(`fields.${labelKey ?? field}.label`);
+	const help = t(`fields.${labelKey ?? field}.help`, { defaultValue: "" });
 
 	return (
 		<FieldShell
 			id={id}
-			label={info.label}
-			help={info.help}
+			label={label}
+			help={help || undefined}
 			hint={seconds}
 			errors={allErrors}
 		>
@@ -182,14 +222,20 @@ export function NumberField({
 					onKeyDown={(e) => {
 						if (e.key === "ArrowUp" || e.key === "ArrowDown") {
 							e.preventDefault();
-							const base = typeof value === "number" ? value : (min ?? 0);
+							const current =
+								Number(draft) ||
+								(typeof value === "number"
+									? percent
+										? value * 100
+										: value
+									: (min ?? 0));
 							const delta =
 								(step ?? 1) *
 								(e.shiftKey ? 10 : 1) *
 								(e.key === "ArrowUp" ? 1 : -1);
 							const next = Math.max(
 								min ?? Number.NEGATIVE_INFINITY,
-								Number((base + delta).toFixed(6)),
+								Number((current + delta).toFixed(6)),
 							);
 							setDraft(String(next));
 							commit(String(next));
@@ -198,14 +244,14 @@ export function NumberField({
 					aria-invalid={allErrors.length > 0}
 					aria-describedby={describedBy(
 						id,
-						Boolean(info.help || seconds),
+						Boolean(help || seconds),
 						allErrors,
 					)}
 					className={cn("tabular pr-16", allErrors.length > 0 && "border-down")}
 				/>
-				{info.unit && (
+				{(info.unit || percent) && (
 					<span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground text-xs">
-						{info.unit}
+						{percent ? "%" : unitLabel}
 					</span>
 				)}
 			</div>
@@ -214,40 +260,55 @@ export function NumberField({
 }
 
 interface SelectFieldProps<T extends string> {
-	info: Pick<FieldInfo, "label" | "help">;
+	field: FieldKey;
 	value: T;
-	options: Record<T, string>;
+	/** Options and labels; defaults to the field's options translated as `options.<field>.<value>`. */
+	options?: Array<{ value: T; label: string }>;
 	onChange: (value: T) => void;
 	errors?: string[];
+	labelOverride?: string;
 }
 
 export function SelectField<T extends string>({
-	info,
+	field,
 	value,
 	options,
 	onChange,
 	errors,
+	labelOverride,
 }: SelectFieldProps<T>) {
+	const { t } = useTranslation();
 	const id = useId();
+	const info = FIELDS[field];
+	const list =
+		options ??
+		(info.options ?? []).map((v) => ({
+			value: v as T,
+			label: t(`options.${field}.${v}`, { defaultValue: v }),
+		}));
+	const help = t(`fields.${field}.help`, { defaultValue: "" });
 	return (
-		<FieldShell id={id} label={info.label} help={info.help} errors={errors}>
+		<FieldShell
+			id={id}
+			label={labelOverride ?? t(`fields.${field}.label`)}
+			help={help || undefined}
+			errors={errors}
+		>
 			<Select value={value} onValueChange={(v) => onChange(v as T)}>
 				<SelectTrigger
 					id={id}
 					className="w-full"
-					aria-describedby={describedBy(id, Boolean(info.help), errors)}
+					aria-describedby={describedBy(id, Boolean(help), errors)}
 					aria-invalid={Boolean(errors?.length)}
 				>
 					<SelectValue />
 				</SelectTrigger>
 				<SelectContent>
-					{(Object.entries(options) as Array<[T, string]>).map(
-						([key, label]) => (
-							<SelectItem key={key} value={key}>
-								{label}
-							</SelectItem>
-						),
-					)}
+					{list.map((o) => (
+						<SelectItem key={o.value} value={o.value}>
+							{o.label}
+						</SelectItem>
+					))}
 				</SelectContent>
 			</Select>
 		</FieldShell>
@@ -255,22 +316,29 @@ export function SelectField<T extends string>({
 }
 
 export function SwitchField({
-	info,
+	field,
 	checked,
 	onChange,
 }: {
-	info: Pick<FieldInfo, "label" | "help">;
+	field: FieldKey;
 	checked: boolean;
 	onChange: (checked: boolean) => void;
 }) {
+	const { t } = useTranslation();
 	const id = useId();
+	const help = t(`fields.${field}.help`, { defaultValue: "" });
 	return (
-		<FieldShell id={id} label={info.label} help={info.help} inline>
+		<FieldShell
+			id={id}
+			label={t(`fields.${field}.label`)}
+			help={help || undefined}
+			inline
+		>
 			<Switch
 				id={id}
 				checked={checked}
 				onCheckedChange={onChange}
-				aria-describedby={info.help ? `${id}-help` : undefined}
+				aria-describedby={help ? `${id}-help` : undefined}
 			/>
 		</FieldShell>
 	);
@@ -285,6 +353,7 @@ export function TextField({
 	errors,
 	maxLength,
 	placeholder,
+	mono,
 }: {
 	label: string;
 	value: string;
@@ -294,6 +363,7 @@ export function TextField({
 	errors?: string[];
 	maxLength?: number;
 	placeholder?: string;
+	mono?: boolean;
 }) {
 	const id = useId();
 	const shared = {
@@ -314,7 +384,11 @@ export function TextField({
 					className="min-h-16 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 				/>
 			) : (
-				<Input {...shared} onChange={(e) => onChange(e.target.value)} />
+				<Input
+					{...shared}
+					onChange={(e) => onChange(e.target.value)}
+					className={mono ? "font-mono" : undefined}
+				/>
 			)}
 		</FieldShell>
 	);

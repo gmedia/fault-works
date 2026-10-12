@@ -1,0 +1,1353 @@
+{
+	"common": {
+		"on": "aktif",
+		"off": "nonaktif",
+		"none": "tidak ada",
+		"never": "tidak pernah",
+		"auto": "otomatis",
+		"cancel": "Batal",
+		"undo": "Urungkan"
+	},
+	"units": {
+		"s": "dtk",
+		"ms": "ms",
+		"req/s": "req/dtk",
+		"requests": "request",
+		"slots": "slot",
+		"probes": "probe",
+		"attempts": "percobaan",
+		"calls": "panggilan",
+		"%": "%",
+		"x": "×"
+	},
+	"time": {
+		"justNow": "baru saja"
+	},
+	"nav": {
+		"experiments": "Eksperimen",
+		"compare": "Bandingkan",
+		"guide": "Panduan model",
+		"skip": "Lompat ke konten",
+		"home": "Beranda FaultWorks",
+		"main": "Navigasi utama",
+		"breadcrumb": "Jejak navigasi",
+		"experimentsShort": "Eksperimen",
+		"compareShort": "Bandingkan",
+		"guideShort": "Panduan"
+	},
+	"language": {
+		"label": "Bahasa"
+	},
+	"theme": {
+		"label": "Tema",
+		"light": "Terang",
+		"dark": "Gelap",
+		"system": "Ikuti sistem"
+	},
+	"footer": {
+		"local": "FaultWorks berjalan sepenuhnya di browser-mu. Tidak ada data yang dikirim ke mana pun; eksperimen tersimpan hanya di browser ini.",
+		"model": "Hasilnya adalah keluaran model abstrak, bukan pengukuran sistem sungguhan. Open source dengan lisensi Apache-2.0:",
+		"source": "kode di GitHub"
+	},
+	"shortcuts": {
+		"title": "Pintasan keyboard",
+		"description": "Berlaku di halaman eksperimen saat kamu tidak sedang mengetik di kolom isian.",
+		"run": "Jalankan eksperimen",
+		"space": "Spasi",
+		"play": "Putar atau jeda replay",
+		"step": "Mundur atau maju satu jendela",
+		"jump": "Lompat ke perubahan status sebelumnya atau berikutnya",
+		"undo": "Urungkan",
+		"redo": "Ulangi",
+		"delete": "Hapus komponen atau link yang dipilih",
+		"list": "Tampilkan daftar ini"
+	},
+	"home": {
+		"title": "Eksperimen kegagalan",
+		"lead": "Rancang sistem kecil sesukamu, rusak satu bagiannya dengan sengaja, lalu lihat apa yang berubah. Setiap run bisa direproduksi dari file dan seed-nya.",
+		"import": "Impor",
+		"new": "Eksperimen baru",
+		"inBrowser": "Di browser ini",
+		"filter": "Saring berdasarkan judul atau pertanyaan",
+		"filterLabel": "Saring eksperimen",
+		"emptyTitle": "Belum ada eksperimen di browser ini",
+		"emptyBody": "Kembalikan contoh bawaan, impor file, atau mulai dari template.",
+		"restore": "Kembalikan contoh",
+		"noMatch": "Tidak ada eksperimen yang cocok dengan “{{query}}”.",
+		"clearFilter": "Hapus saringan",
+		"someRemoved": "Sebagian contoh bawaan sudah dihapus.",
+		"restoreThem": "Kembalikan"
+	},
+	"starter": {
+		"kicker": "Mulai dari sini · sekitar 5 menit",
+		"title": "Apa sebenarnya yang diselamatkan health check?",
+		"body": "Dua eksperimen yang hanya berbeda satu pengaturan. Server B mati selama 20 detik sementara klien mengirim 100 request per detik. Di yang pertama, load balancer tidak pernah memeriksa backend-nya. Di yang kedua, ia memeriksa setiap 5 detik dan butuh dua probe gagal, jadi crash baru disadari setelah 5 sampai 10 detik.",
+		"steps": [
+			"Jalankan eksperimen dasar dan lihat request yang gagal.",
+			"Jalankan versi dengan health check.",
+			"Bandingkan keduanya dan baca kenapa angkanya berbeda."
+		],
+		"note": "Di keduanya, server yang mati menolak koneksi, jadi request gagal seketika dan latensi nyaris tidak berubah. Untuk kegagalan yang juga membuat klien menunggu, buka contoh “Backend yang menggantung”.",
+		"open": "Buka eksperimen dasar",
+		"compare": "Bandingkan pasangannya",
+		"figure": "Garis waktu: Server B mati dari detik 20 sampai 40. Tanpa health check ia terus menerima trafik; dengan health check ia dikeluarkan setelah sekitar 5 detik.",
+		"noChecks": "Tanpa health check",
+		"withChecks": "Dengan health check",
+		"outOfRotation": "keluar dari rotasi"
+	},
+	"library": {
+		"meta": "{{nodes}} komponen · {{faults}} fault · {{rps}} req/dtk · diubah {{when}}",
+		"variantOf": "varian dari {{title}}",
+		"actionsFor": "Aksi untuk {{title}}",
+		"deleted": "“{{title}}” dihapus",
+		"restored": "{{count}} contoh bawaan dikembalikan"
+	},
+	"origin": {
+		"built-in": "Contoh",
+		"imported": "Impor",
+		"variant": "Varian",
+		"created": "Buatanmu"
+	},
+	"new": {
+		"title": "Eksperimen baru",
+		"description": "Pilih bentuk awalnya. Semuanya bisa kamu ubah nanti: tambah komponen, hubungkan sesukamu, dan rusak bagian mana pun.",
+		"template": "Template",
+		"titlePlaceholder": "mis. Lab 3: tiga server, satu mati",
+		"fileName": "Nama file:",
+		"untitled": "Eksperimen tanpa judul",
+		"untitledId": "eksperimen-baru",
+		"create": "Buat"
+	},
+	"templates": {
+		"blank": {
+			"title": "Kosong",
+			"description": "Hanya klien. Bangun semuanya sendiri."
+		},
+		"load-balanced": {
+			"title": "Load balancer",
+			"description": "Klien, load balancer, dua server dengan health check."
+		},
+		"api-database": {
+			"title": "API dan database",
+			"description": "Rantai dua tingkat: setiap request API memanggil database."
+		},
+		"cache-database": {
+			"title": "Cache di depan database",
+			"description": "API membaca lewat cache; yang luput diteruskan ke database."
+		},
+		"worker-queue": {
+			"title": "Antrean kerja",
+			"description": "API menaruh pekerjaan di antrean; worker memprosesnya dan memanggil database."
+		},
+		"microservices": {
+			"title": "Microservice",
+			"description": "Load balancer, dua API, layanan auth bersama, dan database bersama."
+		}
+	},
+	"defaults": {
+		"client": "Klien",
+		"load-balancer": "Load balancer",
+		"service": "Service",
+		"database": "Database",
+		"cache": "Cache",
+		"queue": "Antrean kerja",
+		"api": "API",
+		"auth": "Auth",
+		"worker": "Worker",
+		"server": "Server {{letter}}",
+		"assumptions": [
+			"Model abstrak di tingkat request: tidak ada TCP, TLS, paket, atau semantik proxy HTTP sungguhan.",
+			"Setiap komponen punya slot konkurensi tetap dan antrean FIFO; tidak ada model CPU, memori, atau GC.",
+			"Probe health check melewati antrean dan dijawab seketika saat komponen hidup.",
+			"Komponen tidak tahu kalau pemanggilnya sudah menyerah; pekerjaan tetap diselesaikan dan jawabannya dibuang.",
+			"Angka-angka di sini adalah masukan skenario, bukan pengukuran performa produk mana pun."
+		]
+	},
+	"kinds": {
+		"client": "Klien",
+		"load-balancer": "Load balancer",
+		"service": "Service",
+		"database": "Database",
+		"cache": "Cache",
+		"queue": "Antrean kerja"
+	},
+	"kindHints": {
+		"load-balancer": "membagi trafik ke beberapa backend",
+		"service": "slot, antrean, memanggil komponen lain",
+		"database": "service dengan pool koneksi",
+		"cache": "menjawab sebagian dari memori",
+		"queue": "menjawab cepat, mengerjakan belakangan"
+	},
+	"faultKinds": {
+		"node-failure": {
+			"label": "Komponen mati",
+			"short": "mati",
+			"help": "Komponen crash pada waktu tertentu. Pekerjaan yang sedang berjalan hilang; saat pulih, antreannya kosong."
+		},
+		"slowdown": {
+			"label": "Melambat",
+			"short": "lambat",
+			"help": "Waktu layanan komponen dikalikan sebuah faktor dan/atau ditambah waktu tetap selama jendela waktu tertentu."
+		},
+		"error-rate": {
+			"label": "Tingkat error",
+			"short": "error",
+			"help": "Sebagian panggilan yang tiba di komponen langsung gagal dengan error, misalnya bug yang hanya muncul di sebagian request."
+		},
+		"capacity": {
+			"label": "Kapasitas turun",
+			"short": "kapasitas",
+			"help": "Konkurensi komponen turun ke angka tertentu, misalnya separuh instansinya hilang."
+		},
+		"link-latency": {
+			"label": "Latensi link",
+			"short": "latensi",
+			"help": "Latensi tambahan satu arah pada sebuah link, misalnya jaringan yang padat."
+		},
+		"link-loss": {
+			"label": "Link putus sebagian",
+			"short": "putus",
+			"help": "Sebagian panggilan lewat link hilang: tidak pernah sampai dan menunggu sampai timeout pemanggil."
+		},
+		"cache-flush": {
+			"label": "Cache dikosongkan",
+			"short": "flush",
+			"help": "Cache tidak menjawab apa pun dari memori selama jendela waktu ini (cache dingin, restart, atau flush)."
+		}
+	},
+	"fields": {
+		"worker.capacity": {
+			"label": "Konkurensi",
+			"help": "Berapa banyak request yang dikerjakan komponen pada saat yang sama."
+		},
+		"worker.queueCapacity": {
+			"label": "Ukuran antrean",
+			"help": "Request yang boleh menunggu slot kosong. Saat antrean penuh, request baru ditolak."
+		},
+		"worker.serviceTimeMs": {
+			"label": "Waktu layanan",
+			"help": "Waktu satu request menempati slot untuk pekerjaan komponen ini sendiri, di luar menunggu komponen lain. Dengan distribusi eksponensial ini adalah rata-ratanya."
+		},
+		"worker.serviceTimeDistribution": {
+			"label": "Distribusi waktu layanan",
+			"help": "Tetap memberi setiap request waktu yang sama. Eksponensial mengundi waktu acak per request dari seed."
+		},
+		"queue.consumers": {
+			"label": "Jumlah worker",
+			"help": "Berapa pekerjaan yang diproses bersamaan."
+		},
+		"queue.backlog": {
+			"label": "Batas backlog",
+			"help": "Pekerjaan yang boleh menunggu di antrean. Saat penuh, permintaan baru ditolak."
+		},
+		"cache.hitRatio": {
+			"label": "Rasio hit",
+			"help": "Bagian pencarian yang dijawab dari memori tanpa memanggil komponen di belakangnya."
+		},
+		"balancer.algorithm": {
+			"label": "Algoritma",
+			"help": "Cara memilih backend. Round robin bergiliran; koneksi tersedikit memilih yang paling sedikit panggilan terbukanya; acak diundi dari seed."
+		},
+		"balancer.retries": {
+			"label": "Coba ulang ke backend lain",
+			"help": "Percobaan tambahan ke backend lain ketika sebuah backend menggagalkan panggilan."
+		},
+		"healthCheck.enabled": {
+			"label": "Health check",
+			"help": "Saat nonaktif, load balancer terus mengirim ke setiap backend, termasuk yang sudah mati."
+		},
+		"healthCheck.intervalMs": {
+			"label": "Interval probe",
+			"help": "Jeda antar-probe ke tiap backend. Interval lebih panjang mendeteksi kegagalan lebih lambat."
+		},
+		"healthCheck.probeTimeoutMs": {
+			"label": "Timeout probe",
+			"help": "Berapa lama probe ke backend yang menggantung menunggu sebelum dianggap gagal. Probe yang ditolak langsung gagal."
+		},
+		"healthCheck.unhealthyThreshold": {
+			"label": "Tidak sehat setelah",
+			"help": "Probe gagal berturut-turut sebelum backend dikeluarkan dari rotasi."
+		},
+		"healthCheck.healthyThreshold": {
+			"label": "Sehat setelah",
+			"help": "Probe berhasil berturut-turut sebelum backend yang pulih mendapat trafik lagi."
+		},
+		"link.latencyMs": {
+			"label": "Latensi jaringan",
+			"help": "Latensi satu arah yang ditambahkan pada setiap panggilan dan setiap jawaban lewat link ini."
+		},
+		"link.timeoutMs": {
+			"label": "Timeout panggilan",
+			"help": "Pemanggil menyerah setelah selama ini dan menganggap panggilan gagal. Kosongkan untuk menunggu sampai tenggat request."
+		},
+		"link.retries": {
+			"label": "Coba ulang",
+			"help": "Percobaan tambahan setelah panggilan lewat link ini gagal. Hati-hati: retry saat komponen di belakang sedang sakit bisa memperparah."
+		},
+		"breaker.enabled": {
+			"label": "Circuit breaker",
+			"help": "Setelah sejumlah kegagalan berturut-turut, panggilan langsung ditolak selama jeda tertentu, lalu satu panggilan percobaan dilepas."
+		},
+		"breaker.failureThreshold": {
+			"label": "Terbuka setelah",
+			"help": "Panggilan gagal berturut-turut sebelum breaker terbuka."
+		},
+		"breaker.openMs": {
+			"label": "Lama terbuka",
+			"help": "Lama breaker menolak panggilan sebelum melepas satu panggilan percobaan."
+		},
+		"workload.arrival": {
+			"label": "Pola kedatangan",
+			"help": "Konstan mengirim request pada jarak persis sama. Poisson mengundi jeda acak dari seed dengan rata-rata yang sama."
+		},
+		"workload.offeredRps": {
+			"label": "Laju request",
+			"help": "Request yang dikirim klien per detik, berhasil atau tidak."
+		},
+		"workload.startMs": {
+			"label": "Trafik mulai pada",
+			"help": "Waktu simulasi saat klien mulai mengirim."
+		},
+		"workload.durationMs": {
+			"label": "Lama trafik",
+			"help": "Berapa lama klien terus mengirim dengan laju ini."
+		},
+		"workload.timeoutMs": {
+			"label": "Timeout klien",
+			"help": "Request yang belum dijawab setelah selama ini dihitung gagal. Jawaban yang datang belakangan dibuang."
+		},
+		"burst.atMs": {
+			"label": "Lonjakan mulai pada",
+			"help": "Waktu simulasi saat trafik tambahan mulai."
+		},
+		"burst.durationMs": {
+			"label": "Lama lonjakan",
+			"help": "Berapa lama trafik tambahan berlangsung."
+		},
+		"burst.extraRps": {
+			"label": "Laju tambahan",
+			"help": "Ditambahkan di atas laju dasar selama lonjakan."
+		},
+		"fault.kind": {
+			"label": "Jenis fault",
+			"help": ""
+		},
+		"fault.target": {
+			"label": "Komponen",
+			"help": "Komponen yang terkena."
+		},
+		"fault.targetLink": {
+			"label": "Link",
+			"help": "Link yang terkena."
+		},
+		"fault.atMs": {
+			"label": "Mulai pada",
+			"help": "Waktu simulasi saat fault mulai."
+		},
+		"fault.recoverAtMs": {
+			"label": "Pulih pada",
+			"help": "Waktu simulasi saat komponen hidup lagi dengan antrean kosong. Kosongkan agar tetap mati."
+		},
+		"fault.untilMs": {
+			"label": "Berakhir pada",
+			"help": "Waktu simulasi saat fault berhenti. Kosongkan agar berlangsung sampai akhir."
+		},
+		"fault.behavior": {
+			"label": "Perilaku saat mati",
+			"help": "Menolak: koneksi langsung ditolak (proses mati). Menggantung: tidak ada jawaban sampai pemanggil menyerah (host tak terjangkau)."
+		},
+		"fault.factor": {
+			"label": "Faktor perlambatan",
+			"help": "Waktu layanan dikalikan angka ini. 1 berarti tidak berubah."
+		},
+		"fault.addMs": {
+			"label": "Waktu tambahan",
+			"help": "Milidetik tetap yang ditambahkan ke setiap panggilan."
+		},
+		"fault.rate": {
+			"label": "Persentase",
+			"help": "Bagian panggilan yang terkena, diundi dari seed."
+		},
+		"fault.capacity": {
+			"label": "Kapasitas selama fault",
+			"help": "Konkurensi komponen selama jendela fault."
+		},
+		"run.seed": {
+			"label": "Seed",
+			"help": "Seed, masukan, dan versi engine yang sama selalu memberi hasil yang identik."
+		},
+		"run.horizonMs": {
+			"label": "Batas waktu",
+			"help": "Waktu simulasi saat run berhenti. Otomatis: akhir trafik ditambah satu timeout klien."
+		},
+		"run.sampleWindowMs": {
+			"label": "Jendela grafik",
+			"help": "Lebar bucket waktu untuk grafik. Tidak mengubah simulasi."
+		},
+		"errors": {
+			"required": "Isi angkanya.",
+			"notNumber": "“{{text}}” bukan angka.",
+			"integer": "Gunakan bilangan bulat.",
+			"requiredUnit": "Isi angkanya dalam {{unit}}."
+		}
+	},
+	"options": {
+		"worker.serviceTimeDistribution": {
+			"fixed": "Tetap",
+			"exponential": "Eksponensial (acak)"
+		},
+		"balancer.algorithm": {
+			"round-robin": "Round robin",
+			"least-connections": "Koneksi tersedikit",
+			"random": "Acak"
+		},
+		"workload.arrival": {
+			"constant": "Konstan",
+			"poisson": "Poisson (acak)"
+		},
+		"fault.behavior": {
+			"refuse": "Menolak koneksi",
+			"hang": "Menggantung (tanpa jawaban)"
+		},
+		"fault.kind": {
+			"node-failure": "Komponen mati",
+			"slowdown": "Melambat",
+			"error-rate": "Tingkat error",
+			"capacity": "Kapasitas turun",
+			"link-latency": "Latensi link",
+			"link-loss": "Link putus sebagian",
+			"cache-flush": "Cache dikosongkan"
+		}
+	},
+	"inspector": {
+		"settings": "Pengaturan",
+		"settingsDescription": "Ubah komponen, trafik, fault, dan catatan eksperimen.",
+		"tabs": {
+			"component": "Komponen",
+			"traffic": "Trafik",
+			"faults": "Fault",
+			"run": "Run",
+			"notes": "Catatan"
+		},
+		"problems": "masalah",
+		"pickComponent": "Pilih komponen di kanvas, atau dari daftar ini, untuk melihat dan mengubah pengaturannya.",
+		"allComponents": "Semua komponen",
+		"addComponent": "Tambah komponen",
+		"addDownstream": "Tambah komponen yang dipanggil dari sini",
+		"connectTo": "Hubungkan ke yang sudah ada",
+		"choose": "Pilih…",
+		"linksHint": "Link mengikuti arah panggilan: klien memanggil komponen pertama, dan setiap komponen memanggil semua komponen di belakangnya secara berurutan.",
+		"maxNodes": "Maksimal {{max}} komponen per eksperimen",
+		"name": "Nama",
+		"nameHelp": "Hanya nama tampilan. Id {{id}} yang dirujuk oleh fault dan file ekspor.",
+		"connections": "Panggilan keluar",
+		"noIncoming": "Belum ada yang memanggil komponen ini, jadi ia tidak akan pernah menerima trafik. Hubungkan dari komponen lain.",
+		"removeLinkTo": "Putuskan link ke {{target}}",
+		"removeComponent": "Hapus komponen",
+		"removed": "{{name}} dihapus",
+		"removedWithFaults": "{{count}} fault yang menargetkannya ikut dihapus. Urungkan dengan Ctrl+Z.",
+		"undoHint": "Urungkan dengan Ctrl+Z.",
+		"needOneComponent": "Eksperimen butuh paling tidak satu komponen selain klien.",
+		"clientSummary": "Klien mengirim {{rps}} req/dtk selama {{duration}} dan menyerah setelah {{timeout}}.",
+		"editTraffic": "Ubah trafik",
+		"routing": "Pembagian trafik",
+		"detection": "Deteksi kegagalan",
+		"detectionHint": "Perkiraan jeda deteksi. Komponen yang menolak koneksi disadari {{min}} sampai {{max}} setelah mati, tergantung posisi crash dalam siklus probe. Komponen yang menggantung butuh sampai {{probeTimeout}} lebih lama, karena tiap probe menunggu timeout-nya.",
+		"noDetectionHint": "Tanpa health check, load balancer tidak bisa menyadari backend yang mati. Setiap request yang dikirim ke sana gagal sampai komponen itu pulih.",
+		"capacity": "Kapasitas",
+		"capacityHint": "Paling banyak sekitar {{rps}} req/dtk ({{slots}} slot ÷ {{time}}{{avg}}). Lebih dari itu, antrean tumbuh.",
+		"queueCapacityHint": "Worker menyelesaikan sekitar {{rps}} pekerjaan/dtk ({{slots}} worker ÷ {{time}}{{avg}}). Lebih dari itu, backlog tumbuh.",
+		"onAverage": " rata-rata",
+		"link": "Link",
+		"linkHint": "Pengaturan ini berlaku untuk setiap panggilan dari komponen pertama ke komponen kedua.",
+		"network": "Jaringan",
+		"resilience": "Ketahanan",
+		"retriesNoTimeout": "Coba ulang tanpa timeout hanya berjalan ketika panggilan gagal seketika. Untuk mencoba ulang panggilan yang lambat, beri timeout.",
+		"linkRemoved": "Link diputus",
+		"removeLink": "Putuskan link",
+		"steadyTraffic": "Trafik tetap",
+		"trafficHint": "Sekitar {{requests}} request{{avg}} secara total.",
+		"entryCapacityHint": "{{name}} sanggup sekitar {{rps}} req/dtk, jadi trafik tetap memakai {{load}}% kapasitasnya.",
+		"bursts": "Lonjakan",
+		"burstsHelp": "Trafik tambahan di atas laju tetap untuk sementara.",
+		"noBursts": "Tidak ada lonjakan.",
+		"burst": "Lonjakan {{n}}",
+		"removeBurst": "Hapus lonjakan {{n}}",
+		"addBurst": "Tambah lonjakan",
+		"faultsIntro": "Fault mengubah perilaku satu komponen atau link pada waktu tertentu. Pilih jenisnya, lalu sasarannya.",
+		"noFaults": "Belum ada fault. Tanpa fault, eksperimen ini adalah acuan sistem sehat.",
+		"removeFault": "Hapus fault {{id}}",
+		"newFaultKind": "Jenis fault baru",
+		"addFault": "Tambah fault",
+		"noTargetForKind": "Belum ada komponen atau link yang cocok untuk jenis fault ini.",
+		"reproducibility": "Reproduksibilitas",
+		"anotherSeed": "Coba seed lain",
+		"seedHint": "Seed hanya berpengaruh pada bagian yang acak: kedatangan Poisson, waktu layanan eksponensial, cache, pemilihan acak, dan fault berbasis persentase. Tanpa itu, semua seed memberi hasil yang sama.",
+		"time": "Waktu"
+	},
+	"notes": {
+		"title": "Judul",
+		"question": "Pertanyaan",
+		"questionHelp": "Satu hal yang harus dijawab eksperimen ini.",
+		"description": "Deskripsi",
+		"expected": "Pengamatan yang diharapkan",
+		"expectedHelp": "Hipotesis untuk belajar, satu per baris. Ditampilkan di samping hasil, tapi tidak pernah dihitung atau dicek otomatis.",
+		"assumptions": "Asumsi",
+		"assumptionsHelp": "Penyederhanaan yang dipakai model ini, satu per baris. Ikut diekspor bersama setiap hasil.",
+		"id": "Nama file (id)",
+		"idHelp": "File ekspor bernama {{id}}.experiment.json. Fault dan perbandingan merujuk ke id ini, jadi ganti sebelum dibagikan.",
+		"idTaken": "Eksperimen lain sudah memakai {{id}}.",
+		"renamed": "Diganti menjadi {{id}}",
+		"renamedHint": "File ekspor kini bernama {{id}}.experiment.json."
+	},
+	"canvas": {
+		"addComponent": "Tambah komponen",
+		"hint": "Seret dari titik di sisi kanan komponen ke komponen lain untuk menghubungkannya. Klik link untuk mengatur timeout, retry, dan circuit breaker.",
+		"a11yNode": "Tekan Enter atau Spasi untuk memilih komponen ini dan membuka pengaturannya. Gunakan tombol panah untuk memindahkannya.",
+		"zoom": "Kontrol zoom kanvas",
+		"sending": "Mengirim {{rps}} req/dtk",
+		"clientPlan": "{{rps}} req/dtk selama {{duration}}",
+		"timeout": "timeout {{timeout}}",
+		"probes": "probe setiap {{interval}}",
+		"noHealthChecks": "tanpa health check",
+		"routingTo": "Mengirim ke {{n}} dari {{total}}",
+		"workerSpec": "{{slots}} slot · {{time}} · antrean {{queue}}",
+		"queueSpec": "{{consumers}} worker · {{time}} · backlog {{backlog}}",
+		"hit": "hit {{pct}}%",
+		"busy": "Sibuk",
+		"queue": "Antrean",
+		"backlog": "Backlog",
+		"edgeTimeout": "timeout {{ms}} ms",
+		"edgeRetries": "{{n}}× retry",
+		"edgeBreaker": "breaker",
+		"edgeLatency": "+{{ms}} ms",
+		"breakerOpen": "breaker terbuka",
+		"lost": "{{rps}} req/dtk · hilang"
+	},
+	"stacked": {
+		"layer": "Lapisan {{n}}",
+		"linksFrom": "Panggilan dari {{node}}"
+	},
+	"status": {
+		"up": {
+			"label": "Hidup",
+			"description": "Berjalan dan menerima trafik."
+		},
+		"degraded": {
+			"label": "Terganggu",
+			"description": "Berjalan, tetapi sedang terkena fault."
+		},
+		"down-routed": {
+			"label": "Mati, masih dikirimi",
+			"description": "Mati, tetapi load balancer belum sadar dan masih mengirim request ke sini."
+		},
+		"down-removed": {
+			"label": "Mati, dikeluarkan",
+			"description": "Mati, dan load balancer sudah mengeluarkannya dari rotasi."
+		},
+		"recovering": {
+			"label": "Hidup, belum dikirimi",
+			"description": "Sudah berjalan lagi, menunggu cukup probe berhasil untuk mendapat trafik."
+		}
+	},
+	"actions": {
+		"run": "Jalankan",
+		"runAgain": "Jalankan lagi",
+		"variant": "Buat varian",
+		"compare": "Bandingkan",
+		"compareOriginal": "Dengan aslinya ({{title}})",
+		"compareOther": "Dengan eksperimen lain (ini sebagai B)…",
+		"export": "Ekspor",
+		"more": "Aksi lainnya",
+		"reset": "Kembalikan ke contoh asli",
+		"resetDone": "Dikembalikan ke contoh asli",
+		"delete": "Hapus eksperimen"
+	},
+	"export": {
+		"experiment": "Eksperimen (.json)",
+		"share": "untuk dibagikan",
+		"fromResults": "Dari hasil saat ini",
+		"runFirst": "Jalankan dulu untuk mengekspor hasil",
+		"result": "Hasil beserta metrik (.json)",
+		"events": "Log event (.csv)"
+	},
+	"variant": {
+		"suffix": "varian",
+		"created": "Varian dibuat",
+		"createdHint": "Ubah satu pengaturan, jalankan, lalu bandingkan dengan aslinya.",
+		"descriptionPrompt": "Varian dari “{{title}}”. Tuliskan satu pengaturan yang kamu ubah dan alasannya."
+	},
+	"state": {
+		"running": "Sedang berjalan…",
+		"problems": "{{count}} masalah harus diperbaiki",
+		"notRun": "Belum dijalankan",
+		"stale": "Pengaturan berubah sejak run terakhir",
+		"current": "Hasil sesuai pengaturan ini",
+		"fixFirst": "Perbaiki dulu masalah yang tercantum di bawah",
+		"runFailed": "Run gagal.",
+		"runFinished": "Run selesai. {{succeeded}} dari {{offered}} request berhasil, {{failed}} gagal.",
+		"nothingToUndo": "Tidak ada yang bisa diurungkan",
+		"nothingToRedo": "Tidak ada yang bisa diulangi"
+	},
+	"phone": {
+		"build": "Rancang",
+		"replay": "Putar",
+		"results": "Hasil",
+		"screens": "Layar",
+		"runFirst": "Jalankan eksperimen dulu untuk memutar ulang jalannya simulasi."
+	},
+	"playback": {
+		"prevChange": "Perubahan status sebelumnya",
+		"back": "Mundur satu jendela",
+		"play": "Putar",
+		"pause": "Jeda",
+		"forward": "Maju satu jendela",
+		"nextChange": "Perubahan status berikutnya",
+		"position": "Posisi replay",
+		"valueText": "{{time}} dari {{total}}",
+		"speed": "Kecepatan replay"
+	},
+	"results": {
+		"heading": "Hasil",
+		"errorTitle": "Run tidak bisa diselesaikan",
+		"errorHint": "Pengaturanmu tidak berubah. Perbaiki masukannya atau coba lagi.",
+		"tryAgain": "Coba lagi",
+		"running": "Menjalankan simulasi…",
+		"noneTitle": "Belum ada hasil",
+		"noneBody": "Jalankan eksperimen untuk melihat nasib setiap request: garis waktu sukses dan gagal, latensi, antrean, dan penjelasan yang dibangun dari event simulasi. Butuh sekitar satu detik dan berjalan di browser-mu.",
+		"runExperiment": "Jalankan eksperimen",
+		"shortcut": "Pintasan:",
+		"staleTitle": "Pengaturan berubah sejak run ini.",
+		"staleBody": "Hasil di bawah masih menunjukkan pengaturan sebelumnya.",
+		"staleFix": "Perbaiki {{count}} masalah untuk menjalankan lagi.",
+		"fixFirst": "Perbaiki {{count}} masalah sebelum menjalankan",
+		"openTab": "Buka tab {{tab}}",
+		"tabs": {
+			"overview": "Sepanjang waktu",
+			"explain": "Apa yang terjadi",
+			"events": "Event",
+			"checks": "Pemeriksaan engine"
+		}
+	},
+	"summary": {
+		"failed": "Request gagal",
+		"ofOffered": "{{pct}} dari yang dikirim",
+		"byReason": "Kegagalan menurut sebab",
+		"origin": "Sebagian besar ({{pct}}) berasal dari {{node}}",
+		"succeeded": "Berhasil",
+		"ofOfferedCount": "{{pct}} dari {{offered}} dikirim",
+		"latency": "Latensi p50 / p95",
+		"latencyDetail": "request berhasil, n = {{n}}",
+		"noSuccess": "tidak ada request berhasil",
+		"endedP95": "p95 semua request yang selesai: {{value}}",
+		"p95Help": "p95 berarti 95 dari tiap 100 request selesai dalam waktu ini atau kurang.",
+		"detection": "Jeda deteksi",
+		"noCrash": "Tidak ada komponen mati di run ini",
+		"never": "Tidak pernah",
+		"noChecks": "Tidak ada health check yang mengawasinya",
+		"notDetected": "Tidak terdeteksi",
+		"recoveredFirst": "Pulih sebelum terdeteksi",
+		"beforeEnd": "Run berakhir lebih dulu",
+		"possible": "Kemungkinan dengan pengaturan ini: {{min}} sampai {{max}}",
+		"onTick": "(crash tepat pada probe, kasus tercepat)",
+		"inFlight": "Masih berjalan",
+		"inFlightSome": "belum ada hasil pada {{at}}; tidak dihitung sukses maupun gagal",
+		"inFlightNone": "semua request selesai sebelum {{at}}"
+	},
+	"series": {
+		"offered": "Dikirim",
+		"succeeded": "Berhasil",
+		"failed": "Gagal",
+		"p50": "p50, berhasil",
+		"p95": "p95, berhasil",
+		"endedP95": "p95, semua selesai (termasuk gagal)"
+	},
+	"charts": {
+		"requests": "Request per detik",
+		"requestsSub": "Dihitung per jendela {{window}} ms menurut waktu selesai (dikirim: menurut kedatangan)",
+		"latency": "Latensi",
+		"latencySub": "Persentil nearest-rank dari request yang selesai di tiap jendela. Timeout dihitung sebesar timeout penuh.",
+		"calls": "Panggilan per detik, per komponen",
+		"callsSub": "Panggilan yang tiba di tiap komponen, termasuk percobaan ulang",
+		"queue": "Antrean",
+		"queueSub": "Puncak request yang menunggu per jendela, per komponen",
+		"busy": "Slot sibuk",
+		"busySub": "Puncak slot terpakai per jendela, per komponen",
+		"shading": "Arsiran grafik"
+	},
+	"chart": {
+		"showChart": "Grafik",
+		"showTable": "Tabel",
+		"tableCaption": "{{title}}, per jendela {{window}}",
+		"window": "Jendela",
+		"noData": "tidak ada data"
+	},
+	"bands": {
+		"gap": "{{node}} mati, masih dikirimi ({{from}} – {{to}})",
+		"crashed": "{{node}} mati pada {{at}}",
+		"crashedShort": "{{node}} mati",
+		"removed": "{{node}} mati, dikeluarkan dari rotasi",
+		"detected": "{{node}} dianggap tidak sehat pada {{at}}",
+		"detectedShort": "{{node}} terdeteksi",
+		"recovered": "{{node}} pulih pada {{at}}",
+		"waitingHealthy": "{{node}} hidup, menunggu probe sehat",
+		"fault": "{{kind}} pada {{target}} ({{from}} – {{to}})",
+		"faultStart": "{{kind}} pada {{target}} mulai {{at}}",
+		"faultShort": "{{kind}}: {{target}}",
+		"breakerOpen": "Breaker {{link}} terbuka",
+		"legend": {
+			"gap": "Mati, tapi load balancer masih mengirim request ke sana",
+			"down": "Mati, dikeluarkan dari rotasi",
+			"off": "Hidup, menunggu probe sehat",
+			"fault": "Fault lain sedang aktif",
+			"breaker": "Circuit breaker terbuka",
+			"cursor": "Posisi replay (klik grafik untuk memindahkannya)"
+		}
+	},
+	"perNode": {
+		"title": "Per komponen",
+		"component": "Komponen",
+		"calls": "Panggilan",
+		"failedHere": "Gagal di sini",
+		"callLatency": "Latensi panggilan p50 / p95",
+		"late": "Jawaban terlambat",
+		"peakQueue": "Puncak antrean",
+		"busy": "Slot sibuk",
+		"extra": "Lainnya",
+		"hitRatio": "hit {{pct}}",
+		"jobs": "{{done}} pekerjaan selesai, {{failed}} gagal, tunggu terlama {{wait}}",
+		"note": "“Gagal di sini” menghitung request yang kegagalannya bermula di komponen itu. “Slot sibuk” adalah waktu slot terpakai sepanjang run."
+	},
+	"perLink": {
+		"title": "Per link",
+		"link": "Link",
+		"calls": "Panggilan",
+		"retries": "Percobaan ulang",
+		"failed": "Gagal",
+		"breakerOpens": "Breaker terbuka"
+	},
+	"explain": {
+		"title": "Apa yang terjadi",
+		"intro": "Dibangun dari event dan hitungan run ini. Ia menjelaskan apa yang dilakukan model, bukan kenapa sistem sungguhan akan berbuat demikian.",
+		"replayFrom": "Putar dari {{at}}",
+		"expectedIntro": "Ditulis bersama eksperimen sebagai hipotesis. Cocokkan sendiri dengan hasilnya; tidak dievaluasi otomatis.",
+		"noExpected": "Belum ada. Tambahkan di tab Catatan.",
+		"assumptions": "Asumsi model ({{count}})",
+		"tone": {
+			"good": "Baik",
+			"neutral": "Catatan",
+			"warning": "Perhatikan",
+			"critical": "Masalah"
+		}
+	},
+	"insight": {
+		"outcome": {
+			"title": "{{successPct}}% request berhasil",
+			"body": "{{succeeded}} dari {{offered}} request yang dikirim berhasil dan {{failed}} gagal.",
+			"body_inflight": "{{succeeded}} dari {{offered}} request yang dikirim berhasil dan {{failed}} gagal; {{inFlight}} masih berjalan ketika run berhenti pada {{measuredMs}}."
+		},
+		"origin": {
+			"title": "Kegagalan terutama bermula di {{node}}",
+			"body": "{{count}} dari semua request gagal ({{pct}}%) kegagalannya bermula di {{node}}: di sanalah request pertama kali ditolak, kehabisan waktu, atau hilang, meski klien melihatnya sebagai error dari komponen di depannya.",
+			"body_reason": "{{count}} dari semua request gagal ({{pct}}%) kegagalannya bermula di {{node}}, kebanyakan karena {{reason}} ({{reasonCount}}). Komponen di depannya hanya meneruskan kegagalan itu."
+		},
+		"crashDetected": {
+			"title": "{{node}} mati pada {{atMs}}",
+			"body_tick": "{{node}} mati pada {{atMs}}, {{behavior}}. Load balancer menganggapnya tidak sehat pada {{detectedAtMs}}, {{delayMs}} setelah crash. Itu jeda tersingkat yang mungkin dengan pengaturan ini, karena crash jatuh tepat pada probe; crash sesaat setelah probe butuh sampai {{maxMs}}. {{lost}} request gagal karena hilang saat crash atau dikirim ke sana sebelum kegagalannya disadari.",
+			"body_range": "{{node}} mati pada {{atMs}}, {{behavior}}. Load balancer menganggapnya tidak sehat pada {{detectedAtMs}}, {{delayMs}} setelah crash. Dengan pengaturan ini deteksi butuh {{minMs}} sampai {{maxMs}}, tergantung posisi crash dalam siklus probe. {{lost}} request gagal karena hilang saat crash atau dikirim ke sana sebelum kegagalannya disadari.",
+			"body_tick_restored": "{{node}} mati pada {{atMs}}, {{behavior}}. Load balancer menganggapnya tidak sehat pada {{detectedAtMs}}, {{delayMs}} setelah crash, jeda tersingkat yang mungkin karena crash jatuh tepat pada probe; crash sesaat setelah probe butuh sampai {{maxMs}}. {{lost}} request gagal sebelum itu disadari. Komponen ini pulih pada {{recoveredAtMs}} dan dapat trafik lagi pada {{restoredAtMs}}, {{restoreDelayMs}} setelah pulih.",
+			"body_range_restored": "{{node}} mati pada {{atMs}}, {{behavior}}. Load balancer menganggapnya tidak sehat pada {{detectedAtMs}}, {{delayMs}} setelah crash; dengan pengaturan ini deteksi butuh {{minMs}} sampai {{maxMs}}. {{lost}} request gagal sebelum itu disadari. Komponen ini pulih pada {{recoveredAtMs}} dan dapat trafik lagi pada {{restoredAtMs}}, {{restoreDelayMs}} setelah pulih.",
+			"body_tick_notRestored": "{{node}} mati pada {{atMs}}, {{behavior}}. Load balancer menganggapnya tidak sehat pada {{detectedAtMs}}, {{delayMs}} setelah crash (kasus tercepat; sampai {{maxMs}} mungkin terjadi). {{lost}} request gagal sebelum itu disadari. Komponen ini pulih pada {{recoveredAtMs}} tetapi belum dimasukkan lagi ke rotasi saat run berakhir.",
+			"body_range_notRestored": "{{node}} mati pada {{atMs}}, {{behavior}}. Load balancer menganggapnya tidak sehat pada {{detectedAtMs}}, {{delayMs}} setelah crash ({{minMs}} sampai {{maxMs}} mungkin terjadi). {{lost}} request gagal sebelum itu disadari. Komponen ini pulih pada {{recoveredAtMs}} tetapi belum dimasukkan lagi ke rotasi saat run berakhir."
+		},
+		"crashRecoveredFirst": {
+			"title": "{{node}} mati pada {{atMs}}",
+			"body": "{{node}} mati pada {{atMs}}, {{behavior}}, dan pulih pada {{recoveredAtMs}} sebelum health check sempat menyadarinya. {{lost}} request gagal selama itu."
+		},
+		"crashNeverDetected": {
+			"title": "{{node}} mati pada {{atMs}}",
+			"body": "{{node}} mati pada {{atMs}}, {{behavior}}. Health check belum sempat menganggapnya tidak sehat sampai run berakhir. {{lost}} request gagal karenanya."
+		},
+		"crashUnwatched": {
+			"title": "{{node}} mati pada {{atMs}}",
+			"body_recovered": "{{node}} mati pada {{atMs}}, {{behavior}}. Tidak ada health check yang mengawasinya, jadi trafik terus dikirim ke sana sampai pulih pada {{recoveredAtMs}}. {{lost}} request gagal karena hilang saat crash atau dikirim ke sana selagi mati.",
+			"body_down": "{{node}} mati pada {{atMs}}, {{behavior}}. Tidak ada health check yang mengawasinya, jadi trafik terus dikirim ke sana sampai akhir run. {{lost}} request gagal karena hilang saat crash atau dikirim ke sana selagi mati."
+		},
+		"fault": {
+			"slowdown": {
+				"title": "{{target}} melambat pada {{atMs}}",
+				"body": "Dari {{atMs}} sampai {{untilMs}} waktu layanan {{target}} lebih lama dari biasanya. Setiap komponen yang memanggilnya menahan slot lebih lama, sehingga antrean di depannya ikut tumbuh."
+			},
+			"error-rate": {
+				"title": "{{target}} mengembalikan error pada {{atMs}}",
+				"body": "Dari {{atMs}} sampai {{untilMs}} sebagian panggilan ke {{target}} langsung gagal. Komponen yang memanggilnya menyerah atau mencoba ulang, sesuai pengaturan link-nya."
+			},
+			"capacity": {
+				"title": "Kapasitas {{target}} turun pada {{atMs}}",
+				"body": "Dari {{atMs}} sampai {{untilMs}} {{target}} punya lebih sedikit slot. Pekerjaan yang sedang berjalan tetap selesai; yang baru mengantre atau ditolak."
+			},
+			"link-latency": {
+				"title": "Link {{target}} melambat pada {{atMs}}",
+				"body": "Dari {{atMs}} sampai {{untilMs}} setiap panggilan dan jawaban lewat {{target}} membawa latensi tambahan."
+			},
+			"link-loss": {
+				"title": "Link {{target}} kehilangan panggilan pada {{atMs}}",
+				"body": "Dari {{atMs}} sampai {{untilMs}} sebagian panggilan lewat {{target}} tidak pernah sampai. Pemanggil baru tahu setelah timeout-nya habis."
+			},
+			"cache-flush": {
+				"title": "{{target}} dikosongkan pada {{atMs}}",
+				"body": "Dari {{atMs}} sampai {{untilMs}} {{target}} tidak menjawab apa pun dari memori, jadi semua pencarian diteruskan ke komponen di belakangnya."
+			}
+		},
+		"failureMix": {
+			"title": "Sebab terbanyak: {{reason}}",
+			"body": "{{count}} dari {{failed}} kegagalan ({{pct}}%) beralasan “{{reason}}”.",
+			"body_others": "{{count}} dari {{failed}} kegagalan ({{pct}}%) beralasan “{{reason}}”. Lainnya: {{others}}."
+		},
+		"saturated": {
+			"title": "{{node}} kehabisan tempat",
+			"body": "Antrean {{node}} mencapai batasnya, {{queueCapacity}} request. Slotnya sibuk {{utilizationPct}}% dari lama run.",
+			"body_rejected": "Antrean {{node}} mencapai batasnya, {{queueCapacity}} request, dan {{rejected}} request ditolak. Slotnya sibuk {{utilizationPct}}% dari lama run."
+		},
+		"nearlySaturated": {
+			"title": "{{node}} nyaris jenuh",
+			"body": "Slot {{node}} sibuk {{utilizationPct}}% dari lama run; puncak antrean {{peakQueue}} dari {{queueCapacity}}."
+		},
+		"cache": {
+			"title": "{{node}} menjawab {{hitPct}}% dari memori",
+			"body": "Dari {{lookups}} pencarian, {{hitPct}}% dijawab tanpa memanggil komponen di belakangnya. Sisanya diteruskan."
+		},
+		"queue": {
+			"title": "{{node}} memproses {{done}} pekerjaan",
+			"body": "{{done}} pekerjaan selesai dan {{failed}} gagal. Backlog memuncak di {{peakBacklog}}; pekerjaan menunggu rata-rata {{meanWaitMs}} dan paling lama {{maxWaitMs}}, padahal klien sudah dijawab seketika."
+		},
+		"retries": {
+			"title": "Percobaan ulang melipatgandakan panggilan ke {{target}}",
+			"body": "Dari {{calls}} panggilan ke {{target}}, {{retries}} ({{pct}}%) adalah percobaan ulang. Saat komponen di belakang sedang lambat, retry menambah beban tepat ketika ia paling tidak sanggup."
+		},
+		"breaker": {
+			"title": "Circuit breaker {{source}} → {{target}} terbuka {{opens}} kali",
+			"body": "Selama terbuka, {{rejected}} panggilan langsung ditolak tanpa menunggu. Itu menggagalkan request lebih cepat, tetapi membebaskan slot {{source}} dan melindungi {{target}}."
+		},
+		"latencyFailuresSlow": {
+			"title": "Request gagal membuat klien menunggu paling lama",
+			"body": "Request berhasil butuh {{p50Ms}} di median dan {{p95Ms}} di p95 (n = {{n}}). Jika semua request yang selesai dihitung, termasuk yang gagal, p95-nya {{endedP95Ms}} (n = {{endedN}}): klien yang kena timeout menunggu penuh sebelum tahu request-nya gagal."
+		},
+		"latencyTail": {
+			"title": "Latensi punya ekor panjang",
+			"body": "Request berhasil butuh {{p50Ms}} di median dan {{p95Ms}} di p95 (n = {{n}}). Selisihnya berasal dari waktu menunggu di antrean."
+		},
+		"latencyFlat": {
+			"title": "Request berhasil konsisten cepat",
+			"body": "Request berhasil butuh {{p50Ms}} di median dan {{p95Ms}} di p95 (n = {{n}})."
+		},
+		"probes": {
+			"title": "Load balancer mengirim {{probes}} probe health check",
+			"body": "Dalam model ini probe gratis: melewati antrean dan tidak memakai kapasitas, jadi interval probe yang pendek hanya menampakkan manfaatnya. Probe sungguhan memakan sedikit waktu server dan jaringan."
+		},
+		"late": {
+			"title": "{{late}} jawaban datang terlambat",
+			"body": "Komponen menyelesaikan {{late}} pekerjaan setelah pemanggilnya menyerah. Pekerjaan itu memakai kapasitas tetapi hanya dihitung sebagai kegagalan."
+		},
+		"eventLimit": {
+			"title": "Run berhenti lebih awal",
+			"body": "Run mencapai batas event pada {{measuredMs}}. Hasil hanya mencakup bagian itu; perpendek trafik atau turunkan lajunya."
+		}
+	},
+	"reasons": {
+		"no-healthy-backend": {
+			"label": "Tidak ada backend sehat",
+			"description": "Load balancer tidak punya backend yang dianggap sehat untuk menerima request."
+		},
+		"refused": {
+			"label": "Ditolak",
+			"description": "Panggilan dikirim ke komponen yang sudah mati dan menolak koneksi."
+		},
+		"queue-full": {
+			"label": "Antrean penuh",
+			"description": "Semua slot sibuk dan antrean tidak punya tempat tersisa."
+		},
+		"lost-in-crash": {
+			"label": "Hilang saat crash",
+			"description": "Request sedang dilayani atau menunggu di antrean ketika komponennya mati."
+		},
+		"timeout": {
+			"label": "Timeout",
+			"description": "Tidak ada jawaban sebelum tenggat klien atau timeout panggilan."
+		},
+		"circuit-open": {
+			"label": "Breaker terbuka",
+			"description": "Circuit breaker sedang terbuka dan langsung menolak panggilan."
+		},
+		"injected-error": {
+			"label": "Error",
+			"description": "Komponen mengembalikan error karena fault tingkat error."
+		}
+	},
+	"breaker": {
+		"open": "breaker terbuka",
+		"half-open": "breaker setengah terbuka (percobaan)",
+		"closed": "breaker tertutup"
+	},
+	"events": {
+		"show": "Tampilkan",
+		"filters": {
+			"changes": "Perubahan status",
+			"failures": "Request gagal",
+			"calls": "Panggilan antar-komponen",
+			"late": "Jawaban terlambat",
+			"all": "Semua event"
+		},
+		"component": "Komponen",
+		"allComponents": "Semua komponen",
+		"traceRequest": "Lacak request #",
+		"tracePlaceholder": "mis. 2001",
+		"count": "{{formatted}} event",
+		"wholeNumber": "Masukkan nomor request bulat",
+		"truncated": "Run ini menghasilkan lebih banyak event request daripada yang disimpan tabel. Perubahan status lengkap; event request yang belakangan tidak tercantum. Metrik tidak terpengaruh.",
+		"time": "Waktu",
+		"event": "Event",
+		"detail": {
+			"failed": "{{reason}} setelah {{latency}}",
+			"succeeded": "dalam {{latency}}",
+			"attempt": "percobaan ke-{{n}}",
+			"ok": "ok",
+			"routed": "ke {{to}}",
+			"waited": "menunggu {{latency}} di antrean",
+			"noWait": "tanpa menunggu",
+			"depth": "kedalaman antrean {{depth}}",
+			"evictedQueue": "sedang menunggu di antrean",
+			"evictedService": "sedang dilayani",
+			"hit": "hit",
+			"miss": "miss",
+			"jobFailed": "gagal",
+			"probeFailed": "gagal",
+			"backInRotation": "masuk rotasi lagi",
+			"removedFromRotation": "dikeluarkan dari rotasi"
+		},
+		"noRequest": "Tidak ada request #{{req}} di run ini.",
+		"noEvents": "Tidak ada event jenis ini di run ini.",
+		"list": "Event simulasi",
+		"jump": "Pindahkan replay ke saat ini",
+		"ordering": "Waktu adalah waktu simulasi. Event pada saat yang sama diurutkan menurut urutan tetap engine: fault, hasil probe, transfer, penyelesaian, timeout, lalu kedatangan.",
+		"kinds": {
+			"arrival": "Tiba",
+			"succeeded": "Berhasil",
+			"failed": "Gagal",
+			"late-response": "Jawaban terlambat dibuang",
+			"call-start": "Panggilan mulai",
+			"call-end": "Panggilan selesai",
+			"routed": "Diarahkan",
+			"enqueued": "Mengantre",
+			"service-start": "Layanan mulai",
+			"service-end": "Layanan selesai",
+			"evicted": "Dibuang karena crash",
+			"cache-hit": "Pencarian cache",
+			"job-start": "Pekerjaan mulai",
+			"job-done": "Pekerjaan selesai",
+			"node-down": "Komponen mati",
+			"node-up": "Komponen pulih",
+			"fault-start": "Fault mulai",
+			"fault-end": "Fault berakhir",
+			"probe": "Probe health check",
+			"health-changed": "Status sehat berubah",
+			"breaker": "Circuit breaker"
+		},
+		"detailColumn": "Detail"
+	},
+	"checks": {
+		"title": "Pemeriksaan model: {{passed}} dari {{total}} lolos",
+		"intro": "Diperiksa dari aliran event, terpisah dari pembukuan engine, setelah setiap run. Kegagalan di sini berarti bug di engine, bukan di eksperimenmu.",
+		"passed": "Lolos",
+		"failedLabel": "Gagal",
+		"items": {
+			"conservation": "Setiap request terhitung",
+			"single-terminal": "Setiap request berakhir tepat sekali",
+			"capacity": "Slot sibuk tidak pernah melebihi konkurensi",
+			"queue-bounds": "Antrean tetap antara 0 dan batasnya",
+			"monotonic-time": "Waktu simulasi tidak pernah mundur"
+		},
+		"reproducibility": "Reproduksibilitas",
+		"reproIntro": "Pengaturan, seed, dan versi engine yang sama memberi jejak event yang identik di mesin mana pun. Untuk mengecek salinan, bandingkan digest perilaku (mengabaikan id, judul, dan catatan) dan sidik jari jejak. Digest file juga mencakup nama dan catatan, jadi berubah saat salinan diganti namanya.",
+		"engine": "Engine",
+		"metrics": "Definisi metrik",
+		"fileDigest": "Digest file",
+		"events": "Event",
+		"took": "Lama run",
+		"tookValue": "{{ms}} ms waktu nyata (bukan bagian dari hasil)",
+		"runAgain": "Jalankan lagi dan bandingkan",
+		"identical": "Identik. Run kedua menghasilkan jejak {{digest}} dan metrik yang sama.",
+		"different": "Hasil berbeda ({{digest}}). Ini bug determinisme; tolong laporkan beserta file eksperimen yang diekspor."
+	},
+	"verify": {
+		"title": "Pemeriksaan file hasil",
+		"dismiss": "Tutup pemeriksaan file",
+		"rerunning": "Menjalankan ulang eksperimen dari {{source}} untuk memeriksa hasilnya…",
+		"stale": "Pengaturan diubah setelah impor, jadi hasil ini tidak bisa lagi dicocokkan dengan {{source}}.",
+		"behaviorDigest": "Digest perilaku",
+		"traceDigest": "Sidik jari jejak",
+		"ok": "Tereproduksi: run ini cocok dengan {{source}}.",
+		"nothingToCheck": "{{source}} tidak punya digest untuk dicocokkan.",
+		"mismatch": "Tidak cocok dengan {{source}}: {{fields}} berbeda.",
+		"inFile": "Di file",
+		"thisRun": "Run ini",
+		"engineDiffers": "File dibuat oleh engine {{file}}; ini engine {{here}}. Versi engine yang berbeda sah-sah saja memberi jejak berbeda."
+	},
+	"rows": {
+		"offered": "Dikirim",
+		"succeeded": "Berhasil",
+		"failed": "Gagal",
+		"success-ratio": "Rasio berhasil",
+		"in-flight": "Masih berjalan di akhir",
+		"timed-out": "Timeout",
+		"p50": "Latensi p50 (berhasil)",
+		"p95": "Latensi p95 (berhasil)",
+		"p99": "Latensi p99 (berhasil)",
+		"ended-mean": "Latensi rata-rata (semua yang selesai)",
+		"failed-wait": "Waktu klien terbuang pada request gagal",
+		"ended-p95": "Latensi p95 (semua yang selesai)",
+		"success-rate": "Penyelesaian berhasil",
+		"calls": "Panggilan antar-komponen",
+		"late": "Jawaban terlambat dibuang",
+		"detection": "Jeda deteksi pertama"
+	},
+	"scope": {
+		"run": "Run",
+		"traffic": "Trafik",
+		"burst": "Lonjakan",
+		"node": "Komponen",
+		"link": "Link",
+		"fault": "Fault"
+	},
+	"diff": {
+		"presence": "Keberadaan",
+		"order": "Urutan round robin",
+		"notPresent": "tidak ada"
+	},
+	"compare": {
+		"title": "Bandingkan dua eksperimen",
+		"lead": "Pilih dasar (A) dan varian (B). Perbandingan paling banyak mengajarkan saat hanya satu pengaturan perilaku yang berbeda.",
+		"docTitle": "Bandingkan: {{a}} vs {{b}}",
+		"a": "A · dasar",
+		"aHint": "Pembanding",
+		"b": "B · varian",
+		"bHint": "Versi dengan satu perubahan",
+		"swap": "Tukar A dan B",
+		"choose": "Pilih eksperimen",
+		"missing": "Salah satu eksperimen di tautan ini tidak ada di browser ini. Pilih yang lain di atas.",
+		"pickTwo": "Pilih dua eksperimen di atas. Keduanya dijalankan otomatis di browser-mu.",
+		"whatChanged": "Apa yang berubah dari A ke B",
+		"oneChange": "Tepat satu pengaturan perilaku yang berbeda, jadi perbedaan hasil bisa dikaitkan dengannya di dalam model ini.",
+		"noChange": "Tidak ada pengaturan perilaku yang berbeda. Hasilnya akan identik, jadi ini pemeriksaan reproduksibilitas.",
+		"manyChanges": "{{count}} pengaturan perilaku berbeda. Perbedaan hasil tidak bisa dikaitkan dengan salah satunya saja. Untuk perbandingan yang bersih, buat varian dan ubah satu hal saja.",
+		"setting": "Pengaturan",
+		"ignored": "Judul, catatan, nama, dan posisi kanvas diabaikan: tidak pernah memengaruhi hasil.",
+		"invalid": "“{{title}}” punya pengaturan yang harus diperbaiki sebelum bisa dijalankan. Buka untuk melihat masalahnya.",
+		"running": "Menjalankan kedua eksperimen…",
+		"results": "Hasil",
+		"exportJson": "Ekspor perbandingan (.json)",
+		"exportReport": "Laporan (.md)",
+		"metric": "Metrik",
+		"change": "Perubahan A → B",
+		"noChangeShort": "tidak berubah",
+		"points": "{{value}} poin",
+		"better": "(lebih baik)",
+		"worse": "(lebih buruk)",
+		"readNote": "(baca catatan di baris ini)",
+		"caution": {
+			"fewerSuccesses": "B punya lebih sedikit request berhasil. Request gagal tidak masuk angka ini, jadi sisa yang berhasil bisa tampak lebih cepat tanpa ada yang membaik.",
+			"moreSuccesses": "B menyelesaikan request yang gagal di A. Tambahan yang berhasil itu bisa lebih lambat, jadi angka yang lebih tinggi di sini belum tentu lebih buruk."
+		},
+		"percentileNote": "p50, p95, p99: separuh, 95, dan 99 dari tiap 100 request selesai dalam waktu ini atau kurang. Baris “berhasil” tidak memasukkan request gagal; baris “semua yang selesai” memasukkannya, dengan timeout dihitung sebesar timeout penuh.",
+		"charts": {
+			"failed": "Request gagal per detik",
+			"endedP95": "Latensi p95, semua request yang selesai",
+			"endedP95Sub": "Termasuk yang gagal; request timeout dihitung sebesar timeout penuh",
+			"p95": "Latensi p95, request berhasil"
+		},
+		"markers": "Garis vertikal di grafik:",
+		"bothSides": "A dan B",
+		"differentWindows": "Kedua eksperimen memakai jendela grafik berbeda, jadi garis waktunya tidak ditumpuk. Samakan jendela grafik di keduanya (tab Run) untuk membandingkannya sepanjang waktu.",
+		"whyA": "Kenapa A begini",
+		"whyB": "Kenapa B begini",
+		"caveatsTitle": "Sebelum menarik kesimpulan",
+		"caveats": [
+			"Kedua run berasal dari model abstrak tingkat request yang sama. Ia membandingkan rancangan di dalam model, bukan produk sungguhan.",
+			"Perbedaan hanya bisa dikaitkan dengan sebuah pengaturan jika pengaturan itu satu-satunya yang berubah.",
+			"Deteksi bergantung pada posisi crash dalam siklus probe. Crash tepat pada probe adalah kasus tercepat; geser waktu kegagalan untuk melihat kasus yang lebih lambat.",
+			"Dengan trafik atau waktu layanan acak, satu seed hanyalah satu sampel. Gunakan pemeriksaan seed di atas.",
+			"Asumsi tiap eksperimen tercantum di tab “Apa yang terjadi” dan di setiap file ekspor."
+		],
+		"reportTitle": "Perbandingan: {{a}} vs {{b}}",
+		"reproduce": "Mereproduksi",
+		"reproduceHint": "Impor file .comparison.json ke FaultWorks, atau eksperimen tiap sisi, lalu jalankan. Run-nya harus menghasilkan sidik jari berikut:",
+		"limitations": "Keterbatasan"
+	},
+	"narrative": {
+		"sameFailed": "Kedua run punya {{failed}} request gagal.",
+		"failed": "Request gagal berubah dari {{a}} di A menjadi {{b}} di B{{pct}}.",
+		"hiddenWait": "Persentil latensi sama di A dan B, tetapi klien menghabiskan {{a}} menunggu request gagal di A dan {{b}} di B. Persentil menyembunyikan ini: begitu lebih dari 5% request timeout di kedua run, p95 di keduanya sama dengan timeout.",
+		"fastFailures": "Latensi tidak berubah. Kegagalannya ditolak seketika (ditolak, antrean penuh, breaker, atau error), jadi nyaris tidak menambah waktu tunggu, dan request yang berhasil dilayani dengan cara yang sama. Backend yang menggantung alih-alih menolak justru mengubah latensi: coba contoh “Backend yang menggantung”.",
+		"sameLatency": "Persentil latensi sama di A dan B.",
+		"p95": "Latensi p95 request berhasil berubah dari {{a}} di A menjadi {{b}} di B.",
+		"calls": "Panggilan antar-komponen berubah dari {{a}} di A menjadi {{b}} di B; percobaan ulang atau breaker mengubah seberapa banyak pekerjaan yang sampai ke komponen di belakang.",
+		"detection": "Kegagalan pertama terdeteksi {{a}} di A dan {{b}} di B."
+	},
+	"sweep": {
+		"title": "Apakah ini karena seed?",
+		"deterministic": "Kedua eksperimen memakai trafik konstan dan tidak ada bagian acak, jadi seed tidak berpengaruh: setiap seed memberi angka yang persis sama. Perbedaan di atas sepenuhnya berasal dari pengaturan.",
+		"intro": "Paling tidak satu eksperimen punya bagian acak, jadi satu run hanyalah satu sampel. Ulangi keduanya dengan {{n}} seed yang sama ({{from}}–{{to}}) untuk melihat sebarannya.",
+		"run": "Ulangi keduanya dengan {{n}} seed",
+		"caption": "Hasil lintas {{n}} seed",
+		"colA": "A: median (min – maks)",
+		"colB": "B: median (min – maks)",
+		"bBetter": "B lebih baik dari A",
+		"wins": "{{wins}} dari {{n}}",
+		"ties": "({{ties}} seri)",
+		"note": "Seed dipasangkan: run ke-i di A dan run ke-i di B memakai seed yang sama. Sepuluh run menunjukkan sebaran; belum cukup untuk interval kepercayaan."
+	},
+	"import": {
+		"title": "Impor",
+		"description": "Pilih file .json FaultWorks atau tempel isinya: eksperimen, hasil (dijalankan ulang dan dicek), atau perbandingan (kedua sisi ikut masuk). File diperiksa terhadap skema dan tetap di browser ini.",
+		"drop": "Jatuhkan file di sini, atau",
+		"chooseFile": "Pilih file",
+		"paste": "Atau tempel JSON",
+		"pasted": "JSON yang ditempel",
+		"action": "Impor",
+		"failed": "Eksperimen ini belum bisa diimpor ({{count}} masalah)",
+		"more": "…dan {{count}} lagi.",
+		"suffix": "impor",
+		"reused": "“{{title}}” sudah ada di browser ini dengan pengaturan yang sama, jadi salinan yang ada dipakai.",
+		"renamed": "Eksperimen lain sudah memakai id {{from}}, jadi yang ini disimpan sebagai {{id}} dan ditandai “(impor)”.",
+		"upgraded": "Ditingkatkan dari skema {{from}}.",
+		"done": "“{{title}}” diimpor",
+		"resultDone": "Eksperimen di dalam file hasil “{{title}}” diimpor",
+		"resultHint": "Ia dijalankan ulang sekarang dan angkanya dicocokkan dengan file.",
+		"comparisonDone": "Perbandingan diimpor",
+		"comparisonHint": "Kedua eksperimen dijalankan ulang sekarang supaya hasilnya bisa dicek."
+	},
+	"missing": {
+		"title": "Eksperimen ini tidak ada di browser ini",
+		"body": "Tidak ada eksperimen dengan id {{id}} di sini. Mungkin sudah dihapus, atau dibuat di browser lain. Eksperimen dibagikan lewat ekspor dan impor file JSON-nya.",
+		"back": "Ke daftar eksperimen"
+	},
+	"notFound": {
+		"title": "Alamat ini tidak menuju ke mana-mana",
+		"body": "Tautannya mungkin menunjuk ke eksperimen yang sudah dihapus dari browser ini, atau salah ketik. Eksperimen tersimpan per browser, jadi tautan dari orang lain hanya berfungsi jika mereka juga mengirim file ekspornya.",
+		"guide": "Baca panduan model"
+	},
+	"error": {
+		"title": "Ada yang rusak di halaman ini",
+		"body": "Eksperimenmu tersimpan di browser ini dan tidak terpengaruh. Coba lagi, atau kembali ke daftar eksperimen."
+	},
+	"thumbnail": {
+		"alt": "{{nodes}} komponen, {{faults}} fault"
+	},
+	"limitations": {
+		"abstract": "Simulasi discrete-event abstrak di tingkat request; bukan jaringan tingkat paket atau model proxy tertentu.",
+		"singleSeed": "Satu seed adalah demonstrasi deterministik, bukan bukti statistik.",
+		"notMeasurement": "Metrik simulasi adalah keluaran model, bukan pengukuran sistem sungguhan."
+	},
+	"messages": {
+		"validation": {
+			"id": "Gunakan 1–48 huruf kecil, angka, atau tanda hubung, diawali huruf atau angka.",
+			"number": "{{field}} harus berupa angka.",
+			"integer": "{{field}} harus bilangan bulat.",
+			"gt": "{{field}} harus lebih dari {{value}} {{unit}}.",
+			"min": "{{field}} paling sedikit {{value}} {{unit}}.",
+			"max": "{{field}} paling banyak {{value}} {{unit}}.",
+			"title": "Beri judul eksperimen ini.",
+			"generic": "Masukan tidak valid: {{detail}}"
+		},
+		"graph": {
+			"duplicateNodeId": "Dua komponen memakai id “{{id}}”. Id harus unik.",
+			"oneClient": "Eksperimen butuh tepat satu klien; ini punya {{count}}.",
+			"duplicateLinkId": "Dua link memakai id “{{id}}”.",
+			"danglingLink": "Link {{source}} → {{target}} menunjuk ke komponen yang tidak ada.",
+			"selfLink": "{{node}} tidak boleh memanggil dirinya sendiri.",
+			"duplicateLink": "Link {{source}} → {{target}} tercantum dua kali.",
+			"intoClient": "{{source}} memanggil klien. Klien hanya mengirim, tidak pernah dipanggil.",
+			"balancerToBalancer": "Load balancer {{source}} memanggil load balancer {{target}}. Letakkan komponen di antara keduanya atau hubungkan backend-nya langsung.",
+			"clientOneLink": "Klien harus memanggil tepat satu komponen; sekarang {{count}}.",
+			"balancerNeedsBackend": "Load balancer {{node}} belum punya backend. Hubungkan ke paling tidak satu komponen.",
+			"cacheOneDownstream": "Cache {{node}} hanya boleh memanggil satu komponen di belakangnya.",
+			"unreachable": "{{node}} tidak dipanggil siapa pun, jadi tidak akan pernah menerima trafik. Hubungkan atau hapus.",
+			"cycle": "Panggilan berputar: {{cycle}}. Request tidak boleh bisa memanggil dirinya sendiri."
+		},
+		"fault": {
+			"duplicateId": "Dua fault memakai id “{{id}}”.",
+			"targetNotLink": "Fault “{{id}}” menyasar “{{target}}”, yang bukan link.",
+			"targetNotWorker": "Fault “{{id}}” menyasar “{{target}}”, yang bukan service, database, cache, atau antrean.",
+			"flushNeedsCache": "Fault “{{id}}” hanya berlaku untuk cache; “{{target}}” bukan cache.",
+			"capacityAboveNode": "Kapasitas selama fault ({{capacity}}) lebih besar dari kapasitas {{node}} ({{nodeCapacity}}).",
+			"endBeforeStart": "Akhir ({{end}} ms) harus setelah mulai ({{start}} ms).",
+			"overlappingCrash": "Dua kematian {{node}} tumpang tindih. Biarkan yang pertama pulih sebelum yang berikutnya mulai."
+		},
+		"budget": {
+			"horizon": "Run ini akan mencakup {{minutes}} menit; batasnya {{limitMinutes}} menit. Perpendek trafik atau turunkan batas waktu.",
+			"requests": "Ini akan mengirim sekitar {{requests}} request; batasnya {{limit}}. Turunkan laju atau perpendek durasinya."
+		},
+		"import": {
+			"tooLarge": "File ini {{kb}} KB; eksperimen dibatasi {{limitKb}} KB.",
+			"tooLargeBundle": "File ini {{kb}} KB, lebih besar dari yang pernah diekspor FaultWorks.",
+			"invalidJson": "Ini bukan JSON yang valid ({{detail}}).",
+			"notObject": "Eksperimen harus berupa objek JSON dengan field schemaVersion.",
+			"noVersion": "File ini tidak punya schemaVersion, jadi tidak bisa dibaca dengan aman. Ekspor lagi dari FaultWorks atau tambahkan versi skemanya.",
+			"unknownVersion": "File ini memakai skema versi {{version}}. FaultWorks versi ini membaca {{supported}} (dan meningkatkan {{migratable}}).",
+			"resultWithoutExperiment": "Ini file hasil FaultWorks, tetapi tidak berisi eksperimennya, jadi tidak bisa dijalankan ulang.",
+			"comparisonIncomplete": "File perbandingan ini kehilangan hasil A atau B."
+		},
+		"checks": {
+			"conservation": {
+				"ok": "dikirim = berhasil + gagal + masih berjalan"
+			},
+			"single-terminal": {
+				"ok": "tidak ada hasil ganda; jawaban terlambat dibuang"
+			},
+			"capacity": {
+				"ok": "per komponen, pada setiap event"
+			},
+			"queue-bounds": {
+				"ok": "per komponen, pada setiap event"
+			},
+			"monotonic-time": {
+				"ok": "stempel waktu event tidak pernah menurun"
+			},
+			"failed": "{{detail}}"
+		}
+	},
+	"guide": {
+		"title": "Panduan model",
+		"lead": "FaultWorks menjalankan simulasi discrete-event abstrak di tingkat request. Halaman ini menjelaskan persis apa yang dilakukan model itu, supaya kamu bisa menilai apa yang bisa dan tidak bisa disimpulkan dari hasilnya.",
+		"onThisPage": "Di halaman ini",
+		"sections": {
+			"what": "Apa yang disimulasikan",
+			"components": "Komponen",
+			"lifecycle": "Perjalanan sebuah request",
+			"faults": "Fault dan health check",
+			"resilience": "Timeout, retry, dan circuit breaker",
+			"metrics": "Definisi metrik",
+			"reproducibility": "Reproduksibilitas",
+			"checks": "Pemeriksaan kebenaran",
+			"limits": "Batasan dan yang tidak dimodelkan"
+		},
+		"what": [
+			"Eksperimen adalah graf berarah: satu klien dan sampai 11 komponen lain, dihubungkan oleh link yang mengikuti arah panggilan. Klien memanggil satu komponen; load balancer meneruskan ke salah satu backend-nya; service, database, dan cache mengerjakan pekerjaannya sendiri lalu memanggil setiap komponen di belakangnya secara berurutan; antrean kerja menjawab seketika dan mengerjakannya belakangan.",
+			"Waktu disimulasikan dalam mikrodetik bulat dan bergerak dari event ke event; tidak ada yang bergantung pada kecepatan komputermu atau kecepatan replay."
+		],
+		"components": {
+			"client": "Mengirim request dengan laju konstan (jarak persis sama) atau sebagai proses Poisson (jeda acak dari seed), ditambah lonjakan opsional. Setiap request punya tenggat: timeout klien.",
+			"load-balancer": "Memilih backend secara round robin, koneksi tersedikit, atau acak di antara backend yang dianggapnya sehat. Tanpa health check ia menganggap semua backend sehat selamanya. Bisa mencoba ulang ke backend lain saat sebuah backend menggagalkan panggilan.",
+			"service": "Punya sejumlah slot (konkurensi) dan antrean FIFO. Sebuah panggilan menempati slot selama waktu layanannya sendiri ditambah seluruh waktu menunggu komponen di belakangnya.",
+			"database": "Berperilaku seperti service; slotnya mewakili pool koneksi. Dipisahkan hanya supaya rancanganmu mudah dibaca.",
+			"cache": "Menjawab sebagian pencarian dari memori sesuai rasio hit (diundi dari seed). Yang luput diteruskan ke satu komponen di belakangnya.",
+			"queue": "Menyimpan pekerjaan dan langsung menjawab pemanggil (atau menolak saat backlog penuh). Sejumlah worker memproses backlog itu, memanggil komponen di belakangnya, dan hasilnya dicatat sebagai pekerjaan, bukan request."
+		},
+		"lifecycle": {
+			"steps": [
+				"Request tiba di komponen pertama lewat link dari klien. Jika link punya latensi, perjalanannya memakan waktu.",
+				"Load balancer memilih backend. Jika tidak ada yang dianggap sehat, request langsung gagal (tidak ada backend sehat).",
+				"Jika komponen sudah mati dengan perilaku menolak, panggilan langsung gagal (ditolak). Dengan menggantung, panggilan menunggu sampai timeout pemanggil.",
+				"Jika ada slot kosong, pekerjaan mulai; kalau tidak, panggilan mengantre; jika antrean penuh, panggilan gagal (antrean penuh).",
+				"Setelah pekerjaannya sendiri selesai, komponen memanggil setiap komponen di belakangnya secara berurutan sambil tetap memegang slot. Kegagalan di mana pun dalam rantai menggagalkan panggilan itu, kecuali link-nya mencoba ulang.",
+				"Request berhasil saat jawabannya sampai ke klien pada atau sebelum tenggat. Kalau tidak, ia gagal dengan timeout. Komponen tidak tahu kliennya menyerah: pekerjaan diselesaikan belakangan dan jawabannya dibuang."
+			],
+			"note": [
+				"Setiap request berakhir tepat sekali. Event pada saat yang sama diproses dengan urutan tetap: fault, hasil probe, transfer lewat link, penyelesaian, timeout, pengiriman probe, kedatangan. Jawaban yang tiba tepat pada tenggat dihitung tepat waktu."
+			]
+		},
+		"faults": {
+			"intro": [
+				"Fault mengubah perilaku satu komponen atau link selama jendela waktu. Tujuh jenis tersedia, dan beberapa fault boleh aktif bersamaan."
+			],
+			"health": [
+				"Dengan health check aktif, load balancer memeriksa setiap backend tiap interval, dimulai pada waktu 0. Probe melewati antrean dan dijawab seketika oleh komponen yang hidup. Setelah sejumlah probe gagal berturut-turut, backend dikeluarkan dari rotasi; setelah sejumlah probe berhasil, dimasukkan lagi. Probe gratis dalam model ini: tidak memakai kapasitas, jadi interval yang sangat pendek hanya menampakkan manfaatnya. Ini pemeriksaan aktif yang disederhanakan; tidak meniru proxy tertentu.",
+				"Jeda antara crash dan deteksinya adalah arsiran kuning di setiap garis waktu: komponen mati, tetapi masih menerima trafik."
+			]
+		},
+		"resilience": [
+			"Setiap link bisa punya timeout panggilan, percobaan ulang, dan circuit breaker. Timeout membuat pemanggil menyerah dan melepas slotnya; pekerjaan di komponen yang dipanggil tetap berlanjut dan jawabannya dibuang sebagai jawaban terlambat.",
+			"Percobaan ulang dilakukan seketika, tanpa jeda, ke komponen yang sama. Saat komponen itu sedang lambat, setiap request klien bisa menjadi beberapa panggilan: inilah badai retry.",
+			"Circuit breaker menghitung kegagalan berturut-turut lewat sebuah link. Mencapai ambangnya, breaker terbuka dan langsung menolak panggilan selama jeda tertentu. Setelah itu satu panggilan percobaan dilepas: berhasil menutup breaker, gagal membukanya lagi."
+		],
+		"metrics": {
+			"offered": {
+				"term": "Dikirim",
+				"def": "Request yang dibuat klien, berhasil atau tidak."
+			},
+			"succeeded": {
+				"term": "Berhasil",
+				"def": "Request yang jawabannya sampai pada atau sebelum tenggat."
+			},
+			"failed": {
+				"term": "Gagal",
+				"def": "Request yang berakhir tanpa berhasil, dirinci menurut sebab dan menurut komponen tempat kegagalannya bermula."
+			},
+			"inFlight": {
+				"term": "Masih berjalan",
+				"def": "Request tanpa hasil saat run berhenti. Tidak dihitung berhasil maupun gagal. Dikirim = berhasil + gagal + masih berjalan."
+			},
+			"latency": {
+				"term": "Latensi",
+				"def": "Waktu selesai dikurangi waktu tiba. Latensi “berhasil” tidak memasukkan request gagal. Latensi “semua yang selesai” memasukkannya, dengan timeout dihitung sebesar timeout penuh dan penolakan nyaris nol, jadi kegagalan cepat bisa membuatnya tampak lebih baik."
+			},
+			"percentiles": {
+				"term": "Persentil (p50, p95, p99)",
+				"def": "p95 adalah waktu yang di dalamnya 95 dari tiap 100 request selesai; p50 adalah median. Dipakai metode nearest-rank, jadi nilainya selalu sampel sungguhan, dan jumlah sampel (n) selalu ditampilkan."
+			},
+			"endedLatency": {
+				"term": "Latensi panggilan per komponen",
+				"def": "Waktu dari pengiriman panggilan sampai jawabannya diterima pemanggil, diukur di pemanggil, termasuk waktu komponen di belakangnya."
+			},
+			"failedWait": {
+				"term": "Waktu klien terbuang pada request gagal",
+				"def": "Jumlah waktu yang dihabiskan klien menunggu request yang akhirnya gagal. Persentil tidak bisa menunjukkan ini begitu lebih dari 5% request gagal."
+			},
+			"calls": {
+				"term": "Panggilan",
+				"def": "Setiap percobaan lewat sebuah link. Percobaan ulang dihitung sebagai panggilan tambahan, jadi panggilan bisa jauh melebihi request."
+			},
+			"detection": {
+				"term": "Jeda deteksi",
+				"def": "Waktu load balancer menganggap komponen tidak sehat dikurangi waktu komponen itu benar-benar mati."
+			},
+			"queue": {
+				"term": "Antrean, slot sibuk, backlog",
+				"def": "Nilai puncak dalam tiap jendela grafik, per komponen. Untuk antrean kerja, backlog adalah pekerjaan yang menunggu worker."
+			}
+		},
+		"reasonsTitle": "Sebab kegagalan",
+		"reproducibility": [
+			"Eksperimen, seed, dan versi engine yang sama menghasilkan jejak event yang identik, byte demi byte. Angka acak berasal dari pembangkit SFC32 berseed dengan aliran terpisah untuk kedatangan, tiap komponen, tiap load balancer, dan tiap link, jadi menambah komponen tidak mengubah angka acak yang dilihat komponen lain.",
+			"Setiap hasil membawa digest perilaku (SHA-256 dari pengaturan yang memengaruhi hasil) dan sidik jari seluruh jejak. Tab Pemeriksaan engine bisa menjalankan ulang eksperimen dan membandingkan keduanya.",
+			"Satu seed adalah demonstrasi deterministik, bukan bukti statistik. Saat eksperimen punya bagian acak, halaman Bandingkan bisa mengulang kedua sisi dengan sepuluh seed berpasangan."
+		],
+		"checks": {
+			"intro": [
+				"Setelah setiap run, aliran event diperiksa terpisah dari pembukuan engine:"
+			],
+			"items": [
+				"setiap request terhitung (dikirim = berhasil + gagal + masih berjalan);",
+				"setiap request berakhir tepat sekali, dan jawaban terlambat hanya muncul setelah pemanggil menyerah;",
+				"slot sibuk tidak pernah melebihi konkurensi;",
+				"antrean tetap antara nol dan batasnya;",
+				"waktu simulasi tidak pernah mundur."
+			],
+			"note": [
+				"Engine sendiri diuji dengan kasus acuan yang jawabannya dihitung tangan dan dengan uji berbasis properti atas ratusan eksperimen acak di setiap run pengujian."
+			]
+		},
+		"limits": {
+			"items": [
+				"Tidak ada TCP, TLS, paket, connection pooling, keep-alive, atau DNS.",
+				"Tidak ada backoff pada percobaan ulang, pembatasan laju, bulkhead, atau autoscaling.",
+				"Tidak ada CPU, memori, garbage collection, atau penjadwalan sistem operasi.",
+				"Tidak ada klaim kesetaraan dengan NGINX, HAProxy, Envoy, Kafka, atau produk mana pun."
+			],
+			"budget": "Run dibatasi {{minutes}} menit waktu simulasi, sekitar {{requests}} request yang dikirim, dan {{nodes}} komponen, supaya tab browser tidak pernah macet.",
+			"note": [
+				"Gunakan hasilnya untuk memahami dan mendiskusikan dinamika kegagalan. Jangan pakai sebagai rencana kapasitas, perkiraan SLA, atau prediksi perilaku produksi."
+			]
+		}
+	}
+}

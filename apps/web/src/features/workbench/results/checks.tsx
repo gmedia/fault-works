@@ -1,6 +1,7 @@
 import { canonicalJson } from "@faultworks/experiment";
 import { CircleCheck, CircleX, LoaderCircle, RefreshCcw } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "#/components/ui/button.tsx";
 import { formatCount } from "#/lib/format.ts";
 import { runInWorker } from "#/workers/client.ts";
@@ -14,6 +15,7 @@ type Verify =
 
 /** Correctness evidence for this run: invariants, digests, versions and a reproducibility check. */
 export function Checks({ result }: { result: RunResult }) {
+	const { t } = useTranslation();
 	const { checks, traceDigest, eventCount } = result.metrics;
 	const [verify, setVerify] = useState<Verify>({ state: "idle" });
 	const passed = checks.filter((c) => c.passed).length;
@@ -43,11 +45,10 @@ export function Checks({ result }: { result: RunResult }) {
 		<div className="grid min-w-0 grid-cols-1 gap-8 lg:grid-cols-2">
 			<section aria-labelledby="invariants-heading">
 				<h3 id="invariants-heading" className="font-medium text-sm">
-					Model checks: {passed} of {checks.length} passed
+					{t("checks.title", { passed, total: checks.length })}
 				</h3>
 				<p className="mt-1 text-muted-foreground text-xs">
-					Checked independently from the event stream after every run. A failure
-					here means a bug in the engine, not in your experiment.
+					{t("checks.intro")}
 				</p>
 				<ul className="mt-3 grid gap-2">
 					{checks.map((c) => (
@@ -66,11 +67,16 @@ export function Checks({ result }: { result: RunResult }) {
 							<div>
 								<p className="font-medium text-sm">
 									<span className="sr-only">
-										{c.passed ? "Passed: " : "Failed: "}
+										{c.passed ? t("checks.passed") : t("checks.failedLabel")}:{" "}
 									</span>
-									{c.label}
+									{t(`checks.items.${c.id}`)}
 								</p>
-								<p className="text-muted-foreground text-xs">{c.detail}</p>
+								<p className="text-muted-foreground text-xs">
+									{t(`messages.${c.detail.key}`, {
+										...c.detail.params,
+										defaultValue: c.detail.key,
+									})}
+								</p>
 							</div>
 						</li>
 					))}
@@ -83,35 +89,32 @@ export function Checks({ result }: { result: RunResult }) {
 			>
 				<div>
 					<h3 id="repro-heading" className="font-medium text-sm">
-						Reproducibility
+						{t("checks.reproducibility")}
 					</h3>
 					<p className="mt-1 text-muted-foreground text-xs">
-						Same settings, seed and engine version give the identical event
-						trace on any machine. To check a copy, compare the behavior digest
-						(it ignores ids, titles and notes) and the trace fingerprint. The
-						file digest also covers names and notes, so it changes when a copy
-						is renamed.
+						{t("checks.reproIntro")}
 					</p>
 				</div>
 				<dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-lg border p-3 text-xs">
-					<dt className="text-muted-foreground">Engine</dt>
+					<dt className="text-muted-foreground">{t("checks.engine")}</dt>
 					<dd className="font-mono">{result.engineVersion}</dd>
-					<dt className="text-muted-foreground">Metric definitions</dt>
+					<dt className="text-muted-foreground">{t("checks.metrics")}</dt>
 					<dd className="font-mono">{result.metricDefinitionsVersion}</dd>
 					<dt className="text-muted-foreground">Seed</dt>
 					<dd className="font-mono">{result.experiment.seed}</dd>
-					<dt className="text-muted-foreground">Behavior digest</dt>
+					<dt className="text-muted-foreground">
+						{t("verify.behaviorDigest")}
+					</dt>
 					<dd className="break-all font-mono">sha256:{result.runKey}</dd>
-					<dt className="text-muted-foreground">Trace fingerprint</dt>
+					<dt className="text-muted-foreground">{t("verify.traceDigest")}</dt>
 					<dd className="break-all font-mono">fnv1a32x2:{traceDigest}</dd>
-					<dt className="text-muted-foreground">File digest</dt>
+					<dt className="text-muted-foreground">{t("checks.fileDigest")}</dt>
 					<dd className="break-all font-mono">sha256:{result.inputDigest}</dd>
-					<dt className="text-muted-foreground">Events</dt>
+					<dt className="text-muted-foreground">{t("checks.events")}</dt>
 					<dd className="font-mono">{formatCount(eventCount)}</dd>
-					<dt className="text-muted-foreground">Run took</dt>
+					<dt className="text-muted-foreground">{t("checks.took")}</dt>
 					<dd className="font-mono">
-						{Math.round(result.durationMs)} ms of wall-clock time (not part of
-						the result)
+						{t("checks.tookValue", { ms: Math.round(result.durationMs) })}
 					</dd>
 				</dl>
 				<div className="grid gap-2">
@@ -126,21 +129,19 @@ export function Checks({ result }: { result: RunResult }) {
 						) : (
 							<RefreshCcw aria-hidden="true" />
 						)}
-						Run again and compare
+						{t("checks.runAgain")}
 					</Button>
 					<div aria-live="polite" className="text-sm">
 						{verify.state === "done" &&
 							(verify.identical ? (
 								<p className="flex items-center gap-2 text-ok">
 									<CircleCheck className="size-4" aria-hidden="true" />
-									Identical. The second run produced trace {verify.digest} and
-									the same metrics.
+									{t("checks.identical", { digest: verify.digest })}
 								</p>
 							) : (
 								<p className="flex items-center gap-2 text-down">
 									<CircleX className="size-4" aria-hidden="true" />
-									Different result ({verify.digest}). This is a determinism bug;
-									please report it with the exported experiment.
+									{t("checks.different", { digest: verify.digest })}
 								</p>
 							))}
 						{verify.state === "error" && (

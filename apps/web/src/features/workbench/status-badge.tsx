@@ -1,12 +1,20 @@
-import { CircleCheck, CircleDashed, CircleOff, OctagonX } from "lucide-react";
+import {
+	CircleCheck,
+	CircleDashed,
+	CircleOff,
+	OctagonX,
+	TriangleAlert,
+} from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "#/lib/utils.ts";
-import { type ServerStatus, STATUS_INFO } from "./state-at.ts";
+import type { NodeStatus } from "./state-at.ts";
 
 const STYLE: Record<
-	ServerStatus,
+	NodeStatus,
 	{ className: string; Icon: typeof CircleCheck }
 > = {
 	up: { className: "bg-ok-soft text-ok", Icon: CircleCheck },
+	degraded: { className: "bg-gap-soft text-gap", Icon: TriangleAlert },
 	"down-routed": { className: "gap-hatch text-gap", Icon: OctagonX },
 	"down-removed": { className: "bg-down-soft text-down", Icon: CircleOff },
 	recovering: { className: "bg-off-soft text-off", Icon: CircleDashed },
@@ -17,9 +25,10 @@ export function StatusBadge({
 	status,
 	className,
 }: {
-	status: ServerStatus;
+	status: NodeStatus;
 	className?: string;
 }) {
+	const { t } = useTranslation();
 	const { className: tone, Icon } = STYLE[status];
 	return (
 		<span
@@ -28,10 +37,10 @@ export function StatusBadge({
 				tone,
 				className,
 			)}
-			title={STATUS_INFO[status].description}
+			title={t(`status.${status}.description`)}
 		>
 			<Icon className="size-3" aria-hidden="true" />
-			{STATUS_INFO[status].label}
+			{t(`status.${status}.label`)}
 		</span>
 	);
 }

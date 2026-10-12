@@ -68,6 +68,14 @@
   --series-6: #008300;
   --series-7: #4a3aa7;
   --series-8: #e34948;
+
+  /* Component kinds share the series palette so a kind reads the same everywhere. */
+  --kind-service: #2a78d6;
+  --kind-database: #4a3aa7;
+  --kind-cache: #1baf7a;
+  --kind-queue: #eb6834;
+  --kind-load-balancer: #14171f;
+  --kind-client: #596171;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -117,6 +125,12 @@
     --series-6: #008300;
     --series-7: #9085e9;
     --series-8: #e66767;
+    --kind-service: #3987e5;
+    --kind-database: #9085e9;
+    --kind-cache: #199e70;
+    --kind-queue: #d95926;
+    --kind-load-balancer: #eef0f4;
+    --kind-client: #a2a9b6;
   }
 }
 
@@ -166,6 +180,12 @@
   --series-6: #008300;
   --series-7: #9085e9;
   --series-8: #e66767;
+  --kind-service: #3987e5;
+  --kind-database: #9085e9;
+  --kind-cache: #199e70;
+  --kind-queue: #d95926;
+  --kind-load-balancer: #eef0f4;
+  --kind-client: #a2a9b6;
 }
 
 @theme inline {
@@ -252,6 +272,66 @@
   .tabular {
     font-variant-numeric: tabular-nums;
   }
+  /* Replay: requests travelling along a link. Pure CSS so the simulation never depends on it. */
+  .flow-dot {
+    offset-path: path(var(--flow-path));
+    offset-rotate: 0deg;
+    animation: flow var(--flow-duration, 1.6s) linear infinite;
+    animation-delay: var(--flow-delay, 0s);
+    will-change: offset-distance;
+  }
+  @keyframes flow {
+    from {
+      offset-distance: 0%;
+      opacity: 0;
+    }
+    8% {
+      opacity: 1;
+    }
+    92% {
+      opacity: 1;
+    }
+    to {
+      offset-distance: 100%;
+      opacity: 0;
+    }
+  }
+  /* A component that just crashed: one short shake, then still. */
+  .crash-shake {
+    animation: crash-shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
+  @keyframes crash-shake {
+    10%,
+    90% {
+      transform: translateX(-1px);
+    }
+    20%,
+    80% {
+      transform: translateX(2px);
+    }
+    30%,
+    50%,
+    70% {
+      transform: translateX(-3px);
+    }
+    40%,
+    60% {
+      transform: translateX(3px);
+    }
+  }
+  /* A busy component: a soft pulse on its border while it is saturated. */
+  .pulse-ring {
+    animation: pulse-ring 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse-ring {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in oklab, var(--down) 45%, transparent);
+    }
+    50% {
+      box-shadow: 0 0 0 6px color-mix(in oklab, var(--down) 0%, transparent);
+    }
+  }
 }
 
 /* React Flow chrome mapped to tokens */
@@ -300,6 +380,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .flow-dot,
+  .crash-shake,
+  .pulse-ring {
+    animation: none !important;
+  }
   *,
   *::before,
   *::after {

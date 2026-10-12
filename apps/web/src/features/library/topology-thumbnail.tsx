@@ -1,9 +1,11 @@
-import { type Experiment, servers } from "@faultworks/experiment";
-import { serverColor } from "#/lib/series.ts";
+import type { Experiment } from "@faultworks/experiment";
+import { useTranslation } from "react-i18next";
+import { layerNodes } from "#/features/workbench/layers.ts";
 
 /**
- * Static sketch of an experiment's topology. Failing servers are drawn as open rings with a
- * broken link, mirroring the logo, so a list of experiments shows at a glance which ones break.
+ * Static sketch of an experiment's graph, laid out by depth from the client. Components with a
+ * scheduled fault are drawn as open rings, mirroring the logo, so a list shows at a glance which
+ * experiments break something.
  */
 export function TopologyThumbnail({
 	experiment,
@@ -12,63 +14,105 @@ export function TopologyThumbnail({
 	experiment: Experiment;
 	className?: string;
 }) {
-	const list = servers(experiment);
-	const failing = new Set(experiment.faults.map((f) => f.target));
-	const height = Math.max(60, list.length * 22 + 16);
-	const ys = list.map((_, i) => (height / (list.length + 1)) * (i + 1));
-	const mid = height / 2;
+	const { t } = useTranslation();
+	const layers = layerNodes(experiment);
+	const faulted = new Set(experiment.faults.map((f) => f.target));
+	const faultedLinks = new Set(
+		experiment.faults
+			.filter((f) => f.kind.startsWith("link-"))
+			.map((f) => f.target),
+	);
+	const width = Math.max(120, layers.length * 44);
+	const height = Math.max(
+		56,
+		Math.max(...layers.map((l) => l.length)) * 22 + 16,
+	);
+	const pos = new Map<string, { x: number; y: number }>();
+	layers.forEach((layer, depth) => {
+		const x = 12 + depth * ((width - 24) / Math.max(1, layers.length - 1));
+		layer.forEach((n, i) => {
+			pos.set(n.id, {
+				x: layers.length === 1 ? width / 2 : x,
+				y: (height / (layer.length + 1)) * (i + 1),
+			});
+		});
+	});
 	return (
 		<svg
-			viewBox={`0 0 120 ${height}`}
+			viewBox={`0 0 ${width} ${height}`}
 			className={className}
 			role="img"
-			aria-label={`Client, load balancer and ${list.length} server${list.length === 1 ? "" : "s"}${failing.size ? `; ${failing.size} with a scheduled failure` : ""}`}
+			aria-label={t("thumbnail.alt", {
+				nodes: experiment.model.nodes.length,
+				faults: experiment.faults.length,
+			})}
 		>
-			<line
-				x1="14"
-				y1={mid}
-				x2="52"
-				y2={mid}
-				stroke="var(--chart-axis)"
-				strokeWidth="1.5"
-			/>
-			{list.map((s, i) => {
-				const y = ys[i] as number;
-				const broken = failing.has(s.id);
+			{experiment.model.links.map((l) => {
+				const a = pos.get(l.source);
+				const b = pos.get(l.target);
+				if (!a || !b) return null;
 				return (
-					<g key={s.id}>
-						<line
-							x1="60"
-							y1={mid}
-							x2={broken ? 82 : 100}
-							y2={broken ? mid + (y - mid) * 0.55 : y}
-							stroke="var(--chart-axis)"
-							strokeWidth="1.5"
-						/>
-						{broken ? (
-							<circle
-								cx="104"
-								cy={y}
-								r="5"
-								fill="none"
-								stroke="var(--gap-band)"
-								strokeWidth="2"
-							/>
-						) : (
-							<circle cx="104" cy={y} r="5" fill={serverColor(i)} />
-						)}
-					</g>
+					<line
+						key={l.id}
+						x1={a.x}
+						y1={a.y}
+						x2={b.x}
+						y2={b.y}
+						stroke={
+							faultedLinks.has(l.id) ? "var(--gap-band)" : "var(--chart-axis)"
+						}
+						strokeWidth="1.5"
+						strokeDasharray={faultedLinks.has(l.id) ? "3 2" : undefined}
+					/>
 				);
 			})}
-			<circle cx="12" cy={mid} r="5" fill="var(--muted-foreground)" />
-			<rect
-				x="50"
-				y={mid - 7}
-				width="14"
-				height="14"
-				rx="3"
-				fill="var(--foreground)"
-			/>
+			{experiment.model.nodes.map((n) => {
+				const p = pos.get(n.id);
+				if (!p) return null;
+				if (n.kind === "client")
+					return (
+						<circle
+							key={n.id}
+							cx={p.x}
+							cy={p.y}
+							r="4.5"
+							fill="var(--muted-foreground)"
+						/>
+					);
+				if (n.kind === "load-balancer")
+					return (
+						<rect
+							key={n.id}
+							x={p.x - 6}
+							y={p.y - 6}
+							width="12"
+							height="12"
+							rx="3"
+							fill="var(--foreground)"
+						/>
+					);
+				if (faulted.has(n.id))
+					return (
+						<circle
+							key={n.id}
+							cx={p.x}
+							cy={p.y}
+							r="5"
+							fill="none"
+							stroke="var(--gap-band)"
+							strokeWidth="2"
+						/>
+					);
+				return (
+					<circle
+						key={n.id}
+						cx={p.x}
+						cy={p.y}
+						r="5"
+						fill={`var(--kind-${n.kind})`}
+					/>
+				);
+			})}
 		</svg>
 	);
 }

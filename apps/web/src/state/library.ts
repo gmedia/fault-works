@@ -1,16 +1,16 @@
 import {
-	BUILT_IN_EXPERIMENTS,
+	builtInExperiments,
 	cloneExperiment,
+	EXAMPLE_IDS,
 	type Experiment,
 	findBuiltIn,
+	type Locale,
 	uniqueId,
 } from "@faultworks/experiment";
 import { create } from "zustand";
-import {
-	createJSONStorage,
-	persist,
-	type StateStorage,
-} from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { detectLanguage } from "#/i18n/index.ts";
+import { safeStorage } from "./storage.ts";
 
 export type Origin = "built-in" | "imported" | "variant" | "created";
 
@@ -48,44 +48,22 @@ interface LibraryState {
 	redo(id: string): boolean;
 	remove(id: string): { entry: LibraryEntry; index: number } | null;
 	restoreEntry(entry: LibraryEntry, index: number): void;
-	createVariant(id: string): string | null;
-	/** Changes an experiment's id (its file name). Returns the new id, or null if it is taken or invalid. */
+	createVariant(
+		id: string,
+		label: string,
+		descriptionPrompt: string,
+	): string | null;
 	renameExperiment(id: string, nextId: string): string | null;
-	resetToBuiltIn(id: string): void;
-	restoreBuiltIns(): number;
+	resetToBuiltIn(id: string, locale: Locale): void;
+	restoreBuiltIns(locale: Locale): number;
 }
 
 const COALESCE_MS = 800;
 const HISTORY_LIMIT = 100;
 
-/** localStorage can throw (private mode, blocked storage); the app must still work in memory. */
-export const safeStorage: StateStorage = {
-	getItem: (name) => {
-		try {
-			return window.localStorage.getItem(name);
-		} catch {
-			return null;
-		}
-	},
-	setItem: (name, value) => {
-		try {
-			window.localStorage.setItem(name, value);
-		} catch {
-			// Quota or blocked storage: keep working in memory.
-		}
-	},
-	removeItem: (name) => {
-		try {
-			window.localStorage.removeItem(name);
-		} catch {
-			// ignore
-		}
-	},
-};
-
-function seedEntries(now: number) {
+function seedEntries(now: number, locale: Locale) {
 	const entries: Record<string, LibraryEntry> = {};
-	for (const experiment of BUILT_IN_EXPERIMENTS)
+	for (const experiment of builtInExperiments(locale))
 		entries[experiment.experimentId] = {
 			experiment: structuredClone(experiment),
 			origin: "built-in",
@@ -99,9 +77,9 @@ function seedEntries(now: number) {
 export const useLibrary = create<LibraryState>()(
 	persist(
 		(set, get) => ({
-			entries: seedEntries(Date.now()),
-			order: BUILT_IN_EXPERIMENTS.map((e) => e.experimentId),
-			seeded: BUILT_IN_EXPERIMENTS.map((e) => e.experimentId),
+			entries: seedEntries(Date.now(), detectLanguage()),
+			order: [...EXAMPLE_IDS],
+			seeded: [...EXAMPLE_IDS],
 			history: {},
 
 			add(experiment, origin, basedOn = null) {
@@ -237,6 +215,19 @@ export const useLibrary = create<LibraryState>()(
 				set({ entries: { ...state.entries, [id]: entry }, order });
 			},
 
+			createVariant(id, label, descriptionPrompt) {
+				const state = get();
+				const entry = state.entries[id];
+				if (!entry) return null;
+				const variant = cloneExperiment(
+					entry.experiment,
+					Object.keys(state.entries),
+					label,
+					descriptionPrompt,
+				);
+				return get().add(variant, "variant", id);
+			},
+
 			renameExperiment(id, nextId) {
 				const state = get();
 				const entry = state.entries[id];
@@ -268,26 +259,15 @@ export const useLibrary = create<LibraryState>()(
 				return nextId;
 			},
 
-			createVariant(id) {
-				const state = get();
-				const entry = state.entries[id];
-				if (!entry) return null;
-				const variant = cloneExperiment(
-					entry.experiment,
-					Object.keys(state.entries),
-				);
-				return get().add(variant, "variant", id);
-			},
-
-			resetToBuiltIn(id) {
-				const original = findBuiltIn(id);
+			resetToBuiltIn(id, locale) {
+				const original = findBuiltIn(id, locale);
 				if (!original) return;
 				get().update(id, () => structuredClone(original));
 			},
 
-			restoreBuiltIns() {
+			restoreBuiltIns(locale) {
 				const state = get();
-				const missing = BUILT_IN_EXPERIMENTS.filter(
+				const missing = builtInExperiments(locale).filter(
 					(e) => !state.entries[e.experimentId],
 				);
 				const now = Date.now();
@@ -315,13 +295,14 @@ export const useLibrary = create<LibraryState>()(
 		}),
 		{
 			name: "faultworks.library",
-			version: 1,
+			version: 2,
 			storage: createJSONStorage(() => safeStorage),
 			partialize: (state) => ({
 				entries: state.entries,
 				order: state.order,
 				seeded: state.seeded,
 			}),
+			migrate: (persisted) => persisted as never,
 			merge: (persisted, current) => {
 				const p = persisted as Partial<LibraryState> | undefined;
 				if (!p?.entries || !Array.isArray(p.order)) return current;
@@ -338,7 +319,7 @@ export const useLibrary = create<LibraryState>()(
 				const seeded = new Set(p.seeded ?? []);
 				// Built-ins shipped after this browser last visited.
 				const now = Date.now();
-				for (const e of BUILT_IN_EXPERIMENTS)
+				for (const e of builtInExperiments(detectLanguage()))
 					if (!seeded.has(e.experimentId) && !entries[e.experimentId]) {
 						entries[e.experimentId] = {
 							experiment: structuredClone(e),

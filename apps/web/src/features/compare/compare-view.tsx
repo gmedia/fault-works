@@ -1,12 +1,12 @@
 import {
 	type Experiment,
+	FIELDS,
 	type SemanticChange,
 	semanticDiff,
 } from "@faultworks/experiment";
 import {
 	type ComparisonRow,
 	compareSummaries,
-	formatMs,
 	type RunSummary,
 } from "@faultworks/metrics";
 import { Link } from "@tanstack/react-router";
@@ -23,13 +23,20 @@ import {
 	TriangleAlert,
 } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "#/components/ui/button.tsx";
 import { type ChartMarker, TimeChart } from "#/features/charts/time-chart.tsx";
 import {
 	exportComparison,
 	exportComparisonReport,
 } from "#/features/library/export.ts";
-import { formatCount, formatLatency } from "#/lib/format.ts";
+import {
+	formatCount,
+	formatLatency,
+	formatMs,
+	formatNumber,
+	formatUnitValue,
+} from "#/lib/format.ts";
 import { cn } from "#/lib/utils.ts";
 import { useRuns } from "#/state/runs.ts";
 import { useValidation } from "#/state/validation.ts";
@@ -39,26 +46,24 @@ import { SeedSweep } from "./seed-sweep.tsx";
 const COLOR_A = "var(--series-1)";
 const COLOR_B = "var(--series-2)";
 
-function formatRow(row: ComparisonRow, v: number | null): string {
+export function formatRow(row: ComparisonRow, v: number | null): string {
 	if (v === null) return "–";
 	if (row.unit === "ms") return formatLatency(v);
-	if (row.unit === "%")
-		return `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
-	if (row.unit === "req/s")
-		return `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} req/s`;
-	if (row.unit === "s")
-		return `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} s`;
+	if (row.unit === "%") return `${formatNumber(v, 1)}%`;
+	if (row.unit === "req/s") return `${formatNumber(v, 1)} req/s`;
+	if (row.unit === "s") return `${formatNumber(v, 1)} s`;
 	return formatCount(v);
 }
 
 function Change({ row }: { row: ComparisonRow }) {
+	const { t } = useTranslation();
 	if (row.delta === null)
 		return <span className="text-muted-foreground">–</span>;
 	if (Math.abs(row.delta) < 1e-9)
 		return (
 			<span className="flex items-center gap-1 text-muted-foreground">
 				<Minus className="size-3.5" aria-hidden="true" />
-				no change
+				{t("compare.noChangeShort")}
 			</span>
 		);
 	const up = row.delta > 0;
@@ -74,7 +79,7 @@ function Change({ row }: { row: ComparisonRow }) {
 	const abs = Math.abs(row.delta);
 	const value =
 		row.unit === "%"
-			? `${abs.toLocaleString("en-US", { maximumFractionDigits: 1 })} pts`
+			? t("compare.points", { value: formatNumber(abs, 1) })
 			: formatRow(row, abs);
 	const Icon = row.caution ? TriangleAlert : up ? ArrowUp : ArrowDown;
 	return (
@@ -92,16 +97,15 @@ function Change({ row }: { row: ComparisonRow }) {
 			{pct !== null && row.unit !== "%" && (
 				<span className="text-muted-foreground">
 					({sign}
-					{Math.abs(pct).toLocaleString("en-US", { maximumFractionDigits: 1 })}
-					%)
+					{formatNumber(Math.abs(pct), 1)}%)
 				</span>
 			)}
 			{good !== null && (
-				<span className="sr-only">{good ? "(better)" : "(worse)"}</span>
+				<span className="sr-only">
+					{good ? t("compare.better") : t("compare.worse")}
+				</span>
 			)}
-			{row.caution && (
-				<span className="sr-only">(read the note in this row)</span>
-			)}
+			{row.caution && <span className="sr-only">{t("compare.readNote")}</span>}
 		</span>
 	);
 }
@@ -134,59 +138,81 @@ function useCurrentRun(id: string, experiment: Experiment) {
 const fastFailureShare = (s: RunSummary) =>
 	s.failed === 0
 		? 1
-		: (s.failedByReason["backend-refused"] +
+		: (s.failedByReason.refused +
 				s.failedByReason["no-healthy-backend"] +
-				s.failedByReason["queue-full"]) /
+				s.failedByReason["queue-full"] +
+				s.failedByReason["circuit-open"] +
+				s.failedByReason["injected-error"]) /
 			s.failed;
 
 /** Plain sentences that say what changed, including the latency story percentiles can hide. */
-export function compareNarrative(
-	a: RunSummary,
-	b: RunSummary,
-	rows: ComparisonRow[],
-): string[] {
-	const out: string[] = [];
-	const pct = (x: number, y: number) =>
-		x === 0
-			? ""
-			: ` (${y < x ? "−" : "+"}${Math.abs(((y - x) / x) * 100).toLocaleString("en-US", { maximumFractionDigits: 1 })}%)`;
-	out.push(
-		a.failed === b.failed
-			? `Both runs had ${formatCount(a.failed)} failed requests.`
-			: `Failed requests went from ${formatCount(a.failed)} in A to ${formatCount(b.failed)} in B${pct(a.failed, b.failed)}.`,
-	);
-
-	const p95 = rows.find((r) => r.id === "p95");
-	const endedP95 = rows.find((r) => r.id === "ended-p95");
-	const sameLatency = (p95?.delta ?? 0) === 0 && (endedP95?.delta ?? 0) === 0;
-	const waitA = a.failedWaitMs / 1000;
-	const waitB = b.failedWaitMs / 1000;
-	const fmtS = (v: number) =>
-		`${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} s`;
-	if (sameLatency) {
-		if (Math.abs(waitA - waitB) >= 1)
-			out.push(
-				`Latency percentiles are the same in A and B, yet clients spent ${fmtS(waitA)} waiting on failed requests in A and ${fmtS(waitB)} in B. Percentiles hide this: once more than 5% of requests time out in both runs, p95 is simply the timeout in both.`,
-			);
-		else if (fastFailureShare(a) > 0.9 && fastFailureShare(b) > 0.9)
-			out.push(
-				"Latency did not change. The failures were rejected immediately (refused or no room), so they added almost no waiting time, and the requests that succeeded were served the same way. A backend that hangs instead of refusing does change latency: try the “Hanging backend” example.",
-			);
-		else out.push("Latency percentiles are the same in A and B.");
-	} else if (p95?.a != null && p95.b != null)
+export function useCompareNarrative() {
+	const { t } = useTranslation();
+	return (a: RunSummary, b: RunSummary, rows: ComparisonRow[]): string[] => {
+		const out: string[] = [];
+		const pct = (x: number, y: number) =>
+			x === 0
+				? ""
+				: ` (${y < x ? "−" : "+"}${formatNumber(Math.abs(((y - x) / x) * 100), 1)}%)`;
 		out.push(
-			`p95 latency of successful requests went from ${formatLatency(p95.a)} in A to ${formatLatency(p95.b)} in B${p95.caution ? `. Read this with care: ${p95.caution.charAt(0).toLowerCase()}${p95.caution.slice(1)}` : "."}`,
+			a.failed === b.failed
+				? t("narrative.sameFailed", { failed: formatCount(a.failed) })
+				: t("narrative.failed", {
+						a: formatCount(a.failed),
+						b: formatCount(b.failed),
+						pct: pct(a.failed, b.failed),
+					}),
 		);
 
-	const da =
-		a.faults.find((f) => f.detectionDelayMs !== null)?.detectionDelayMs ?? null;
-	const db =
-		b.faults.find((f) => f.detectionDelayMs !== null)?.detectionDelayMs ?? null;
-	if ((a.faults.length > 0 || b.faults.length > 0) && da !== db)
-		out.push(
-			`The first failure was detected ${da === null ? "never" : `after ${formatMs(da)}`} in A and ${db === null ? "never" : `after ${formatMs(db)}`} in B.`,
-		);
-	return out;
+		const p95 = rows.find((r) => r.id === "p95");
+		const endedP95 = rows.find((r) => r.id === "ended-p95");
+		const sameLatency = (p95?.delta ?? 0) === 0 && (endedP95?.delta ?? 0) === 0;
+		const waitA = a.failedWaitMs / 1000;
+		const waitB = b.failedWaitMs / 1000;
+		const fmtS = (v: number) => `${formatNumber(v, 1)} ${t("units.s")}`;
+		if (sameLatency) {
+			if (Math.abs(waitA - waitB) >= 1)
+				out.push(t("narrative.hiddenWait", { a: fmtS(waitA), b: fmtS(waitB) }));
+			else if (fastFailureShare(a) > 0.9 && fastFailureShare(b) > 0.9)
+				out.push(t("narrative.fastFailures"));
+			else out.push(t("narrative.sameLatency"));
+		} else if (p95?.a != null && p95.b != null)
+			out.push(
+				t("narrative.p95", {
+					a: formatLatency(p95.a),
+					b: formatLatency(p95.b),
+				}) + (p95.caution ? ` ${t(`compare.caution.${p95.caution}`)}` : ""),
+			);
+
+		const calls = rows.find((r) => r.id === "calls");
+		if (
+			calls?.a != null &&
+			calls.b != null &&
+			calls.a > 0 &&
+			Math.abs(calls.b - calls.a) / calls.a > 0.2
+		)
+			out.push(
+				t("narrative.calls", {
+					a: formatCount(calls.a),
+					b: formatCount(calls.b),
+				}),
+			);
+
+		const da =
+			a.faults.find((f) => f.detectionDelayMs !== null)?.detectionDelayMs ??
+			null;
+		const db =
+			b.faults.find((f) => f.detectionDelayMs !== null)?.detectionDelayMs ??
+			null;
+		if ((a.faults.length > 0 || b.faults.length > 0) && da !== db)
+			out.push(
+				t("narrative.detection", {
+					a: da === null ? t("summary.never").toLowerCase() : formatMs(da),
+					b: db === null ? t("summary.never").toLowerCase() : formatMs(db),
+				}),
+			);
+		return out;
+	};
 }
 
 export function CompareView({
@@ -196,6 +222,7 @@ export function CompareView({
 	a: { id: string; experiment: Experiment };
 	b: { id: string; experiment: Experiment };
 }) {
+	const { t } = useTranslation();
 	const changes = useMemo(
 		() => semanticDiff(a.experiment, b.experiment),
 		[a.experiment, b.experiment],
@@ -206,15 +233,14 @@ export function CompareView({
 	return (
 		<div className="grid min-w-0 grid-cols-1 gap-8">
 			<WhatChanged changes={changes} />
-
 			{(!ra.valid || !rb.valid) && (
 				<p
 					role="alert"
 					className="rounded-lg border border-down/40 bg-down-soft p-4 text-sm"
 				>
-					{!ra.valid ? `“${a.experiment.title}”` : `“${b.experiment.title}”`}{" "}
-					has settings that need fixing before it can run. Open it to see the
-					problems.
+					{t("compare.invalid", {
+						title: !ra.valid ? a.experiment.title : b.experiment.title,
+					})}
 				</p>
 			)}
 			{(ra.error || rb.error) && (
@@ -222,7 +248,6 @@ export function CompareView({
 					{ra.error ?? rb.error}
 				</p>
 			)}
-
 			{ra.result && rb.result ? (
 				<Results a={ra.result} b={rb.result} changes={changes} />
 			) : (
@@ -232,74 +257,89 @@ export function CompareView({
 						aria-live="polite"
 					>
 						<LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
-						Running both experiments…
+						{t("compare.running")}
 					</p>
 				)
 			)}
-
 			{ra.result && rb.result && (
 				<SeedSweep a={a.experiment} b={b.experiment} />
 			)}
-
 			<section
 				aria-labelledby="caveats-heading"
 				className="rounded-lg border p-4 text-sm sm:p-5"
 			>
 				<h2 id="caveats-heading" className="font-semibold">
-					Before drawing conclusions
+					{t("compare.caveatsTitle")}
 				</h2>
 				<ul className="mt-2 grid list-disc gap-1.5 pl-5 text-muted-foreground">
-					<li>
-						Both runs come from the same abstract request-level model. They
-						compare designs inside the model, not real products.
-					</li>
-					<li>
-						A difference is only attributable to a setting when that setting is
-						the only one that changed.
-					</li>
-					<li>
-						Detection depends on where in the probe cycle a crash lands. A crash
-						exactly on a probe is the fastest case; move the failure time to see
-						the slower ones.
-					</li>
-					<li>
-						With random traffic or service times, a single seed is one sample.
-						Use the seed check above.
-					</li>
-					<li>
-						Assumptions for each experiment are listed in its “What happened”
-						tab and in every export.
-					</li>
+					{(t("compare.caveats", { returnObjects: true }) as string[]).map(
+						(c) => (
+							<li key={c}>{c}</li>
+						),
+					)}
 				</ul>
 			</section>
 		</div>
 	);
 }
 
+function changeValue(
+	c: SemanticChange,
+	side: "before" | "after",
+	t: (key: string, opts?: Record<string, unknown>) => string,
+) {
+	const raw = c[side];
+	const text = side === "before" ? c.beforeText : c.afterText;
+	if (text === null)
+		return (
+			<span className="text-muted-foreground">{t("diff.notPresent")}</span>
+		);
+	if (c.field === "presence")
+		return t(`kinds.${String(raw)}`, {
+			defaultValue: t(`faultKinds.${String(raw)}.label`, {
+				defaultValue: String(raw),
+			}),
+		});
+	if (c.field === "order") return text;
+	const info = FIELDS[c.field];
+	if (info.options && typeof raw === "string")
+		return t(`options.${c.field}.${raw}`, { defaultValue: raw });
+	if (raw === null)
+		return text === "never"
+			? t("common.never")
+			: text === "none"
+				? t("common.none")
+				: text.startsWith("auto")
+					? `${t("common.auto")} ${text.slice(4)}`
+					: text;
+	return formatUnitValue(raw, info.unit);
+}
+
 function WhatChanged({ changes }: { changes: SemanticChange[] }) {
+	const { t } = useTranslation();
 	const n = changes.length;
 	const tone =
 		n === 1
 			? {
 					Icon: CircleCheck,
 					className: "text-ok",
-					text: "Exactly one behavior setting differs, so differences in the results can be attributed to it within this model.",
+					text: t("compare.oneChange"),
 				}
 			: n === 0
 				? {
 						Icon: Info,
 						className: "text-muted-foreground",
-						text: "No behavior setting differs. The results will be identical, which makes this a reproducibility check.",
+						text: t("compare.noChange"),
 					}
 				: {
 						Icon: CircleAlert,
 						className: "text-gap",
-						text: `${n} behavior settings differ. A difference in the results cannot be attributed to any single one of them. For a clean comparison, create a variant and change only one thing.`,
+						text: t("compare.manyChanges", { count: n }),
 					};
 	return (
 		<section aria-labelledby="changed-heading">
 			<h2 id="changed-heading" className="font-semibold text-lg tracking-tight">
-				What changed from A to B
+				{t("compare.whatChanged")}
 			</h2>
 			<p className={cn("mt-2 flex items-start gap-2 text-sm", tone.className)}>
 				<tone.Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -311,7 +351,7 @@ function WhatChanged({ changes }: { changes: SemanticChange[] }) {
 						<thead className="bg-muted/50 text-left text-muted-foreground text-xs">
 							<tr>
 								<th scope="col" className="px-3 py-2 font-medium">
-									Setting
+									{t("compare.setting")}
 								</th>
 								<th scope="col" className="px-3 py-2 font-medium">
 									A
@@ -325,20 +365,21 @@ function WhatChanged({ changes }: { changes: SemanticChange[] }) {
 							{changes.map((c) => (
 								<tr key={c.key} className="border-t">
 									<th scope="row" className="px-3 py-2 text-left font-normal">
-										<span className="text-muted-foreground">{c.scope} › </span>
-										{c.field}
+										<span className="text-muted-foreground">
+											{c.scope === "run" || c.scope === "traffic"
+												? t(`scope.${c.scope}`)
+												: `${t(`scope.${c.scope}`)} ${c.scopeLabel}`}{" "}
+											›{" "}
+										</span>
+										{c.field === "presence" || c.field === "order"
+											? t(`diff.${c.field}`)
+											: t(`fields.${c.field}.label`)}
 									</th>
 									<td className="px-3 py-2 tabular">
-										{c.before ?? (
-											<span className="text-muted-foreground">not present</span>
-										)}
+										{changeValue(c, "before", t)}
 									</td>
 									<td className="px-3 py-2 font-medium tabular">
-										{c.after ?? (
-											<span className="font-normal text-muted-foreground">
-												not present
-											</span>
-										)}
+										{changeValue(c, "after", t)}
 									</td>
 								</tr>
 							))}
@@ -347,8 +388,7 @@ function WhatChanged({ changes }: { changes: SemanticChange[] }) {
 				</div>
 			)}
 			<p className="mt-2 text-muted-foreground text-xs">
-				Titles, notes, names and canvas positions are ignored: they never affect
-				results.
+				{t("compare.ignored")}
 			</p>
 		</section>
 	);
@@ -363,13 +403,15 @@ function Results({
 	b: RunResult;
 	changes: SemanticChange[];
 }) {
+	const { t } = useTranslation();
+	const narrativeOf = useCompareNarrative();
 	const rows = useMemo(
 		() => compareSummaries(a.metrics.summary, b.metrics.summary),
 		[a, b],
 	);
 	const narrative = useMemo(
-		() => compareNarrative(a.metrics.summary, b.metrics.summary, rows),
-		[a, b, rows],
+		() => narrativeOf(a.metrics.summary, b.metrics.summary, rows),
+		[a, b, rows, narrativeOf],
 	);
 	const sameGrid = a.metrics.series.windowMs === b.metrics.series.windowMs;
 	const horizon = Math.max(a.horizonMs, b.horizonMs);
@@ -381,28 +423,40 @@ function Results({
 			["A", a],
 			["B", b],
 		] as const)
-			for (const f of r.metrics.summary.faults)
-				for (const [t, what] of [
-					[f.failedAtMs, `${f.serverLabel} crashed`],
-					...(f.detectedAtMs !== null
-						? ([[f.detectedAtMs, `${f.serverLabel} detected`]] as const)
-						: []),
-				] as const) {
-					const atTime = bySide.get(t) ?? new Map<string, string[]>();
+			for (const f of r.metrics.summary.faults) {
+				const events: Array<[number, string]> = [
+					[
+						f.startedAtMs,
+						f.kind === "node-failure"
+							? t("bands.crashedShort", { node: f.nodeLabel })
+							: t("bands.faultShort", {
+									kind: t(`faultKinds.${f.kind}.label`),
+									target: f.nodeLabel,
+								}),
+					],
+				];
+				if (f.detectedAtMs !== null)
+					events.push([
+						f.detectedAtMs,
+						t("bands.detectedShort", { node: f.nodeLabel }),
+					]);
+				for (const [tm, what] of events) {
+					const atTime = bySide.get(tm) ?? new Map<string, string[]>();
 					atTime.set(what, [...(atTime.get(what) ?? []), side]);
-					bySide.set(t, atTime);
+					bySide.set(tm, atTime);
 				}
+			}
 		const list: ChartMarker[] = [...bySide.entries()].map(([atMs, events]) => ({
 			atMs,
 			label: [...events.entries()]
 				.map(
 					([what, sides]) =>
-						`${what} (${sides.length === 2 ? "A and B" : sides[0]})`,
+						`${what} (${sides.length === 2 ? t("compare.bothSides") : sides[0]})`,
 				)
 				.join("; "),
 		}));
 		return list.sort((x, y) => x.atMs - y.atMs);
-	}, [a, b]);
+	}, [a, b, t]);
 
 	const perSecond = (r: RunResult, xs: number[]) =>
 		xs.map((v) => (v * 1000) / r.metrics.series.windowMs);
@@ -434,7 +488,7 @@ function Results({
 					id="results-heading"
 					className="font-semibold text-lg tracking-tight"
 				>
-					Results
+					{t("compare.results")}
 				</h2>
 				<div className="flex flex-wrap gap-2">
 					<Button
@@ -443,7 +497,7 @@ function Results({
 						onClick={() => exportComparison(a, b, changes, rows)}
 					>
 						<Download aria-hidden="true" />
-						Export comparison (.json)
+						{t("compare.exportJson")}
 					</Button>
 					<Button
 						variant="outline"
@@ -453,7 +507,7 @@ function Results({
 						}
 					>
 						<FileText aria-hidden="true" />
-						Report (.md)
+						{t("compare.exportReport")}
 					</Button>
 				</div>
 			</div>
@@ -467,7 +521,7 @@ function Results({
 					<thead className="bg-muted/50 text-left text-muted-foreground text-xs">
 						<tr>
 							<th scope="col" className="px-3 py-2 font-medium">
-								Metric
+								{t("compare.metric")}
 							</th>
 							<th scope="col" className="px-3 py-2 text-right font-medium">
 								<span className="inline-flex items-center gap-1.5">
@@ -490,7 +544,7 @@ function Results({
 								</span>
 							</th>
 							<th scope="col" className="px-3 py-2 font-medium">
-								Change A → B
+								{t("compare.change")}
 							</th>
 						</tr>
 					</thead>
@@ -498,7 +552,7 @@ function Results({
 						{rows.map((row) => (
 							<tr key={row.id} className="border-t align-top">
 								<th scope="row" className="px-3 py-2 text-left font-normal">
-									{row.label}
+									{t(`rows.${row.id}`)}
 									{row.samples && (
 										<span className="block text-muted-foreground text-xs">
 											n = {formatCount(row.samples.a)} /{" "}
@@ -507,7 +561,7 @@ function Results({
 									)}
 									{row.caution && (
 										<span className="mt-1 block max-w-md text-gap text-xs">
-											{row.caution}
+											{t(`compare.caution.${row.caution}`)}
 										</span>
 									)}
 								</th>
@@ -526,9 +580,7 @@ function Results({
 				</table>
 			</div>
 			<p className="-mt-3 text-muted-foreground text-xs">
-				p50, p95 and p99: half, 95 and 99 of every 100 requests took this long
-				or less. “Successful” rows leave failed requests out; “all ended” rows
-				include them, with a timeout counted as the full timeout.
+				{t("compare.percentileNote")}
 			</p>
 
 			{sameGrid ? (
@@ -536,7 +588,7 @@ function Results({
 					<div className="grid min-w-0 grid-cols-1 gap-8 xl:grid-cols-2">
 						<TimeChart
 							{...chartProps}
-							title="Failed requests per second"
+							title={t("compare.charts.failed")}
 							series={pair(
 								perSecond(a, a.metrics.series.failed),
 								perSecond(b, b.metrics.series.failed),
@@ -545,8 +597,8 @@ function Results({
 						/>
 						<TimeChart
 							{...chartProps}
-							title="p95 latency, all ended requests"
-							subtitle="Includes failures; a timed-out request counts as the full timeout"
+							title={t("compare.charts.endedP95")}
+							subtitle={t("compare.charts.endedP95Sub")}
 							series={pair(
 								a.metrics.series.endedP95Ms,
 								b.metrics.series.endedP95Ms,
@@ -555,14 +607,14 @@ function Results({
 						/>
 						<TimeChart
 							{...chartProps}
-							title="p95 latency, successful requests"
+							title={t("compare.charts.p95")}
 							series={pair(a.metrics.series.p95Ms, b.metrics.series.p95Ms)}
 							formatValue={formatLatency}
 						/>
 					</div>
 					{markers.length > 0 && (
 						<div className="text-muted-foreground text-xs">
-							<p>Vertical lines on the charts:</p>
+							<p>{t("compare.markers")}</p>
 							<ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
 								{markers.map((m) => (
 									<li key={m.atMs} className="tabular">
@@ -578,9 +630,7 @@ function Results({
 				</>
 			) : (
 				<p className="text-muted-foreground text-sm">
-					The two experiments use different chart windows, so their timelines
-					are not overlaid. Set the same chart window in both (Run tab) to
-					compare them over time.
+					{t("compare.differentWindows")}
 				</p>
 			)}
 			<div className="flex flex-wrap gap-2">
@@ -588,20 +638,20 @@ function Results({
 					<Link
 						to="/experiments/$experimentId"
 						params={{ experimentId: a.experiment.experimentId }}
-						search={{ tab: "explain" }}
+						search={{ tab: "explain", screen: "results" }}
 						hash="results"
 					>
-						Why A behaved this way
+						{t("compare.whyA")}
 					</Link>
 				</Button>
 				<Button asChild variant="outline" size="sm">
 					<Link
 						to="/experiments/$experimentId"
 						params={{ experimentId: b.experiment.experimentId }}
-						search={{ tab: "explain" }}
+						search={{ tab: "explain", screen: "results" }}
 						hash="results"
 					>
-						Why B behaved this way
+						{t("compare.whyB")}
 					</Link>
 				</Button>
 			</div>

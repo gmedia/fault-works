@@ -1,8 +1,8 @@
 import type { Experiment } from "@faultworks/experiment";
-import { servers } from "@faultworks/experiment";
 import type { RunSummary } from "@faultworks/metrics";
 import { Dices, LoaderCircle } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "#/components/ui/button.tsx";
 import { formatCount, formatLatency } from "#/lib/format.ts";
 import { sweepInWorker } from "#/workers/client.ts";
@@ -13,36 +13,35 @@ const SEEDS = 10;
 export function isStochastic(e: Experiment): boolean {
 	return (
 		e.workload.arrival === "poisson" ||
-		servers(e).some((s) => s.config.serviceTimeDistribution === "exponential")
+		e.model.nodes.some(
+			(n) =>
+				(n.kind !== "client" &&
+					n.kind !== "load-balancer" &&
+					n.config.serviceTimeDistribution === "exponential") ||
+				n.kind === "cache" ||
+				n.kind === "load-balancer",
+		) ||
+		e.faults.some((f) => f.kind === "error-rate" || f.kind === "link-loss")
 	);
 }
 
 interface Metric {
 	id: string;
-	label: string;
 	get: (s: RunSummary) => number | null;
 	format: (v: number) => string;
 	better: "lower" | "higher";
 }
 
 const METRICS: Metric[] = [
-	{
-		id: "failed",
-		label: "Failed requests",
-		get: (s) => s.failed,
-		format: formatCount,
-		better: "lower",
-	},
+	{ id: "failed", get: (s) => s.failed, format: formatCount, better: "lower" },
 	{
 		id: "p95",
-		label: "p95 latency",
 		get: (s) => s.successLatency?.p95Ms ?? null,
 		format: formatLatency,
 		better: "lower",
 	},
 	{
 		id: "succeeded",
-		label: "Succeeded",
 		get: (s) => s.succeeded,
 		format: formatCount,
 		better: "higher",
@@ -64,6 +63,7 @@ function stats(values: number[]) {
  * Reports ranges and how often B beat A, not confidence intervals: ten runs are too few for those.
  */
 export function SeedSweep({ a, b }: { a: Experiment; b: Experiment }) {
+	const { t } = useTranslation();
 	const [state, setState] = useState<
 		| { status: "idle" }
 		| { status: "running" }
@@ -95,20 +95,20 @@ export function SeedSweep({ a, b }: { a: Experiment; b: Experiment }) {
 			className="rounded-lg border bg-card p-4 sm:p-5"
 		>
 			<h2 id="sweep-heading" className="font-semibold">
-				Is it the seed?
+				{t("sweep.title")}
 			</h2>
 			{!random ? (
 				<p className="mt-2 max-w-prose text-muted-foreground text-sm">
-					Both experiments use constant traffic and fixed service times, so the
-					seed has no effect: every seed gives exactly the same numbers. The
-					difference above comes entirely from the settings.
+					{t("sweep.deterministic")}
 				</p>
 			) : (
 				<>
 					<p className="mt-2 max-w-prose text-muted-foreground text-sm">
-						At least one experiment uses random arrivals or service times, so a
-						single run is one sample. Repeat both with the same {SEEDS} seeds (
-						{seeds[0]}–{seeds[seeds.length - 1]}) to see the spread.
+						{t("sweep.intro", {
+							n: SEEDS,
+							from: seeds[0],
+							to: seeds[seeds.length - 1],
+						})}
 					</p>
 					<Button
 						className="mt-3"
@@ -121,7 +121,7 @@ export function SeedSweep({ a, b }: { a: Experiment; b: Experiment }) {
 						) : (
 							<Dices aria-hidden="true" />
 						)}
-						Repeat both with {SEEDS} seeds
+						{t("sweep.run", { n: SEEDS })}
 					</Button>
 					<div aria-live="polite">
 						{state.status === "error" && (
@@ -131,21 +131,21 @@ export function SeedSweep({ a, b }: { a: Experiment; b: Experiment }) {
 							<div className="mt-4 overflow-x-auto rounded-md border">
 								<table className="w-full text-sm tabular">
 									<caption className="sr-only">
-										Results across {SEEDS} seeds
+										{t("sweep.caption", { n: SEEDS })}
 									</caption>
 									<thead className="bg-muted/50 text-left text-muted-foreground text-xs">
 										<tr>
 											<th scope="col" className="px-3 py-2 font-medium">
-												Metric
+												{t("compare.metric")}
 											</th>
 											<th scope="col" className="px-3 py-2 font-medium">
-												A: median (min – max)
+												{t("sweep.colA")}
 											</th>
 											<th scope="col" className="px-3 py-2 font-medium">
-												B: median (min – max)
+												{t("sweep.colB")}
 											</th>
 											<th scope="col" className="px-3 py-2 font-medium">
-												B better than A
+												{t("sweep.bBetter")}
 											</th>
 										</tr>
 									</thead>
@@ -171,7 +171,7 @@ export function SeedSweep({ a, b }: { a: Experiment; b: Experiment }) {
 														scope="row"
 														className="px-3 py-2 text-left font-medium"
 													>
-														{m.label}
+														{t(`rows.${m.id}`)}
 													</th>
 													<td className="px-3 py-2">
 														{pa.length
@@ -184,11 +184,11 @@ export function SeedSweep({ a, b }: { a: Experiment; b: Experiment }) {
 															: "–"}
 													</td>
 													<td className="px-3 py-2">
-														{wins} of {SEEDS}
+														{t("sweep.wins", { wins, n: SEEDS })}
 														{ties > 0 && (
 															<span className="text-muted-foreground">
 																{" "}
-																({ties} tied)
+																{t("sweep.ties", { ties })}
 															</span>
 														)}
 													</td>
@@ -201,8 +201,7 @@ export function SeedSweep({ a, b }: { a: Experiment; b: Experiment }) {
 						)}
 					</div>
 					<p className="mt-3 text-muted-foreground text-xs">
-						Seeds are paired: run i of A and run i of B use the same seed. Ten
-						runs show the spread; they are not enough for confidence intervals.
+						{t("sweep.note")}
 					</p>
 				</>
 			)}
