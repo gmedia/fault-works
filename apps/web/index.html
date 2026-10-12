@@ -4,10 +4,30 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>FaultWorks</title>
-		<meta name="description" content="Experiment with failure. Build more resilient systems." />
+		<meta
+			name="description"
+			content="Run reproducible failure experiments in your browser: model traffic, crash a backend, and compare what changes."
+		/>
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)" />
+		<script>
+			// Apply the saved theme before first paint so the page never flashes the wrong one.
+			// Kept in sync with src/state/theme.ts.
+			(() => {
+				try {
+					const t = window.localStorage.getItem("faultworks.theme");
+					if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+				} catch {}
+			})();
+		</script>
 	</head>
 	<body class="font-sans antialiased">
+		<noscript>
+			<p style="padding: 16px; font-family: sans-serif">
+				FaultWorks runs its simulations in your browser and needs JavaScript.
+			</p>
+		</noscript>
 		<div id="root"></div>
 		<script type="module" src="/src/main.tsx"></script>
 	</body>

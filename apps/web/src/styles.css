@@ -1,65 +1,177 @@
 @import 'tailwindcss';
-
 @import 'tw-animate-css';
+@import '@xyflow/react/dist/base.css';
 
-@custom-variant dark (&:is(.dark *));
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
 
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
+ * Tokens by role. Every text/background pair below was checked with the uiux skill's contrast
+ * script (WCAG AA: 4.5:1 text, 3:1 UI parts) in both themes. Server series colors come from the
+ * dataviz reference palette and passed its CVD validator; the lighter ones always ship with text
+ * labels or a table view.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.871 0.006 286.286);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.625rem;
+  color-scheme: light;
+  --background: #f5f6f8;
+  --foreground: #14171f;
+  --card: #ffffff;
+  --card-foreground: #14171f;
+  --popover: #ffffff;
+  --popover-foreground: #14171f;
+  --primary: #14171f;
+  --primary-foreground: #ffffff;
+  --secondary: #eceef2;
+  --secondary-foreground: #14171f;
+  --muted: #eceef2;
+  --muted-foreground: #596171;
+  --accent: #eceef2;
+  --accent-foreground: #14171f;
+  --destructive: #c52b2b;
+  --destructive-foreground: #ffffff;
+  --border: #dcdfe5;
+  --input: #858c99;
+  --ring: #2f5bd3;
+  --radius: 0.5rem;
+
+  /* Status: always paired with an icon and a word. */
+  --ok: #0e6e35;
+  --ok-soft: #e5f4ea;
+  --down: #c52b2b;
+  --down-soft: #fbe9e9;
+  --gap: #9a5b00;
+  --gap-soft: #fdf3dc;
+  --gap-band: #f5b524;
+  --off: #596171;
+  --off-soft: #eceef2;
+
+  /* Chart chrome */
+  --chart-grid: #e6e8ec;
+  --chart-axis: #c3c7cf;
+  --chart-offered: #8a919e;
+  --chart-success: #0ca30c;
+  --chart-failure: #d03b3b;
+  --chart-p50: #6da7ec;
+  --chart-p95: #184f95;
+  --chart-cursor: #14171f;
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
 }
 
-.dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.141 0.005 285.823);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.141 0.005 285.823);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.274 0.006 286.033);
-  --input: oklch(0.274 0.006 286.033);
-  --ring: oklch(0.442 0.017 285.786);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --background: #0f1115;
+    --foreground: #eef0f4;
+    --card: #171a20;
+    --card-foreground: #eef0f4;
+    --popover: #1c2027;
+    --popover-foreground: #eef0f4;
+    --primary: #eef0f4;
+    --primary-foreground: #14171f;
+    --secondary: #222731;
+    --secondary-foreground: #eef0f4;
+    --muted: #222731;
+    --muted-foreground: #a2a9b6;
+    --accent: #222731;
+    --accent-foreground: #eef0f4;
+    --destructive: #f07070;
+    --destructive-foreground: #14171f;
+    --border: #2a2f38;
+    --input: #6b7381;
+    --ring: #7aa2ff;
+    --ok: #3fbf6a;
+    --ok-soft: #12291b;
+    --down: #f07070;
+    --down-soft: #2f1717;
+    --gap: #f0b440;
+    --gap-soft: #2e2410;
+    --gap-band: #f0b440;
+    --off: #a2a9b6;
+    --off-soft: #222731;
+    --chart-grid: #252a33;
+    --chart-axis: #3a404b;
+    --chart-offered: #7c8492;
+    --chart-success: #0ca30c;
+    --chart-failure: #e66767;
+    --chart-p50: #86b6ef;
+    --chart-p95: #3987e5;
+    --chart-cursor: #eef0f4;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --background: #0f1115;
+  --foreground: #eef0f4;
+  --card: #171a20;
+  --card-foreground: #eef0f4;
+  --popover: #1c2027;
+  --popover-foreground: #eef0f4;
+  --primary: #eef0f4;
+  --primary-foreground: #14171f;
+  --secondary: #222731;
+  --secondary-foreground: #eef0f4;
+  --muted: #222731;
+  --muted-foreground: #a2a9b6;
+  --accent: #222731;
+  --accent-foreground: #eef0f4;
+  --destructive: #f07070;
+  --destructive-foreground: #14171f;
+  --border: #2a2f38;
+  --input: #6b7381;
+  --ring: #7aa2ff;
+  --ok: #3fbf6a;
+  --ok-soft: #12291b;
+  --down: #f07070;
+  --down-soft: #2f1717;
+  --gap: #f0b440;
+  --gap-soft: #2e2410;
+  --gap-band: #f0b440;
+  --off: #a2a9b6;
+  --off-soft: #222731;
+  --chart-grid: #252a33;
+  --chart-axis: #3a404b;
+  --chart-offered: #7c8492;
+  --chart-success: #0ca30c;
+  --chart-failure: #e66767;
+  --chart-p50: #86b6ef;
+  --chart-p95: #3987e5;
+  --chart-cursor: #eef0f4;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
 }
 
 @theme inline {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -79,11 +191,16 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
+
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-down: var(--down);
+  --color-down-soft: var(--down-soft);
+  --color-gap: var(--gap);
+  --color-gap-soft: var(--gap-soft);
+  --color-off: var(--off);
+  --color-off-soft: var(--off-soft);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -92,9 +209,95 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring/60;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: 'ss02';
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* The detection gap: the period a server is down but still in rotation. The one loud element. */
+  .gap-hatch {
+    background-image: repeating-linear-gradient(
+      135deg,
+      color-mix(in oklab, var(--gap-band) 55%, transparent) 0 2px,
+      transparent 2px 7px
+    );
+    background-color: color-mix(in oklab, var(--gap-band) 14%, transparent);
+  }
+  .down-hatch {
+    background-image: repeating-linear-gradient(
+      45deg,
+      color-mix(in oklab, var(--down) 28%, transparent) 0 1px,
+      transparent 1px 6px
+    );
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* React Flow chrome mapped to tokens */
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-stroke: var(--chart-axis);
+  --xy-edge-stroke-selected: var(--ring);
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-background-color-hover: var(--accent);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-border-color: var(--border);
+  --xy-minimap-background-color: var(--card);
+}
+.react-flow__node:focus-visible {
+  outline: none;
+}
+.react-flow__node:focus-visible > div {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.react-flow__attribution {
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .gap-hatch,
+  .down-hatch {
+    forced-color-adjust: none;
+    border: 1px solid CanvasText;
   }
 }
