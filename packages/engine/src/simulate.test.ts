@@ -296,7 +296,10 @@ describe("load balancer reference cases (v0.1 semantics)", () => {
 			}),
 		);
 		const lateArrivals = events
-			.filter((e) => e.kind === "arrival" && e.t >= 1500 * MS)
+			.filter(
+				(e): e is Extract<SimEvent, { kind: "arrival" }> =>
+					e.kind === "arrival" && e.t >= 1500 * MS,
+			)
 			.map((e) => e.req);
 		expect(lateArrivals.length).toBeGreaterThan(5);
 		const succeededLate = outcomes(events).filter(
