@@ -263,12 +263,49 @@ describe("load balancer reference cases (v0.1 semantics)", () => {
 			"failed",
 			"service-end",
 			"late-response",
+			"call-end",
+			"call-end",
 		]);
 		expect(events[5]).toMatchObject({
 			reason: "timeout",
 			latencyUs: 200 * MS,
 			node: 2,
 		});
+	});
+
+	it("frees a slot held for a downstream call when the answer arrives after the client deadline", () => {
+		// The database is 100× slower for the first second. Clients give up after 200 ms, but the
+		// api slot stays busy until the database answers; once it does, the api must serve again.
+		const { events } = run(
+			chainInput({
+				api: { capacity: 1, queueCapacity: 0 },
+				db: { serviceTimeUs: 10 * MS },
+				phases: [{ startUs: 0, endUs: 3000 * MS, rps: 5 }],
+				timeoutUs: 200 * MS,
+				faults: [
+					{
+						kind: "slowdown",
+						id: "slow-db",
+						node: 2,
+						atUs: 0,
+						untilUs: 1000 * MS,
+						factor: 100,
+						addUs: 0,
+					},
+				],
+			}),
+		);
+		const lateArrivals = events
+			.filter((e) => e.kind === "arrival" && e.t >= 1500 * MS)
+			.map((e) => e.req);
+		expect(lateArrivals.length).toBeGreaterThan(5);
+		const succeededLate = outcomes(events).filter(
+			(e) => e.kind === "succeeded" && lateArrivals.includes(e.req),
+		);
+		expect(succeededLate.length).toBe(lateArrivals.length);
+		// The wasted answer is reported by the workers that produced it, never as a success.
+		const late = events.filter((e) => e.kind === "late-response");
+		expect(late.map((e) => e.node)).toEqual([2, 1]);
 	});
 
 	it("counts a response landing exactly on the deadline as success", () => {

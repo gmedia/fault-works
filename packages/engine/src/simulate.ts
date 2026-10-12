@@ -358,16 +358,14 @@ export function simulate(input: EngineInput, sink: EventSink): EngineRunResult {
 
 	/** The target finished the call: send the answer back over the edge. */
 	const respond = (call: Call, outcome: Outcome, t: Micros) => {
-		// The caller gave up (edge timeout) or the client did (deadline): the answer is wasted work.
-		if (call.done || terminal[call.req]) {
-			emit({
-				kind: "late-response",
-				t,
-				req: call.req,
-				node: (edges[call.edge] as EdgeInput).target,
-			});
-			return;
-		}
+		const target = (edges[call.edge] as EdgeInput).target;
+		// The caller gave up on this call (edge timeout) or the client gave up on the request
+		// (deadline): the answer is wasted work. Workers report it so the capacity it used is visible.
+		if ((call.done || terminal[call.req]) && workers.has(target))
+			emit({ kind: "late-response", t, req: call.req, node: target });
+		// Nobody is waiting for a timed-out call any more. A terminal request's answer still travels
+		// back, because every caller up the chain holds a slot until its own call returns.
+		if (call.done) return;
 		const latency = effectiveLatency(call.edge);
 		if (latency === 0) call.onDone(outcome, t);
 		else

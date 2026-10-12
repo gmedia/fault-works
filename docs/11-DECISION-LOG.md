@@ -57,3 +57,19 @@ All decisions are **provisional** until reviewed and approved by project maintai
 ## ADR-013 — Failure semantics: refuse or hang, no cancellation
 
 **Decision:** Faults either refuse connections or hang; servers keep working on requests whose clients gave up and discard the late responses. **Why:** these two behaviors produce the contrast the first lessons need (immediate errors versus timeouts and slower detection), and no cancellation is the common real default. **Consequence:** overload scenarios can waste capacity on abandoned work, which is visible as late responses. Cancellation can be added later as an explicit server option.
+
+## ADR-014 — v0.2 brought forward: free graphs before the real pilot
+
+**Decision (2026-10-12):** Build v0.2 (free topology, five component kinds, seven fault kinds, link-level resilience) before the pilot in docs/10, instead of after it. **Why:** the maintainers judged the v0.1 workbench too limiting to publish: it could only teach the shipped examples, and the audience wants to design and break their own systems. **Consequence:** the pilot now evaluates a larger product; the scope doc records what is still out (backoff, rate limiting, bulkheads, autoscaling), and the stop rules still apply.
+
+## ADR-015 — Indonesian first, with messages as keys
+
+**Decision:** The UI defaults to Bahasa Indonesia and falls back to English from the browser language. Packages emit validation messages, insights and check details as `{ key, params }`; only the web app holds text. Built-in examples are authored per language with identical behavior. **Why:** the primary audience reads Indonesian, and translating after the fact would have left package messages in English. **Consequence:** every new string needs two locale entries, enforced by a unit test; package APIs never return sentences.
+
+## ADR-016 — Phone first with one shared workbench state
+
+**Decision:** Below 768 px the workbench is three screens (Build, Replay, Results) in a bottom tab bar with a settings sheet; above it, canvas, inspector and results on one page. Both layouts share the same context, stores and URL state. **Why:** most first contacts with the app happen on a phone, and a shrunken desktop layout failed the simulated pilot. **Consequence:** the stacked topology list must offer every editing operation the canvas offers, through buttons; the E2E suite runs the phone project on every change.
+
+## ADR-017 — Replay animation is derived, never authoritative
+
+**Decision:** Flow dots, crash shake and pulse rings are CSS driven by the recorded replay position and windowed rates. They do not run the simulation and cannot change it, and they switch off under `prefers-reduced-motion`. **Why:** the user asked for a simulation that feels alive; invariant 7 (replay never alters results) must hold. **Consequence:** animation shows rates per window, not individual requests; the event log remains the place for per-request detail (ADR-011).

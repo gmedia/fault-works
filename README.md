@@ -2,9 +2,11 @@
 
 **Experiment with failure. Build more resilient systems.**
 
-FaultWorks is a browser-based workbench for reproducible infrastructure failure experiments. You describe a small system (a client, a load balancer and a few servers), schedule a failure, run a deterministic simulation, and compare two versions of the experiment to see exactly what one change does.
+FaultWorks is a browser-based workbench for reproducible infrastructure failure experiments. You draw a small system (load balancers, services, databases, caches, worker queues and the links between them), break any part of it on purpose, run a deterministic simulation, and compare two versions of the experiment to see exactly what one change does.
 
-> **Status:** v0.1, pre-release. Open source under the [Apache-2.0 license](LICENSE).
+The interface is in Bahasa Indonesia by default and in English when the browser prefers it, and it is designed for phones first.
+
+> **Status:** v0.2, pre-release. Open source under the [Apache-2.0 license](LICENSE).
 
 ## What you can do
 
@@ -12,13 +14,16 @@ Open the app and the *Load balancer failure* pair is ready to run: Server B cras
 
 From there you can:
 
-- edit the topology and every parameter, with units and inline validation;
-- replay a run over simulated time and watch servers go down, get detected and come back;
+- build any system you like from six templates or a blank canvas: add components, connect them by dragging, and set latency, timeouts, retries and circuit breakers on every link;
+- break it with seven kinds of fault: crashes that refuse or hang, slowdowns, error rates, capacity drops, link latency, link loss and cache flushes;
+- replay a run over simulated time and watch requests flow, components crash, get detected and come back;
 - read a plain-language explanation built only from the simulated events;
 - trace any single request through the event log;
 - create a variant, change one setting and compare, including a paired ten-seed check for random scenarios;
 - export the experiment, the result (with behavior digest and trace fingerprint), the event log as CSV, or a whole comparison as one file plus a Markdown report;
 - import any of those files elsewhere and see whether a re-run reproduces them.
+
+Ten built-in experiments cover load balancer failures, hanging backends, failover overload, cascading failures, retry storms, circuit breakers, cache stampedes and worker-queue backlogs.
 
 Everything runs in your browser. There is no account, no backend and no telemetry; experiments are saved in the browser's local storage.
 
@@ -44,7 +49,7 @@ apps/web               React 19 + Vite SPA: TanStack Router, React Flow, Tailwin
 packages/engine        deterministic discrete-event simulation, no UI dependencies
 packages/experiment    experiment schema (zod), migrations, validation, compiler, diff
 packages/metrics       reducers from events to metrics, checks, explanations, comparison
-examples               the built-in experiments as portable JSON
+examples/{id,en}       the built-in experiments as portable JSON, one set per language
 ```
 
 The web app validates an experiment, sends it to a Web Worker, and the worker compiles it, runs the engine and reduces the event stream into metrics. The engine never imports React or browser APIs, so the same code runs in Node for tests. Details are in [docs/04-ARCHITECTURE.md](docs/04-ARCHITECTURE.md).
@@ -55,14 +60,14 @@ The web app validates an experiment, sends it to a Web Worker, and the worker co
 pnpm check        # Biome lint and format check
 pnpm typecheck
 pnpm test         # unit, property-based and golden tests (Vitest)
-pnpm test:e2e     # Playwright journeys, axe accessibility scans, mobile layout
+pnpm test:e2e     # Playwright journeys, axe accessibility scans, phone layout, both languages
 ```
 
 The engine is checked three ways: reference cases whose answers were computed by hand, property-based tests over random experiments (conservation, single outcome per request, capacity and queue bounds, determinism), and invariant checks that run after every simulation in the app. The E2E suite covers the first-use journey from [docs/03](docs/03-USER-JOURNEYS.md) and scans every page for WCAG 2.2 A/AA violations in both themes.
 
 ## Project status
 
-v0.1 (October 2026) covers the scope in [docs/02](docs/02-SCOPE-AND-ROADMAP.md). A simulated pilot with four AI personas found and drove fixes for import, comparison export, latency reporting and the phone layout ([docs/12](docs/12-SIMULATED-PILOT.md)); it does not replace real users. The next gate is the pilot in [docs/10](docs/10-VALIDATION-PLAN.md): three to five people should be able to run the A/B experiment and explain the difference without help before any v0.2 work starts.
+v0.2 (October 2026) turns the fixed v0.1 topology into a free graph with five component kinds, seven fault kinds, link-level resilience settings, an Indonesian-first interface and a phone-first workbench ([docs/02](docs/02-SCOPE-AND-ROADMAP.md)). A simulated pilot with four AI personas found and drove fixes for import, comparison export, latency reporting and the phone layout ([docs/12](docs/12-SIMULATED-PILOT.md)); it does not replace real users. The next gate is still the pilot in [docs/10](docs/10-VALIDATION-PLAN.md): three to five people should be able to run the A/B experiment and explain the difference without help.
 
 The name **FaultWorks** has not been through a trademark search yet ([ADR-007](docs/11-DECISION-LOG.md)).
 

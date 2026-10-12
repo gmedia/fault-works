@@ -23,9 +23,19 @@ A single vertical slice must complete the loop: **load → configure → run →
 
 No real Docker containers, NGINX emulation, TCP packets, network namespaces, databases, queue brokers, auth, collaboration, hosted compute, AI summaries, monetization, Kubernetes, production telemetry import, SLA/RTO estimates, prediction claims, complex global dashboards, arbitrary script/plugin execution.
 
-## v0.2: Structured Distributed Systems Experiments (conditional)
+## v0.2: Free graphs, more failure kinds, Indonesian first, phone first
 
-Add only the components that validated users need: retries & timeout budgets, queue, cache, DB/connection pool, circuit breaker, and more built-in reference experiments. Each must have a behavioral contract, invariants, boundaries and examples. Scenario diff/compare should remain primary UX.
+**Status (2026-10-12):** implemented. The maintainers brought v0.2 forward before the real pilot because the v0.1 workbench was judged too limiting and too hard to use on a phone, and because the primary audience reads Indonesian. The pilot in [docs/10](10-VALIDATION-PLAN.md) still gates publication.
+
+- **Free topology.** Any directed acyclic graph of up to 12 components: client, load balancer (round robin, least connections, random; optional retry on another backend), service, database, cache (hit ratio) and worker queue (backlog, workers). Links carry latency, a call timeout, retries and a circuit breaker.
+- **Seven fault kinds.** Component crash (refuse or hang), slowdown, error rate, capacity drop, link latency, link loss, cache flush. Any fault on any eligible component or link, several at once.
+- **Creation.** Six templates plus a blank canvas; add, connect, edit and remove freely on the desktop canvas; the same operations through buttons on phones.
+- **Indonesian first.** Full i18n with Bahasa Indonesia as the default and English as the fallback, including every validation message, insight and check; examples authored in both languages.
+- **Phone first.** Build, Replay and Results screens with a bottom tab bar and a settings sheet; the desktop keeps the canvas, inspector and results on one page.
+- **Alive replay.** Request flow along links, crash and recovery animation, breaker and fault indicators, all off under reduced motion.
+- **Still out of scope.** Retry backoff, rate limiting, bulkheads, autoscaling, CPU or memory models, real containers, hosted compute, accounts, AI summaries.
+
+Candidates for a v0.2.x, only if the pilot asks for them: retry backoff, rate limiting, bulkheads, cancellation on timeout, more built-in lessons.
 
 ## v0.3: Optional Local Sandbox (conditional)
 

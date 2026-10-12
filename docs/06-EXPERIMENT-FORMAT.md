@@ -1,6 +1,6 @@
 # Portable Experiment Contract
 
-**Status:** schema `0.1.0`, implemented in `packages/experiment`. The zod schema in [`schema.ts`](../packages/experiment/src/schema.ts) is the source of truth; this page explains it.
+**Status:** schema `0.2.0`, implemented in `packages/experiment`. The zod schema in [`schema.ts`](../packages/experiment/src/schema.ts) is the source of truth; this page explains it.
 
 One file captures everything needed to reproduce a simulation and understand its assumptions. Canvas layout is stored for convenience but never affects results.
 
@@ -8,24 +8,40 @@ One file captures everything needed to reproduce a simulation and understand its
 
 | Field | Meaning |
 |---|---|
-| `schemaVersion` | `"0.1.0"`. Unknown versions are rejected with an explanation. |
-| `experimentId` | 1–48 lowercase letters, digits or hyphens. |
+| `schemaVersion` | `"0.2.0"`. Older versions are migrated; unknown versions are rejected with an explanation. |
+| `experimentId` | 1–48 lowercase letters, digits or hyphens. Also the export file name. |
 | `title`, `question`, `description` | What the experiment is for. Shown in the app, ignored by the engine. |
-| `seed` | Unsigned 32-bit integer. Only matters with Poisson arrivals or exponential service times. |
-| `model.nodes` | Exactly one `client`, one `load-balancer` and 1–8 `server` nodes. Each may have a display `label`. |
-| `model.links` | `client → load-balancer` and `load-balancer → server` for every server; nothing else is accepted in v0.1. |
-| `workload` | `arrival` (`constant` or `poisson`), `offeredRps`, `startMs`, `durationMs`, `timeoutMs`, and up to 10 `bursts` of `{ atMs, durationMs, extraRps }`. |
-| `faults` | Up to 10 `node-failure` faults: `{ id, target, atMs, recoverAtMs \| null, behavior: "refuse" \| "hang" }`. Faults on the same server must not overlap. |
+| `seed` | Unsigned 32-bit integer. Only matters for the random parts: Poisson arrivals, exponential service times, caches, random routing and share-based faults. |
+| `model.nodes` | 2–12 nodes. Exactly one `client`; any mix of `load-balancer`, `service`, `database`, `cache` and `queue`. Each may have a display `label`. |
+| `model.links` | Up to 24 links `{ id, source, target, latencyMs, timeoutMs \| null, retries, circuitBreaker }` in call direction. The graph must be acyclic; the client has exactly one outgoing link; a load balancer needs at least one backend and may not call another load balancer; a cache has at most one downstream; every node must be reachable from the client. |
+| `workload` | `arrival` (`constant` or `poisson`), `offeredRps` (≤ 5,000), `startMs`, `durationMs`, `timeoutMs`, and up to 10 `bursts` of `{ atMs, durationMs, extraRps }`. |
+| `faults` | Up to 12 faults, see below. |
 | `run` | `sampleWindowMs` for charts, and an optional `horizonMs` (default: end of traffic plus one client timeout). |
 | `assumptions` | Simplifications, exported with every result. |
 | `expectedObservations` | Teaching hypotheses. Shown next to results, never evaluated. |
 | `layout` | Optional canvas positions by node id. |
 
-Load balancer config: `algorithm: "round-robin"` and `healthCheck: { enabled, intervalMs, probeTimeoutMs, unhealthyThreshold, healthyThreshold }`.
+Node configs:
 
-Server config: `capacity` (slots), `queueCapacity`, `serviceTimeMs` and `serviceTimeDistribution` (`fixed` or `exponential`).
+- `load-balancer`: `algorithm` (`round-robin`, `least-connections`, `random`), `retries` (0–5 attempts on another backend) and `healthCheck: { enabled, intervalMs, probeTimeoutMs, unhealthyThreshold, healthyThreshold }`.
+- `service`, `database`, `queue`: `capacity` (slots or workers), `queueCapacity` (queue or backlog), `serviceTimeMs`, `serviceTimeDistribution` (`fixed` or `exponential`).
+- `cache`: the same plus `hitRatio` (0–1).
 
-The bundled examples in [`examples/`](../examples) are valid files of this format and are checked in tests.
+Link extras: `circuitBreaker: { enabled, failureThreshold, openMs }`. A `null` timeout means the caller waits until the request deadline.
+
+Faults share `{ id, kind, target, atMs }`; every kind except `node-failure` has `untilMs | null` (null: until the end of the run).
+
+| Kind | Target | Extra fields |
+|---|---|---|
+| `node-failure` | worker node | `recoverAtMs \| null`, `behavior: "refuse" \| "hang"` |
+| `slowdown` | worker node | `factor` (1–100), `addMs` |
+| `error-rate` | worker node | `rate` (0–1) |
+| `capacity` | worker node | `capacity` (≤ the node's capacity) |
+| `link-latency` | link | `addMs` |
+| `link-loss` | link | `rate` (0–1) |
+| `cache-flush` | cache | none |
+
+The bundled examples in [`examples/id`](../examples/id) and [`examples/en`](../examples/en) are valid files of this format (ten experiments, same behavior in both languages, different titles and notes) and are checked in tests.
 
 ## Budget limits
 
@@ -35,14 +51,18 @@ A file is rejected when the run would exceed 15 minutes of simulated time or abo
 
 - The file is parsed as JSON data only; nothing is executed.
 - Unknown fields are rejected rather than ignored, so typos do not silently change meaning.
-- Older versions are migrated first. `0.1.0-proposal`, the planning-phase example, is upgraded automatically: `failureThreshold` becomes `unhealthyThreshold`, `workload.kind: "constant-rate"` becomes `arrival: "constant"`, and missing fields get documented defaults.
-- Every problem is reported with its path (for example `model.nodes[2].config.serviceTimeMs`) and a message that says how to fix it.
+- Older versions are migrated first, step by step. `0.1.0-proposal` → `0.1.0`: `failureThreshold` becomes `unhealthyThreshold`, `workload.kind: "constant-rate"` becomes `arrival: "constant"`, missing fields get documented defaults. `0.1.0` → `0.2.0`: `server` nodes become `service` nodes, the load balancer gets `retries: 0`, and links get an id, zero latency, no timeout, no retries and a disabled circuit breaker. Migrated files produce the same results as before.
+- Every problem is reported with its path (for example `model.nodes[2].config.serviceTimeMs`) and a translatable message that says how to fix it.
 - If the same experiment (same title and behavior) is already in the browser, it is reused instead of duplicated. If a different experiment uses the id, the import gets a new id and "(imported)" in its title.
 - Result files and comparison bundles can be imported too: their embedded experiments are imported and re-run, and the app shows whether the behavior digest, trace fingerprint and request counts match the file.
 
+## Messages and languages
+
+Validation messages, insights and check details are emitted as keys with parameters (`{ key, params }`), never as English sentences, so the web app can show them in the user's language. The locale files in `apps/web/src/i18n/locales` hold the texts; a unit test checks that both languages cover every key.
+
 ## Digests
 
-- **Input digest:** SHA-256 of the canonical experiment without `layout`. Canonical form sorts object keys, keeps array order (server order is round-robin order) and drops undefined values.
+- **Input digest:** SHA-256 of the canonical experiment without `layout`. Canonical form sorts object keys, keeps array order (link order is call order and round-robin order) and drops undefined values.
 - **Run key:** SHA-256 of the compiled engine input. It changes exactly when results can change, so titles, notes, labels and layout never make a result stale.
 - **Trace fingerprint:** a non-cryptographic hash over every event field in emission order. Two runs with the same input, seed and engine version must produce the same fingerprint.
 
@@ -52,9 +72,9 @@ Exported as `<experimentId>.result.json`:
 
 ```json
 {
-  "resultSchemaVersion": "0.1.0",
-  "engineVersion": "0.1.0",
-  "metricDefinitionsVersion": "0.1.0",
+  "resultSchemaVersion": "0.2.0",
+  "engineVersion": "0.2.0",
+  "metricDefinitionsVersion": "0.2.0",
   "behaviorDigest": "sha256:…",
   "inputDigest": "sha256:…",
   "traceDigest": "fnv1a32x2:…",
@@ -78,4 +98,4 @@ Exported from the Compare page as `compare-<a>-vs-<b>.comparison.json`: `compari
 
 ## Diff for comparisons
 
-`semanticDiff(a, b)` lists every behavior-relevant difference, keyed by node id, fault id and burst position, with human labels and units. Titles, notes, labels and layout are ignored. When health checks are off on both sides, probe settings are ignored too, because they cannot affect results.
+`semanticDiff(a, b)` lists every behavior-relevant difference, keyed by node id, link id, fault id and burst position, with field keys and units that the app translates. Titles, notes, labels and layout are ignored. Settings that cannot affect results on either side (probe settings with health checks off, breaker settings with the breaker off) are ignored too.

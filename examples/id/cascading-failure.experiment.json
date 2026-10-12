@@ -3,7 +3,7 @@
 	"experimentId": "cascading-failure",
 	"title": "Kegagalan berantai: database lambat menjatuhkan API",
 	"question": "Bagaimana database yang lambat bisa membuat API yang sehat ikut gagal?",
-	"description": "Klien memanggil API, API memanggil database. Di detik 20 sampai 40 database jadi 50 kali lebih lambat. API tidak memakai timeout ke database, jadi tiap slot API tertahan menunggu, antreannya penuh, dan klien mulai menerima penolakan dan timeout dari API, padahal API sendiri tidak rusak.",
+	"description": "Klien memanggil API, API memanggil database. Di detik 20 sampai 40 database jadi 50 kali lebih lambat. API tidak memakai timeout ke database, jadi tiap slot API tertahan menunggu, antreannya memanjang, dan klien mulai kena timeout dari API, padahal API sendiri tidak rusak. Setelah database pulih, API masih harus menghabiskan antrean lama sebelum kembali normal.",
 	"seed": 42,
 	"model": {
 		"nodes": [
@@ -18,7 +18,7 @@
 				"label": "API",
 				"config": {
 					"capacity": 10,
-					"queueCapacity": 50,
+					"queueCapacity": 2000,
 					"serviceTimeMs": 20,
 					"serviceTimeDistribution": "fixed"
 				}
@@ -95,7 +95,7 @@
 	],
 	"expectedObservations": [
 		"Slot API habis dalam beberapa detik setelah database melambat, karena tiap request menahan slot selama menunggu database.",
-		"Kegagalan yang dilihat klien berasal dari API (antrean penuh) dan dari timeout, bukan dari database secara langsung.",
+		"Kegagalan yang dilihat klien berasal dari API berupa timeout saat menunggu slot API, bukan dari database secara langsung.",
 		"Setelah database normal kembali, API butuh waktu untuk menghabiskan antreannya."
 	],
 	"layout": {

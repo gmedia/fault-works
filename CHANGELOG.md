@@ -1,6 +1,38 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (unreleased, 2026-10-12)
+
+The fixed client, load balancer and servers shape becomes a free graph, the app speaks Indonesian first, and the workbench is designed for phones first. Engine `0.2.0`, schema `0.2.0`, metrics `0.2.0`; v0.1 files migrate automatically and produce the same results.
+
+### Simulation
+- Components: client, load balancer, service, database, cache and worker queue, up to 12 per experiment, connected by up to 24 links in call direction. Services call every component behind them in order while holding their slot, so slow dependencies back up their callers.
+- Load balancer algorithms round robin, least connections and random; optional retry on another backend.
+- Links carry one-way latency, a call timeout, immediate retries and a circuit breaker (consecutive failures, open period, one trial call).
+- Seven fault kinds: component crash (refuse or hang), slowdown, error rate, capacity drop, link latency, link loss and cache flush; several may overlap.
+- Answers that arrive after the client deadline still travel back up the chain, so a caller's slot is always released (a chain whose dependency recovered could otherwise stay stuck). Timed-out requests that later reach a slot are served without calling downstream.
+- New failure reasons `circuit-open` and `injected-error`; new events for calls, routing, cache lookups, jobs, fault windows and breaker transitions. Random streams per balancer and per link in addition to arrivals and services.
+
+### Experiment format
+- Schema 0.2.0 with migration from 0.1.0 (`server` → `service`, link ids and defaults, balancer retries). Graph validation rejects cycles, self-calls, dangling or duplicate links, unreachable components and faults on the wrong kind of target.
+- Validation messages, insights and check details are translatable keys with parameters instead of English sentences.
+- Ten built-in experiments in Indonesian and English: the v0.1 five plus cascading failure, retry storm, circuit breaker, cache stampede and worker-queue backlog. Six templates for new experiments.
+
+### Metrics
+- Failures by originating component, per-component and per-link summaries (calls, retries, late responses, peak queue, slot-time busy, breaker openings), cache hit ratio, queue jobs and waiting times, fault windows and breaker states in the replay transitions.
+- Insights for every fault kind, retries, breakers, caches and queues; comparison cautions when the number of successes differs.
+
+### Web app
+- Bahasa Indonesia by default, English when the browser prefers it, switchable and remembered. Every string, unit and message is translated; a unit test checks both locale files against the keys the app uses.
+- Phone-first workbench: Build, Replay and Results screens in a bottom tab bar, a settings sheet, a stacked topology list and secondary actions in a menu. No horizontal scroll at 320 px.
+- Desktop canvas with free editing: add any component, connect by dragging, click a link to edit it, remove components with their faults (undoable).
+- Replay animation: request flow along links, crash shake and pulse rings on state changes, all disabled under reduced motion.
+- New experiment dialog with templates; experiments are marked as example, imported, variant or created.
+
+### Quality
+- Engine tests for chains, breakers, latency and loss, caches, queues, slowdowns, capacity and error rates; experiment tests for migrations, graph validation and editing helpers; metrics golden numbers kept.
+- Web unit tests for locale keys, replay snapshots and the library store; E2E for free creation, the language switch, phone screens, reduced motion and the seed sweep, with axe scans in both languages.
+
+## Unreleased before 0.2.0
 
 ### Open source
 - Apache-2.0 license with NOTICE; Contributor Covenant 2.1, security policy (GitHub private reporting), governance, contributing guide.

@@ -3,7 +3,7 @@
 	"experimentId": "cascading-failure",
 	"title": "Cascading failure: a slow database takes the API down",
 	"question": "How does a slow database make a healthy API fail?",
-	"description": "The client calls the API, the API calls the database. From 20 s to 40 s the database is 50 times slower. The API uses no timeout towards the database, so every API slot sits waiting, its queue fills, and clients start getting rejections and timeouts from the API even though the API itself is fine.",
+	"description": "The client calls the API, the API calls the database. From 20 s to 40 s the database is 50 times slower. The API uses no timeout towards the database, so every API slot sits waiting, its queue grows, and clients start timing out at the API even though the API itself is fine. After the database recovers, the API still has to drain the old queue before it is back to normal.",
 	"seed": 42,
 	"model": {
 		"nodes": [
@@ -18,7 +18,7 @@
 				"label": "API",
 				"config": {
 					"capacity": 10,
-					"queueCapacity": 50,
+					"queueCapacity": 2000,
 					"serviceTimeMs": 20,
 					"serviceTimeDistribution": "fixed"
 				}
@@ -95,7 +95,7 @@
 	],
 	"expectedObservations": [
 		"The API's slots run out within seconds of the slowdown, because each request holds a slot while it waits for the database.",
-		"Failures seen by the client originate at the API (queue full) and as timeouts, not at the database directly.",
+		"Failures seen by the client originate at the API as timeouts while waiting for an API slot, not at the database directly.",
 		"After the database recovers, the API needs time to drain its queue."
 	],
 	"layout": {

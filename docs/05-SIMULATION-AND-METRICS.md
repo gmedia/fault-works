@@ -1,67 +1,85 @@
 # Simulation Model, Metrics and Correctness Contract
 
+**Status:** engine `0.2.0`, metrics `0.2.0`. The in-app Model guide says the same in plain language, in Indonesian and English.
+
 ## Model scope
 
-v0.1 is an **abstract request-level discrete-event simulation**, not packet-level networking, a faithful NGINX replica, or a production-grade performance forecast. Document each component's behavioral assumptions so that results are inspectable.
+FaultWorks runs an **abstract request-level discrete-event simulation**, not packet-level networking, a faithful proxy replica, or a production-grade performance forecast. Every component below has an explicit behavioral contract so that results are inspectable; anything not listed is not modeled.
+
+An experiment is a directed acyclic graph of up to 12 components joined by up to 24 links. Links follow the direction of calls. The client calls exactly one component; a load balancer forwards to one of its backends; services, databases and caches do their own work and then call every component behind them in link order; a worker queue answers at once and does its work later.
 
 ### Client
 
-Produces request arrivals at scheduled simulated times (constant-RPS baseline or burst). `offered_requests` counts attempts sent by client, even if later dropped. A constant-RPS generator schedules at known intervals; optional stochastic mode requires a seeded PRNG.
+Produces request arrivals at scheduled simulated times: constant rate (exact intervals) or a Poisson process (seeded exponential gaps), plus up to ten bursts that add rate for a while. `offered` counts every attempt, even those later dropped. Each request carries a deadline, the client timeout; a response after it is discarded as a late response.
 
 ### Load balancer
 
-Selects eligible backend via Round Robin among backends currently marked healthy. A failed backend may remain *eligible* until a scheduled probe/threshold causes health status to flip. 'Crash' and 'detected unhealthy' are distinct state changes. Explicitly define whether requests in flight fail immediately and how connection reuse is abstracted.
+Chooses a backend among those it considers healthy, by round robin, least connections (fewest open calls, ties by order) or seeded random. Without health checks every backend is healthy forever. With health checks it probes every backend each interval starting at time 0; a backend leaves rotation after the configured number of consecutive failed probes and returns after the configured number of successes. Probes bypass queues, answer instantly from a running component, and use no capacity, so a short interval only shows its benefit. `retries` lets the balancer try another backend after a failed call, which can mask a refusing backend. "Crashed" and "marked unhealthy" are distinct state changes; the gap between them is the amber hatched band in the UI.
 
-### Server
+### Service and database
 
-Has N concurrent service slots; arriving requests join a queue if occupied. Service time is configurable; a server failure changes lifecycle of running/queued requests based on an explicit policy. No automatic retry unless a model explicitly includes it.
+Identical behavior; the kind is a label for the reader. N concurrency slots and a FIFO queue of bounded size; a call that finds no slot and a full queue fails with `queue-full`. Service time is fixed or exponential (seeded, per component stream). After its own work the component calls each downstream link in order while still holding its slot, so a slow dependency makes the caller's queue grow. A failure anywhere in the chain fails the call unless the link retries.
 
-### Health checking
+### Cache
 
-Probe interval, timeout, unsuccessful-successful thresholds and propagation delay are first-class parameters. For v0.1, model simplified scheduled probes; do **not** claim parity with NGINX passive checks or HAProxy active checks. Distinguish detected loss from actual failure time.
+A service whose lookups are answered from memory with probability `hitRatio` (seeded). Misses fall through to its single downstream component. A `cache-flush` fault sets the hit ratio to zero for a window.
 
-## Decisions made in the v0.1 implementation
+### Worker queue
 
-The proposal left some behavior open. The engine settles it as follows; the in-app Model guide says the same in plain language.
+Stores jobs up to its backlog limit and answers the caller immediately (or rejects it when the backlog is full). `capacity` workers process jobs, call the components behind the queue and record their outcome as jobs, not requests. Backlog, waiting time and failed jobs are reported per queue.
 
-- **Two failure behaviors.** `refuse` models a crashed process: new connections and probes fail immediately, and work in progress fails at the crash (reason: lost in crash). `hang` models an unreachable host: connections and probes get no answer, so requests fail at the client timeout and probes at the probe timeout.
-- **No cancellation.** A server does not know a client gave up. Queued or running work continues, uses capacity, and its response is discarded as a late response.
-- **Probe model.** Probes start at time 0 and repeat every interval. They bypass the queue and answer instantly from a running server. Status changes after the configured number of consecutive failures or successes, with no extra propagation delay.
-- **Same-time ordering.** Faults, then probe results, completions, timeouts, probe sends and arrivals. A response landing exactly on the deadline counts as on time.
-- **Percentiles.** Nearest rank, always an observed sample, always shown with its sample count. Success latency excludes failures; a separate "all ended requests" p95 includes them, with timeouts counted as the full timeout.
-- **Censoring.** Requests without an outcome at the horizon are reported as still in flight, never as success or failure.
-- **Attribution.** A failure counts against a fault when the request was lost in the crash, or was routed to the server after it failed and before it was detected or recovered.
+### Links
+
+Every link has one-way `latencyMs` added to each call and each answer, an optional call `timeoutMs` after which the caller gives up and frees its slot, `retries` (immediate, no backoff, same target) and an optional circuit breaker. The breaker counts consecutive failures; at `failureThreshold` it opens and rejects calls at once (`circuit-open`) for `openMs`, then lets one trial call through: success closes it, failure opens it again.
+
+### Faults
+
+| Kind | Target | Effect during the window |
+|---|---|---|
+| `node-failure` | service, database, cache, queue | `refuse`: new connections and probes fail at once, work in progress is lost (`lost-in-crash`). `hang`: no answers; callers wait for their timeout. Recovery empties the queue. |
+| `slowdown` | worker | service time × `factor` + `addMs` |
+| `error-rate` | worker | a seeded share `rate` of arriving calls fail at once (`injected-error`) |
+| `capacity` | worker | concurrency becomes `capacity`; running work finishes |
+| `link-latency` | link | `addMs` added to each call and answer |
+| `link-loss` | link | a seeded share `rate` of calls never arrive; callers time out |
+| `cache-flush` | cache | hit ratio 0 |
+
+Several faults may be active at once. Crashes of the same component must not overlap.
+
+## Engine decisions
+
+- **No cancellation.** A component does not know its caller gave up. Queued or running work continues, uses capacity, and its answer is discarded as a late response (ADR-013). The answer still travels back up the chain so that every caller releases the slot it held for the call; a timed-out request that reaches a slot later is served without calling anything downstream.
+- **Same-time ordering.** Faults, then probe results and breaker transitions, link transfers, service completions, timeouts, probe sends, arrivals. A response landing exactly on the deadline counts as on time.
+- **Randomness.** SFC32 seeded through SplitMix32 with one named stream per consumer: `arrivals`, `service:<id>`, `balancer:<id>` and `edge:<id>`. Adding a component never shifts another component's random numbers.
+- **Time** is integer microseconds; the 15-minute limit is far below the safe-integer range. A hard ceiling of 3,000,000 events stops a runaway input and the result says the run stopped early.
+- **Percentiles.** Nearest rank, always an observed sample, always shown with its sample count. Success latency excludes failures; a separate "all ended requests" set includes them, with timeouts counted as the full timeout.
+- **Censoring.** Requests without an outcome at the horizon are still in flight, never success or failure.
+- **Attribution.** Every failed request records the component where the failure originated (where it was refused, timed out, lost or rejected), even when the client saw it as an error from a component in front of it.
 
 ## Metrics with definitions
 
-- **Offered:** number of client attempts generated.
-- **Admitted:** attempts accepted by LB/server admission rules.
-- **Completed success:** admitted requests receiving success before timeout.
-- **Completed error:** terminal app failure, routing failure, queue rejection, or timeout (subtype separately).
-- **In-flight:** requests not yet terminal by simulation horizon (censored; separate, not counted success).
-- **Throughput:** completed attempts divided by measured simulated time, with clear units.
-- **Goodput:** successful requests satisfying the declared response deadline divided by the window; if no objective is set, label 'successful completion rate' rather than SLO goodput.
-- **Latency:** completion timestamp minus arrival timestamp for completed request samples; timeout handling explicit. Show sample N next to p50/p95.
-- **Queue depth:** per-node timeseries and peak; include head-of-line processing rules.
-- **Detection delay:** time when LB marks backend unhealthy minus actual backend failure time.
+- **Offered:** client attempts generated. **Succeeded:** answered at or before the deadline. **Failed:** ended without success, by reason (`no-healthy-backend`, `refused`, `queue-full`, `lost-in-crash`, `timeout`, `circuit-open`, `injected-error`) and by originating component. **In flight:** no outcome at the horizon.
+- **Latency:** completion minus arrival for ended requests. p50/p95/p99 of successful requests with n; mean and p95 of all ended requests; total client time spent waiting on failed requests (percentiles hide this once more than 5 % of requests fail).
+- **Calls:** every attempt over a link, retries included, so calls can far exceed requests. Per component: calls, failures originating there, call latency, late responses, peak queue, slot-time busy. Per link: calls, retries, failures, breaker openings. Caches report hit ratio; queues report jobs done, failed, peak backlog and waiting times.
+- **Detection delay:** time the load balancer marked a component unhealthy minus the time it crashed, with the range the settings allow.
+- **Series:** per chart window, offered, succeeded, failed, in flight, latency percentiles, and per component calls, failures, peak queue and busy slots; per link calls. Exact transition times (down, up, healthy, unhealthy, fault start and end, breaker state) drive the replay.
 
 ## Invariants and correctness
 
-All five runtime checks below (1–4 and monotonic time) run after every simulation in the app. Invariants 5–8 are covered by automated tests.
+Five checks run after every simulation in the app, independently of the engine's own bookkeeping:
 
-1. For any final run: `offered = success + failure + still_inflight` when every generated attempt is tracked; failed admission is a failure subtype. If there are retries in future versions, make distinction between logical client requests and individual attempts explicit.
-2. Every request has exactly one terminal state; timeout + late completion must not double-count.
-3. No active service count exceeds configured concurrency.
-4. Queue counts and service slot allocations never negative.
-5. Same `scenario + seed + engineVersion` produces byte-equivalent normalized event trace (excluding UI layout/recording time).
-6. A known case with no failure/queueing and fixed service time produces a calculable completion count.
-7. Changing visual zoom, animation speed or screen refresh rate does not alter results.
-8. Invalid units, negative service time, unsupported cycles and unsupported topology are rejected with actionable errors.
+1. `offered = succeeded + failed + inFlight`.
+2. Every request has exactly one terminal event; late responses only follow a caller giving up.
+3. Busy slots never exceed concurrency, per component, at every event.
+4. Queues stay between zero and their size.
+5. Event timestamps never decrease.
+
+Automated tests cover the rest: byte-identical traces for the same input, seed and engine version; reference cases with hand-computed answers for load balancing, chains, breakers, latency, loss, caches, queues, slowdowns, capacity and error rates; property tests over random graphs; golden numbers for the built-in examples (1,005 failed requests without health checks, 255 with, 355 for the hanging backend); and rejection of cycles, dangling links, self-calls, unreachable components and over-budget runs with actionable messages.
 
 ## Explicit limits
 
-No general TCP state machine, retries, connection pooling, serialization overhead, GC pauses, memory paging, OS scheduling, persistence guarantees, or causal explanation beyond model rules in v0.1. Any comparison against a real system requires aligned arrival pattern, concurrency semantics, failure semantics, output definition, and observed measurement uncertainty.
+No TCP, TLS, packets, connection pooling, keep-alive or DNS; no retry backoff, rate limiting, bulkheads or autoscaling; no CPU, memory, garbage collection or OS scheduling; no claim of parity with NGINX, HAProxy, Envoy, Kafka or any product. Any comparison against a real system requires aligned arrival pattern, concurrency semantics, failure semantics, output definitions and measurement uncertainty.
 
 ## Quality of results
 
-A/B comparative claims must name the changed variable and show uncertainty / stochastic variability. A single seed is a deterministic demonstration, not statistical evidence. Optional future studies can run multiple independent seeds and report confidence intervals.
+A/B comparative claims must name the changed variable and show variability. A single seed is a deterministic demonstration, not statistical evidence; the Compare page can repeat both sides with ten paired seeds when either has random parts.

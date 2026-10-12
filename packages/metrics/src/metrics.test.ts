@@ -104,14 +104,19 @@ describe("golden scenarios (unchanged from v0.1)", () => {
 });
 
 describe("new scenarios", () => {
-	it("cascading failure: a slow database makes the API reject and time out", () => {
+	it("cascading failure: a slow database makes clients time out at the API", () => {
 		const { metrics } = runBuiltIn("cascading-failure");
 		const s = metrics.summary;
 		const api = node(metrics, "api");
-		expect(s.failed).toBeGreaterThan(500);
-		expect(api?.peakQueue).toBe(50);
-		expect(api?.failedByReason["queue-full"]).toBeGreaterThan(0);
-		expect(s.failedByReason.timeout).toBeGreaterThan(0);
+		expect(s.failed).toBeGreaterThan(1500);
+		// The API never rejects: its queue is large, so requests wait for a slot and time out instead.
+		// Timed-out requests still reach a slot, finish without calling the database and drain fast,
+		// which keeps the queue far below its size.
+		expect(api?.peakQueue).toBeGreaterThan(100);
+		expect(api?.failedByReason["queue-full"] ?? 0).toBe(0);
+		expect(s.failedByReason.timeout).toBeGreaterThan(1500);
+		// After the database recovers the API still has to drain the old queue (late responses).
+		expect(s.lateResponses).toBeGreaterThan(1000);
 		// Failures originate at the API and at the database (timeouts attributed to the slow node).
 		const origins = s.failedByOrigin.map((o) => s.nodes[o.node]?.id);
 		expect(origins).toEqual(expect.arrayContaining(["api"]));
