@@ -1,0 +1,120 @@
+{
+	"schemaVersion": "0.1.0",
+	"experimentId": "lb-failure-with-health-checks",
+	"title": "Load balancer failure with health checks",
+	"question": "How many failed requests do health checks prevent when Server B crashes?",
+	"description": "Same scenario as the baseline with one change: the load balancer probes each backend every 5 s and removes it after two failed probes. Compare it with the baseline to see the effect of that single variable.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"label": "Load balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 5000,
+						"probeTimeoutMs": 1000,
+						"unhealthyThreshold": 2,
+						"healthyThreshold": 2
+					}
+				}
+			},
+			{
+				"id": "server-a",
+				"kind": "server",
+				"label": "Server A",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 50,
+					"serviceTimeMs": 100,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "server-b",
+				"kind": "server",
+				"label": "Server B",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 50,
+					"serviceTimeMs": 100,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"source": "client",
+				"target": "lb"
+			},
+			{
+				"source": "lb",
+				"target": "server-a"
+			},
+			{
+				"source": "lb",
+				"target": "server-b"
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "server-b-crash",
+			"kind": "node-failure",
+			"target": "server-b",
+			"atMs": 20000,
+			"recoverAtMs": 40000,
+			"behavior": "refuse"
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each server has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Health probes bypass the request queue and answer instantly when the server is up.",
+		"Servers do not know when a client gave up; they finish the work and the late response is discarded.",
+		"No retries: every failed request is final.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"Requests still fail between the crash and detection, because two probes must fail first.",
+		"After detection, Server A carries all traffic and failures stop.",
+		"After recovery, Server B gets traffic again only after two successful probes."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"lb": {
+			"x": 300,
+			"y": 0
+		},
+		"server-a": {
+			"x": 620,
+			"y": -75.0
+		},
+		"server-b": {
+			"x": 620,
+			"y": 75.0
+		}
+	}
+}

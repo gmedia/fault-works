@@ -1,0 +1,23 @@
+{
+	"name": "@faultworks/experiment",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.5",
+		"fast-check": "^4.10.2",
+		"typescript": "^7.0.2",
+		"vitest": "^5.0.4"
+	},
+	"dependencies": {
+		"@faultworks/engine": "workspace:*",
+		"zod": "^4.6.6"
+	}
+}

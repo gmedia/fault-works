@@ -1,0 +1,136 @@
+{
+	"schemaVersion": "0.1.0",
+	"experimentId": "random-traffic-burst",
+	"title": "Random traffic with a burst",
+	"question": "How much variability comes from randomness alone, and what does a burst do to queues?",
+	"description": "Three healthy servers, Poisson arrivals and exponential service times. A 10 s burst adds 120 req/s at 30 s. There is no fault: this is the reference for what normal variability looks like. Change only the seed to see a different random outcome.",
+	"seed": 7,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"label": "Load balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 5000,
+						"probeTimeoutMs": 1000,
+						"unhealthyThreshold": 2,
+						"healthyThreshold": 2
+					}
+				}
+			},
+			{
+				"id": "server-a",
+				"kind": "server",
+				"label": "Server A",
+				"config": {
+					"capacity": 8,
+					"queueCapacity": 20,
+					"serviceTimeMs": 80,
+					"serviceTimeDistribution": "exponential"
+				}
+			},
+			{
+				"id": "server-b",
+				"kind": "server",
+				"label": "Server B",
+				"config": {
+					"capacity": 8,
+					"queueCapacity": 20,
+					"serviceTimeMs": 80,
+					"serviceTimeDistribution": "exponential"
+				}
+			},
+			{
+				"id": "server-c",
+				"kind": "server",
+				"label": "Server C",
+				"config": {
+					"capacity": 8,
+					"queueCapacity": 20,
+					"serviceTimeMs": 80,
+					"serviceTimeDistribution": "exponential"
+				}
+			}
+		],
+		"links": [
+			{
+				"source": "client",
+				"target": "lb"
+			},
+			{
+				"source": "lb",
+				"target": "server-a"
+			},
+			{
+				"source": "lb",
+				"target": "server-b"
+			},
+			{
+				"source": "lb",
+				"target": "server-c"
+			}
+		]
+	},
+	"workload": {
+		"arrival": "poisson",
+		"offeredRps": 150,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": [
+			{
+				"atMs": 30000,
+				"durationMs": 10000,
+				"extraRps": 120
+			}
+		]
+	},
+	"faults": [],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each server has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Health probes bypass the request queue and answer instantly when the server is up.",
+		"Servers do not know when a client gave up; they finish the work and the late response is discarded.",
+		"No retries: every failed request is final.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"Latency varies from request to request even without any failure.",
+		"During the burst, queues grow and p95 latency rises; a few requests may be rejected or time out.",
+		"Different seeds give slightly different numbers; a single seed is a demonstration, not statistical evidence."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"lb": {
+			"x": 300,
+			"y": 0
+		},
+		"server-a": {
+			"x": 620,
+			"y": -150.0
+		},
+		"server-b": {
+			"x": 620,
+			"y": 0.0
+		},
+		"server-c": {
+			"x": 620,
+			"y": 150.0
+		}
+	}
+}

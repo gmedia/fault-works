@@ -1,0 +1,120 @@
+{
+	"schemaVersion": "0.1.0",
+	"experimentId": "hanging-backend",
+	"title": "Hanging backend: timeouts instead of errors",
+	"question": "Why does a backend that hangs hurt more than one that refuses connections?",
+	"description": "Server B stops answering instead of crashing cleanly. Requests sent to it wait for the full client timeout, and health probes wait for their own timeout too, so detection is slower.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"label": "Load balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 5000,
+						"probeTimeoutMs": 2000,
+						"unhealthyThreshold": 2,
+						"healthyThreshold": 2
+					}
+				}
+			},
+			{
+				"id": "server-a",
+				"kind": "server",
+				"label": "Server A",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 50,
+					"serviceTimeMs": 100,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "server-b",
+				"kind": "server",
+				"label": "Server B",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 50,
+					"serviceTimeMs": 100,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"source": "client",
+				"target": "lb"
+			},
+			{
+				"source": "lb",
+				"target": "server-a"
+			},
+			{
+				"source": "lb",
+				"target": "server-b"
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "server-b-crash",
+			"kind": "node-failure",
+			"target": "server-b",
+			"atMs": 20000,
+			"recoverAtMs": 40000,
+			"behavior": "hang"
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each server has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Health probes bypass the request queue and answer instantly when the server is up.",
+		"Servers do not know when a client gave up; they finish the work and the late response is discarded.",
+		"No retries: every failed request is final.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"Requests sent to the hanging server fail only after the full 1000 ms client timeout instead of failing at once.",
+		"Latency of successful requests stays at the service time; the cost shows up in the p95 of all ended requests, which jumps to the timeout.",
+		"Detection takes longer than in the refuse case because each probe waits for its own timeout."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"lb": {
+			"x": 300,
+			"y": 0
+		},
+		"server-a": {
+			"x": 620,
+			"y": -75.0
+		},
+		"server-b": {
+			"x": 620,
+			"y": 75.0
+		}
+	}
+}

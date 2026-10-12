@@ -1,0 +1,9 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`createRng > matches the golden sequence (algorithm is part of the reproducibility contract) 1`] = `
+[
+  "0.150983449072",
+  "0.642982390011",
+  "0.593723049620",
+]
+`;
