@@ -1,0 +1,106 @@
+{
+	"schemaVersion": "0.1.0-proposal",
+	"experimentId": "lb-failure-baseline",
+	"title": "Load Balancer Failure: detection vs no detection",
+	"question": "How does delayed failure detection affect unsuccessful requests?",
+	"description": "Proposed teaching scenario; the schema and simulation engine have not been implemented.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client"
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 5000,
+						"failureThreshold": 1,
+						"probeTimeoutMs": 1000
+					}
+				}
+			},
+			{
+				"id": "server-a",
+				"kind": "server",
+				"config": {
+					"capacity": 10,
+					"serviceTimeMs": 100,
+					"queueCapacity": 50
+				}
+			},
+			{
+				"id": "server-b",
+				"kind": "server",
+				"config": {
+					"capacity": 10,
+					"serviceTimeMs": 100,
+					"queueCapacity": 50
+				}
+			}
+		],
+		"links": [
+			{
+				"source": "client",
+				"target": "lb"
+			},
+			{
+				"source": "lb",
+				"target": "server-a"
+			},
+			{
+				"source": "lb",
+				"target": "server-b"
+			}
+		]
+	},
+	"workload": {
+		"kind": "constant-rate",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000
+	},
+	"faults": [
+		{
+			"id": "server-b-down",
+			"kind": "node-failure",
+			"target": "server-b",
+			"atMs": 20000,
+			"recoverAtMs": 50000
+		}
+	],
+	"assumptions": [
+		"abstract request-level model, not real HTTP proxy semantics",
+		"health checks are simplified scheduled simulated events",
+		"fixed service time and concurrency, no CPU or packet model",
+		"numbers are scenario inputs, not measured performance"
+	],
+	"expectedObservations": [
+		"Some requests directed to B may fail before health status changes",
+		"Turning on failure detection should change LB eligibility after modeled detection delay",
+		"Backend A may become more loaded after B is excluded"
+	],
+	"layout": {
+		"client": {
+			"x": 40,
+			"y": 100
+		},
+		"lb": {
+			"x": 260,
+			"y": 100
+		},
+		"server-a": {
+			"x": 500,
+			"y": 40
+		},
+		"server-b": {
+			"x": 500,
+			"y": 180
+		}
+	}
+}
