@@ -4,7 +4,7 @@
 
 FaultWorks is a browser-based workbench for reproducible infrastructure failure experiments. You describe a small system (a client, a load balancer and a few servers), schedule a failure, run a deterministic simulation, and compare two versions of the experiment to see exactly what one change does.
 
-> **Status:** v0.1 is implemented and tested, but not released. GMEDIA ownership, the public repository, the name and the license are still pending approval (see [Project status](#project-status)).
+> **Status:** v0.1, pre-release. Open source under the [Apache-2.0 license](LICENSE).
 
 ## What you can do
 
@@ -64,7 +64,15 @@ The engine is checked three ways: reference cases whose answers were computed by
 
 v0.1 (October 2026) covers the scope in [docs/02](docs/02-SCOPE-AND-ROADMAP.md). A simulated pilot with four AI personas found and drove fixes for import, comparison export, latency reporting and the phone layout ([docs/12](docs/12-SIMULATED-PILOT.md)); it does not replace real users. The next gate is the pilot in [docs/10](docs/10-VALIDATION-PLAN.md): three to five people should be able to run the A/B experiment and explain the difference without help before any v0.2 work starts.
 
-Nothing in this repository implies official GMEDIA authorization, trademark clearance or a license grant. The name **FaultWorks by GMEDIA** and the slug `faultworks` are provisional, and Apache-2.0 is recommended but not granted ([ADR-008](docs/11-DECISION-LOG.md)).
+The name **FaultWorks** has not been through a trademark search yet ([ADR-007](docs/11-DECISION-LOG.md)).
+
+## Contributing
+
+Bug reports, usability feedback and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); AI coding agents should read [AGENTS.md](AGENTS.md). Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately as described in [SECURITY.md](SECURITY.md). How decisions are made is in [GOVERNANCE.md](GOVERNANCE.md).
+
+## License
+
+Copyright 2026 GMEDIA and the FaultWorks contributors. Licensed under the [Apache License, Version 2.0](LICENSE); see [NOTICE](NOTICE) for bundled third-party software and fonts.
 
 ## Documentation
 

@@ -1,6 +1,7 @@
 {
 	"name": "@faultworks/web",
 	"private": true,
+	"license": "Apache-2.0",
 	"type": "module",
 	"imports": {
 		"#/*": "./src/*"

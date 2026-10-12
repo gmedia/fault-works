@@ -30,9 +30,13 @@ All decisions are **provisional** until reviewed and approved by project maintai
 
 **Decision:** Use FaultWorks in blueprint only. **Why:** concise global-readable name that evokes failure experiments. **Consequence:** company authorization, namespace/trademark screening and legal approval required before publishing.
 
-## ADR-008 — Do not create an Apache-2.0 LICENSE without authorization
+**Update (2026-10-12):** The maintainers published the project as `gmedia/fault-works` on GitHub under the FaultWorks name. A trademark search has still not been done; the name may change if one finds a conflict.
 
-**Decision:** Recommend Apache-2.0 but explicitly mark it pending. **Why:** company/employee IP and branding require approval. **Consequence:** blueprint not distributable as licensed source software yet.
+## ADR-008 — License: Apache-2.0
+
+**Original decision:** Recommend Apache-2.0 but mark it pending until company/employee IP and branding were approved.
+
+**Update (2026-10-12):** The maintainers chose Apache-2.0 when publishing the repository and added `LICENSE`, `NOTICE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `SECURITY.md` and `GOVERNANCE.md`. **Why Apache-2.0:** permissive, with an explicit patent grant and a clear contribution clause, which suits company-sponsored tooling. A production dependency audit (`pnpm licenses list --prod`) found only MIT, ISC, BSD, Apache-2.0, 0BSD and Unlicense code in the shipped bundle, plus IBM Plex fonts under OFL-1.1, all compatible. **Consequence:** contributions are accepted under Apache-2.0; new runtime dependencies must keep that compatibility.
 
 ## ADR-009 — Frontend stack: React + TanStack Router in a pnpm workspace
 

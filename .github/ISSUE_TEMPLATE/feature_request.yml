@@ -1,0 +1,30 @@
+name: Feature or model behavior
+description: Propose a new capability, component, fault type or metric.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        FaultWorks grows one well-explained behavior at a time. Please describe the problem first; the solution can be discussed.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to learn or show?
+      description: The question you want an experiment to answer, and why the current model cannot answer it.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed behavior
+      description: For model changes, what the component does, what it deliberately does not do, and its parameters with units.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: How would we know it is correct?
+      description: A reference case with an expected result, or a property that must always hold.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other tools or workarounds you considered.

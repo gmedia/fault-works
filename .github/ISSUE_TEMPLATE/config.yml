@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/gmedia/fault-works/security/advisories/new
+    about: Report security problems privately, never in a public issue.
+  - name: Model guide
+    url: https://github.com/gmedia/fault-works/blob/main/docs/05-SIMULATION-AND-METRICS.md
+    about: What the simulation does and does not model.

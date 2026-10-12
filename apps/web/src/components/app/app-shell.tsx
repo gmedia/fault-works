@@ -108,7 +108,16 @@ export function AppShell({ children }: { children: ReactNode }) {
 					</p>
 					<p>
 						Results are outputs of an abstract model, not measurements of real
-						systems.
+						systems. Open source under Apache-2.0:{" "}
+						<a
+							href="https://github.com/gmedia/fault-works"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="underline underline-offset-4 hover:text-foreground"
+						>
+							source on GitHub
+						</a>
+						.
 					</p>
 				</div>
 			</footer>

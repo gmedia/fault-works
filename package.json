@@ -1,6 +1,7 @@
 {
 	"name": "faultworks",
 	"private": true,
+	"license": "Apache-2.0",
 	"type": "module",
 	"packageManager": "pnpm@10.31.0",
 	"scripts": {
@@ -18,5 +19,9 @@
 	},
 	"engines": {
 		"node": ">=22"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gmedia/fault-works.git"
 	}
 }

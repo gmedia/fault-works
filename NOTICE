@@ -1,0 +1,13 @@
+FaultWorks
+Copyright 2026 GMEDIA and the FaultWorks contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The web application bundles third-party software and fonts under their own licenses:
+
+- IBM Plex Sans and IBM Plex Mono, Copyright IBM Corp., SIL Open Font License 1.1,
+  distributed through the @fontsource packages.
+- React Flow (@xyflow/react), Radix UI, TanStack Router, Zustand, zod, lucide-react,
+  Tailwind CSS and other npm packages under MIT, ISC, BSD and Apache-2.0 licenses.
+  Their license texts ship with each package in node_modules and are listed by
+  `pnpm licenses list --prod`.

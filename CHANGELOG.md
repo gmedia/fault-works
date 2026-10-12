@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased: fixes from the simulated pilot
+## Unreleased
+
+### Open source
+- Apache-2.0 license with NOTICE; Contributor Covenant 2.1, security policy (GitHub private reporting), governance, contributing guide.
+- AGENTS.md and CLAUDE.md for AI coding agents; issue and pull request templates, CODEOWNERS, Dependabot, EditorConfig.
+
+### Fixes from the simulated pilot
 
 See [docs/12](docs/12-SIMULATED-PILOT.md) for the findings.
 

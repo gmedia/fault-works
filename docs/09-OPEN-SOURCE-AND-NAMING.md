@@ -5,15 +5,16 @@
 - Product: **FaultWorks**
 - Endorsement: **by GMEDIA** (subject to company approval)
 - Tagline: **Experiment with failure. Build more resilient systems.**
-- Proposed repository slug: `faultworks`
-- Repo owner: approved company-controlled namespace, **not created yet**.
+- Repository: [`gmedia/fault-works`](https://github.com/gmedia/fault-works) on GitHub, public since 2026-10-12.
 - Intended documentation language: English, with optional Indonesian project brief.
 
 A preliminary broad web search found no obvious major infrastructure product using exactly `FaultWorks`, but **this is not a legal trademark search, domain availability check, or repository-name reservation**.
 
 ## Legal/release gate
 
-Before making anything public, obtain authorization for:
+**Status (2026-10-12):** the maintainers published the repository. Items 3, 5 and the governance files are done (Apache-2.0, dependency audit, see ADR-008); the security contact is GitHub private vulnerability reporting. A trademark search for the name is still open.
+
+The original gate, before making anything public, was authorization for:
 
 1. Company use of GMEDIA name, logo, trademarks and public communications.
 2. Ownership and licensing of new employee-created code under the employment agreement.
@@ -24,9 +25,9 @@ Before making anything public, obtain authorization for:
 
 Do **not** add a fake copyright/Apache LICENSE file with a company's identity before approval. Until then, call this a *design blueprint*.
 
-## Governance files to add when authorized
+## Governance files
 
-`LICENSE`, `NOTICE` (if applicable), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `GOVERNANCE.md`, `CODEOWNERS`, GitHub/GitLab issue templates and CI for lint/tests/build. Follow conventional semver after first release; before that, explicitly label breaking experiment schema changes.
+All present: `LICENSE`, `NOTICE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `GOVERNANCE.md`, `.github/CODEOWNERS`, issue and pull request templates, Dependabot, and CI for lint, typecheck, tests, build and E2E. `AGENTS.md` and `CLAUDE.md` guide AI coding agents. Follow conventional semver after first release; before that, explicitly label breaking experiment schema changes.
 
 ## Project policy
 

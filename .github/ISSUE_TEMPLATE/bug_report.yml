@@ -1,0 +1,48 @@
+name: Bug report
+description: Something in FaultWorks is broken or gives a wrong result.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For a security problem, do not use this form: follow SECURITY.md instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Steps, or attach the exported experiment (.experiment.json) or result (.result.json). Built-in examples can be named by title.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Simulation results or metrics
+        - Experiment editing or validation
+        - Charts, replay or event log
+        - Compare page
+        - Import or export
+        - Layout, accessibility or mobile
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and device
+      placeholder: e.g. Firefox 140 on Ubuntu, Safari on iPhone 15
+  - type: input
+    id: version
+    attributes:
+      label: Engine version
+      description: Shown in the Engine checks tab of a run.
+      placeholder: e.g. 0.1.0

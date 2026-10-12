@@ -1,7 +1,7 @@
 # FaultWorks — Ringkasan Keputusan Proyek
 
 **Tanggal:** 12 Oktober 2026  
-**Status:** v0.1 sudah diimplementasikan dan teruji (12 Oktober 2026), tetapi belum dirilis. Kepemilikan resmi GMEDIA, repo publik, nama, dan lisensi masih menunggu persetujuan. Langkah berikutnya adalah pilot dengan 3–5 pengguna sesuai [rencana validasi](10-VALIDATION-PLAN.md).  
+**Status:** v0.1 sudah diimplementasikan dan teruji, lalu dipublikasikan sebagai open source di [`gmedia/fault-works`](https://github.com/gmedia/fault-works) dengan lisensi Apache-2.0 (12 Oktober 2026). Pemeriksaan merek dagang untuk nama FaultWorks belum dilakukan. Langkah berikutnya adalah pilot dengan 3–5 pengguna sesuai [rencana validasi](10-VALIDATION-PLAN.md).  
 **Nama usulan:** FaultWorks by GMEDIA  
 **Tagline:** Experiment with failure. Build more resilient systems.
 

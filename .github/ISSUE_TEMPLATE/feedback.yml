@@ -1,0 +1,31 @@
+name: Usability feedback
+description: Something was confusing, hard to find, or easy to misread.
+labels: [ux]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Confusion is a bug in the product, not in you. Tell us what you expected and what you saw.
+  - type: textarea
+    id: task
+    attributes:
+      label: What were you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: confusion
+    attributes:
+      label: Where did you get stuck or misread something?
+      description: The screen or element, what you thought it meant, and what turned out to be true.
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Which describes you best?
+      options:
+        - Learner or student
+        - Developer
+        - DevOps or SRE
+        - Educator
+        - Other
