@@ -44,6 +44,23 @@ pnpm dev          # http://localhost:3000
 
 `pnpm build` produces a static site in `apps/web/dist` that any static host can serve. Unknown paths must fall back to `index.html` because routing happens in the browser.
 
+### Docker
+
+Every release is published as a small image that serves the static build with unprivileged Nginx on port 8080:
+
+```bash
+docker run --rm -p 8080:8080 ghcr.io/gmedia/fault-works:latest   # http://localhost:8080
+```
+
+Or build it yourself from a checkout:
+
+```bash
+docker build -t faultworks .
+docker run --rm -p 8080:8080 faultworks
+```
+
+The container needs no configuration, volumes or secrets: everything runs in the visitor's browser. `GET /healthz` answers `ok` for health checks.
+
 ## How it is built
 
 ```text

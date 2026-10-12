@@ -1,7 +1,7 @@
 # FaultWorks — Ringkasan Keputusan Proyek
 
 **Tanggal:** 12 Oktober 2026  
-**Status:** v0.2 sudah diimplementasikan dan teruji di branch `feat/v0.2` (12 Oktober 2026). Topologi sekarang bebas (load balancer, service, database, cache, antrean kerja, dan link dengan timeout, retry, serta circuit breaker), ada tujuh jenis fault, antarmuka berbahasa Indonesia sebagai default dengan pilihan bahasa Inggris, dan tampilan dirancang untuk ponsel lebih dulu. v0.1 sudah dipublikasikan sebagai open source di [`gmedia/fault-works`](https://github.com/gmedia/fault-works) dengan lisensi Apache-2.0. Pemeriksaan merek dagang untuk nama FaultWorks belum dilakukan. Langkah berikutnya tetap pilot dengan 3–5 pengguna sesuai [rencana validasi](10-VALIDATION-PLAN.md).  
+**Status:** v0.3.0 dirilis 13 Oktober 2026 di [`gmedia/fault-works`](https://github.com/gmedia/fault-works) dengan lisensi Apache-2.0, termasuk image Docker di `ghcr.io/gmedia/fault-works`. Topologi bebas dengan katalog komponen (CDN, API gateway, connection pooler, cluster database, dan lainnya), perlambatan database saat koneksi terlalu banyak, tujuh jenis fault, antarmuka berbahasa Indonesia sebagai default, dan tampilan yang dirancang untuk ponsel lebih dulu. Pemeriksaan merek dagang untuk nama FaultWorks belum dilakukan. Langkah berikutnya tetap pilot dengan 3–5 pengguna sesuai [rencana validasi](10-VALIDATION-PLAN.md).  
 **Nama usulan:** FaultWorks by GMEDIA  
 **Tagline:** Experiment with failure. Build more resilient systems.
 

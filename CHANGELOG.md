@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (unreleased, 2026-10-12)
+## 0.3.0 (2026-10-13)
 
 Closer to real systems: databases slow down under too many connections, connection poolers, rate limiters, database clusters with failover, smarter retries, fan-out and deadline propagation, plus a catalog of everyday components. Engine `0.3.0`, schema `0.3.0`, metrics `0.3.0`; 0.2.0 files migrate with every new switch off and give identical results.
 
@@ -29,7 +29,11 @@ Closer to real systems: databases slow down under too many connections, connecti
 - Grouped add-component catalog on the canvas, in the inspector and on phones; settings for poolers, rate limiters, clusters (including choosing the primary), contention with peak-throughput hints, queue wait limits, parallel calls, retry backoff, jitter and budget, deadline propagation and gradual slowdowns.
 - Model guide section on why databases slow down when busy.
 
-## 0.2.0 (unreleased, 2026-10-12)
+### Distribution
+- Dockerfile: a multi-stage build that serves the static app with unprivileged Nginx on port 8080, with SPA fallback, long-lived caching for hashed assets, gzip, basic security headers and `/healthz`.
+- Release workflow: pushing a `v*` tag publishes a multi-architecture image (amd64, arm64) to `ghcr.io/gmedia/fault-works`. CI also checks that the image builds.
+
+## 0.2.0 (not released separately, 2026-10-12)
 
 The fixed client, load balancer and servers shape becomes a free graph, the app speaks Indonesian first, and the workbench is designed for phones first. Engine `0.2.0`, schema `0.2.0`, metrics `0.2.0`; v0.1 files migrate automatically and produce the same results.
 

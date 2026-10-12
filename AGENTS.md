@@ -23,6 +23,7 @@ Node 22+ and pnpm 10. Run from the repository root.
 | Production build | `pnpm build` |
 | E2E, accessibility, mobile | `pnpm test:e2e` (builds first; needs `pnpm --filter @faultworks/web exec playwright install chromium`) |
 | Regenerate routes | `pnpm --filter @faultworks/web generate-routes` |
+| Container image | `docker build -t faultworks .` then `docker run -p 8080:8080 faultworks` |
 
 A change is done when `pnpm check`, `pnpm typecheck`, `pnpm test`, `pnpm build` and `pnpm test:e2e` all pass.
 
