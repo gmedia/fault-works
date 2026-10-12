@@ -177,14 +177,14 @@ export function WorkbenchHeader() {
 
 					<Button variant="outline" onClick={variant}>
 						<Copy aria-hidden="true" />
-						<span className="max-sm:sr-only">Create variant</span>
+						<span>Create variant</span>
 					</Button>
 
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild>
 							<Button variant="outline">
 								<ArrowRightLeft aria-hidden="true" />
-								<span className="max-sm:sr-only">Compare</span>
+								<span>Compare</span>
 								<ChevronDown className="opacity-60" aria-hidden="true" />
 							</Button>
 						</DropdownMenuTrigger>
@@ -200,8 +200,8 @@ export function WorkbenchHeader() {
 								</DropdownMenuItem>
 							)}
 							<DropdownMenuItem asChild>
-								<Link to="/compare" search={{ a: id }}>
-									With another experiment…
+								<Link to="/compare" search={{ b: id }}>
+									With another experiment (this one as B)…
 								</Link>
 							</DropdownMenuItem>
 						</DropdownMenuContent>
@@ -211,7 +211,7 @@ export function WorkbenchHeader() {
 						<DropdownMenuTrigger asChild>
 							<Button variant="outline">
 								<Download aria-hidden="true" />
-								<span className="max-sm:sr-only">Export</span>
+								<span>Export</span>
 								<ChevronDown className="opacity-60" aria-hidden="true" />
 							</Button>
 						</DropdownMenuTrigger>
@@ -284,7 +284,7 @@ export function WorkbenchHeader() {
 					</DropdownMenu>
 
 					<Button
-						onClick={run}
+						onClick={() => run()}
 						disabled={!validation.valid || running}
 						title={
 							validation.valid

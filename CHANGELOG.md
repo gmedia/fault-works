@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased: fixes from the simulated pilot
+
+See [docs/12](docs/12-SIMULATED-PILOT.md) for the findings.
+
+- Import result and comparison files; re-run and verify their digests and counts.
+- Export a comparison as an importable bundle and as a Markdown report.
+- Compare shows timeouts, mean latency of all ended requests, client time spent on failures, a failure-inclusive p95 chart, survivorship cautions and a latency explanation.
+- Possible detection range and probe count in results; probe cost stated as not modeled.
+- Results reappear after reload for experiments run before; variants start without stale notes.
+- Behavior digest in the UI and exports; editable experiment id; titled new experiments; no duplicate imports.
+- Phone layout: stacked topology, scroll to results and settings, labeled toolbar, 44 px touch targets.
+
 ## 0.1.0 (unreleased, 2026-10-12)
 
 First working version of the v0.1 scope: one browser-only experiment workflow from load to export.

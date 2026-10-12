@@ -151,7 +151,7 @@ export function NumberField({
 	const allErrors = [...(localError ? [localError] : []), ...(errors ?? [])];
 	const seconds =
 		showSeconds && typeof value === "number" && value >= 1000
-			? `= ${(value / 1000).toLocaleString("en-US", { maximumFractionDigits: 3 })} s`
+			? `(${(value / 1000).toLocaleString("en-US", { maximumFractionDigits: 3 })} s)`
 			: undefined;
 
 	return (

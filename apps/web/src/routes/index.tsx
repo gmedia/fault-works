@@ -1,9 +1,4 @@
-import {
-	type Experiment,
-	findBuiltIn,
-	STARTER_COMPARISON,
-	servers,
-} from "@faultworks/experiment";
+import { STARTER_COMPARISON, servers } from "@faultworks/experiment";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowRightLeft,
@@ -30,6 +25,7 @@ import {
 import { Input } from "#/components/ui/input.tsx";
 import { exportExperiment } from "#/features/library/export.ts";
 import { ImportDialog } from "#/features/library/import-dialog.tsx";
+import { NewExperimentDialog } from "#/features/library/new-experiment-dialog.tsx";
 import { TopologyThumbnail } from "#/features/library/topology-thumbnail.tsx";
 import { formatRelative } from "#/lib/format.ts";
 import { useDocumentTitle } from "#/lib/use-document-title.ts";
@@ -42,9 +38,7 @@ export const Route = createFileRoute("/")({
 function HomePage() {
 	const entries = useLibrary((s) => s.entries);
 	const order = useLibrary((s) => s.order);
-	const add = useLibrary((s) => s.add);
 	const restoreBuiltIns = useLibrary((s) => s.restoreBuiltIns);
-	const navigate = useNavigate();
 	const [query, setQuery] = useState("");
 	useDocumentTitle("Experiments");
 
@@ -68,23 +62,6 @@ function HomePage() {
 	const missingBuiltIns =
 		!entries[STARTER_COMPARISON.a] || !entries[STARTER_COMPARISON.b];
 
-	const createNew = () => {
-		const template = structuredClone(
-			findBuiltIn(STARTER_COMPARISON.a) as Experiment,
-		);
-		template.experimentId = "untitled-experiment";
-		template.title = "Untitled experiment";
-		template.question = "";
-		template.description = "";
-		template.faults = [];
-		template.expectedObservations = [];
-		const id = add(template, "created");
-		void navigate({
-			to: "/experiments/$experimentId",
-			params: { experimentId: id },
-		});
-	};
-
 	return (
 		<div className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
 			<div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
@@ -106,10 +83,14 @@ function HomePage() {
 							</Button>
 						}
 					/>
-					<Button variant="outline" onClick={createNew}>
-						<FilePlus2 aria-hidden="true" />
-						New experiment
-					</Button>
+					<NewExperimentDialog
+						trigger={
+							<Button variant="outline">
+								<FilePlus2 aria-hidden="true" />
+								New experiment
+							</Button>
+						}
+					/>
 				</div>
 			</div>
 
@@ -164,9 +145,9 @@ function HomePage() {
 							>
 								Restore examples
 							</Button>
-							<Button variant="outline" onClick={createNew}>
-								New experiment
-							</Button>
+							<NewExperimentDialog
+								trigger={<Button variant="outline">New experiment</Button>}
+							/>
 						</div>
 					</div>
 				) : list.length === 0 ? (
@@ -235,7 +216,8 @@ function StarterCard() {
 					Two experiments that differ in exactly one setting. Server B crashes
 					for 20 seconds while the client sends 100 requests per second. In the
 					first, the load balancer never checks its backends. In the second, it
-					probes them every 5 seconds.
+					probes them every 5 seconds and needs two failed probes, so it notices
+					the crash after 5 to 10 seconds.
 				</p>
 				<ol className="mt-5 space-y-2 text-sm">
 					{[
@@ -254,6 +236,19 @@ function StarterCard() {
 						</li>
 					))}
 				</ol>
+				<p className="mt-4 max-w-prose text-muted-foreground text-sm">
+					In both, the crashed server refuses connections, so requests fail
+					instantly and latency barely moves. For a failure that also makes
+					clients wait, open{" "}
+					<Link
+						to="/experiments/$experimentId"
+						params={{ experimentId: "hanging-backend" }}
+						className="underline underline-offset-4 hover:text-foreground"
+					>
+						Hanging backend
+					</Link>
+					.
+				</p>
 				<div className="mt-6 flex flex-wrap gap-2">
 					<Button asChild>
 						<Link

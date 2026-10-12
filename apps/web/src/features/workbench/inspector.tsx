@@ -18,9 +18,13 @@ import {
 	servers,
 	WORKLOAD_FIELDS,
 } from "@faultworks/experiment";
+import { useNavigate } from "@tanstack/react-router";
 import { Dices, Plus, Server, Trash2, Waypoints } from "lucide-react";
+import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "#/components/ui/button.tsx";
+import { Input } from "#/components/ui/input.tsx";
+import { Label } from "#/components/ui/label.tsx";
 import {
 	Tabs,
 	TabsContent,
@@ -29,6 +33,7 @@ import {
 } from "#/components/ui/tabs.tsx";
 import { formatCount, formatMs } from "#/lib/format.ts";
 import { serverColor } from "#/lib/series.ts";
+import { useLibrary } from "#/state/library.ts";
 import { type InspectorTab, useWorkbench } from "./context.tsx";
 import {
 	FieldGroup,
@@ -877,8 +882,81 @@ function NotesPanel() {
 					update((e) => ({ ...e, assumptions }), "assumptions")
 				}
 			/>
+			<IdField />
 			<p className="font-mono text-muted-foreground text-xs">
-				id {experiment.experimentId} · schema {experiment.schemaVersion}
+				schema {experiment.schemaVersion}
+			</p>
+		</div>
+	);
+}
+
+/** The experiment id doubles as its file name, so it can be changed until it is shared. */
+function IdField() {
+	const { id } = useWorkbench();
+	const [draft, setDraft] = useState(id);
+	const [error, setError] = useState<string | null>(null);
+	const rename = useLibrary((s) => s.renameExperiment);
+	const navigate = useNavigate();
+	const inputId = useId();
+	useEffect(() => setDraft(id), [id]);
+
+	const commit = () => {
+		const next = draft.trim().toLowerCase();
+		if (next === id) {
+			setError(null);
+			return;
+		}
+		if (!/^[a-z0-9][a-z0-9-]{0,47}$/.test(next)) {
+			setError(
+				"Use 1–48 lowercase letters, digits or hyphens, starting with a letter or digit.",
+			);
+			return;
+		}
+		const done = rename(id, next);
+		if (!done) {
+			setError(`Another experiment already uses ${next}.`);
+			return;
+		}
+		setError(null);
+		toast.success(`Renamed to ${next}`, {
+			description: `Exports are now called ${next}.experiment.json.`,
+		});
+		void navigate({
+			to: "/experiments/$experimentId",
+			params: { experimentId: next },
+			search: (prev) => prev,
+			replace: true,
+		});
+	};
+
+	return (
+		<div className="grid gap-1.5">
+			<Label htmlFor={inputId} className="font-medium text-sm">
+				File name (id)
+			</Label>
+			<div className="flex gap-2">
+				<Input
+					id={inputId}
+					value={draft}
+					onChange={(e) => setDraft(e.target.value)}
+					onBlur={commit}
+					onKeyDown={(e) => {
+						if (e.key === "Enter") commit();
+					}}
+					className="font-mono"
+					aria-invalid={error !== null}
+					aria-describedby={`${inputId}-help`}
+					spellCheck={false}
+				/>
+			</div>
+			<p
+				id={`${inputId}-help`}
+				className={
+					error ? "text-down text-xs" : "text-muted-foreground text-xs"
+				}
+			>
+				{error ??
+					`Exports are named ${draft || id}.experiment.json. Faults and comparisons refer to it, so rename before sharing.`}
 			</p>
 		</div>
 	);

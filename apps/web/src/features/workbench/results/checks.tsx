@@ -86,8 +86,11 @@ export function Checks({ result }: { result: RunResult }) {
 						Reproducibility
 					</h3>
 					<p className="mt-1 text-muted-foreground text-xs">
-						Same input, seed and engine version should give the identical event
-						trace on any machine.
+						Same settings, seed and engine version give the identical event
+						trace on any machine. To check a copy, compare the behavior digest
+						(it ignores ids, titles and notes) and the trace fingerprint. The
+						file digest also covers names and notes, so it changes when a copy
+						is renamed.
 					</p>
 				</div>
 				<dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-lg border p-3 text-xs">
@@ -97,10 +100,12 @@ export function Checks({ result }: { result: RunResult }) {
 					<dd className="font-mono">{result.metricDefinitionsVersion}</dd>
 					<dt className="text-muted-foreground">Seed</dt>
 					<dd className="font-mono">{result.experiment.seed}</dd>
-					<dt className="text-muted-foreground">Input digest</dt>
+					<dt className="text-muted-foreground">Behavior digest</dt>
+					<dd className="break-all font-mono">sha256:{result.runKey}</dd>
+					<dt className="text-muted-foreground">Trace fingerprint</dt>
+					<dd className="break-all font-mono">fnv1a32x2:{traceDigest}</dd>
+					<dt className="text-muted-foreground">File digest</dt>
 					<dd className="break-all font-mono">sha256:{result.inputDigest}</dd>
-					<dt className="text-muted-foreground">Trace digest</dt>
-					<dd className="break-all font-mono">{traceDigest}</dd>
 					<dt className="text-muted-foreground">Events</dt>
 					<dd className="font-mono">{formatCount(eventCount)}</dd>
 					<dt className="text-muted-foreground">Run took</dt>

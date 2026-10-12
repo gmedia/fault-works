@@ -1,8 +1,13 @@
-import { type Experiment, semanticDiff } from "@faultworks/experiment";
+import {
+	type Experiment,
+	type SemanticChange,
+	semanticDiff,
+} from "@faultworks/experiment";
 import {
 	type ComparisonRow,
 	compareSummaries,
 	formatMs,
+	type RunSummary,
 } from "@faultworks/metrics";
 import { Link } from "@tanstack/react-router";
 import {
@@ -10,13 +15,20 @@ import {
 	ArrowUp,
 	CircleAlert,
 	CircleCheck,
+	Download,
+	FileText,
 	Info,
 	LoaderCircle,
 	Minus,
+	TriangleAlert,
 } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Button } from "#/components/ui/button.tsx";
 import { type ChartMarker, TimeChart } from "#/features/charts/time-chart.tsx";
+import {
+	exportComparison,
+	exportComparisonReport,
+} from "#/features/library/export.ts";
 import { formatCount, formatLatency } from "#/lib/format.ts";
 import { cn } from "#/lib/utils.ts";
 import { useRuns } from "#/state/runs.ts";
@@ -34,14 +46,15 @@ function formatRow(row: ComparisonRow, v: number | null): string {
 		return `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
 	if (row.unit === "req/s")
 		return `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} req/s`;
+	if (row.unit === "s")
+		return `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} s`;
 	return formatCount(v);
 }
 
 function Change({ row }: { row: ComparisonRow }) {
 	if (row.delta === null)
 		return <span className="text-muted-foreground">–</span>;
-	const near = Math.abs(row.delta) < 1e-9;
-	if (near)
+	if (Math.abs(row.delta) < 1e-9)
 		return (
 			<span className="flex items-center gap-1 text-muted-foreground">
 				<Minus className="size-3.5" aria-hidden="true" />
@@ -49,25 +62,28 @@ function Change({ row }: { row: ComparisonRow }) {
 			</span>
 		);
 	const up = row.delta > 0;
-	const good = row.better === null ? null : row.better === "higher" ? up : !up;
+	// A cautioned row is never colored: its direction alone would mislead.
+	const good =
+		row.caution || row.better === null
+			? null
+			: row.better === "higher"
+				? up
+				: !up;
 	const pct = row.a ? (row.delta / Math.abs(row.a)) * 100 : null;
 	const sign = up ? "+" : "−";
 	const abs = Math.abs(row.delta);
 	const value =
-		row.unit === "ms"
-			? formatLatency(abs)
-			: row.unit === "%"
-				? `${abs.toLocaleString("en-US", { maximumFractionDigits: 1 })} pts`
-				: row.unit === "req/s"
-					? abs.toLocaleString("en-US", { maximumFractionDigits: 1 })
-					: formatCount(abs);
-	const Icon = up ? ArrowUp : ArrowDown;
+		row.unit === "%"
+			? `${abs.toLocaleString("en-US", { maximumFractionDigits: 1 })} pts`
+			: formatRow(row, abs);
+	const Icon = row.caution ? TriangleAlert : up ? ArrowUp : ArrowDown;
 	return (
 		<span
 			className={cn(
-				"flex items-center gap-1",
+				"flex flex-wrap items-center gap-x-1",
 				good === true && "text-ok",
 				good === false && "text-down",
+				row.caution && "text-gap",
 			)}
 		>
 			<Icon className="size-3.5" aria-hidden="true" />
@@ -82,6 +98,9 @@ function Change({ row }: { row: ComparisonRow }) {
 			)}
 			{good !== null && (
 				<span className="sr-only">{good ? "(better)" : "(worse)"}</span>
+			)}
+			{row.caution && (
+				<span className="sr-only">(read the note in this row)</span>
 			)}
 		</span>
 	);
@@ -110,6 +129,64 @@ function useCurrentRun(id: string, experiment: Experiment) {
 		error: record?.status === "error" ? record.error : null,
 		valid: validation?.valid ?? false,
 	};
+}
+
+const fastFailureShare = (s: RunSummary) =>
+	s.failed === 0
+		? 1
+		: (s.failedByReason["backend-refused"] +
+				s.failedByReason["no-healthy-backend"] +
+				s.failedByReason["queue-full"]) /
+			s.failed;
+
+/** Plain sentences that say what changed, including the latency story percentiles can hide. */
+export function compareNarrative(
+	a: RunSummary,
+	b: RunSummary,
+	rows: ComparisonRow[],
+): string[] {
+	const out: string[] = [];
+	const pct = (x: number, y: number) =>
+		x === 0
+			? ""
+			: ` (${y < x ? "−" : "+"}${Math.abs(((y - x) / x) * 100).toLocaleString("en-US", { maximumFractionDigits: 1 })}%)`;
+	out.push(
+		a.failed === b.failed
+			? `Both runs had ${formatCount(a.failed)} failed requests.`
+			: `Failed requests went from ${formatCount(a.failed)} in A to ${formatCount(b.failed)} in B${pct(a.failed, b.failed)}.`,
+	);
+
+	const p95 = rows.find((r) => r.id === "p95");
+	const endedP95 = rows.find((r) => r.id === "ended-p95");
+	const sameLatency = (p95?.delta ?? 0) === 0 && (endedP95?.delta ?? 0) === 0;
+	const waitA = a.failedWaitMs / 1000;
+	const waitB = b.failedWaitMs / 1000;
+	const fmtS = (v: number) =>
+		`${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} s`;
+	if (sameLatency) {
+		if (Math.abs(waitA - waitB) >= 1)
+			out.push(
+				`Latency percentiles are the same in A and B, yet clients spent ${fmtS(waitA)} waiting on failed requests in A and ${fmtS(waitB)} in B. Percentiles hide this: once more than 5% of requests time out in both runs, p95 is simply the timeout in both.`,
+			);
+		else if (fastFailureShare(a) > 0.9 && fastFailureShare(b) > 0.9)
+			out.push(
+				"Latency did not change. The failures were rejected immediately (refused or no room), so they added almost no waiting time, and the requests that succeeded were served the same way. A backend that hangs instead of refusing does change latency: try the “Hanging backend” example.",
+			);
+		else out.push("Latency percentiles are the same in A and B.");
+	} else if (p95?.a != null && p95.b != null)
+		out.push(
+			`p95 latency of successful requests went from ${formatLatency(p95.a)} in A to ${formatLatency(p95.b)} in B${p95.caution ? `. Read this with care: ${p95.caution.charAt(0).toLowerCase()}${p95.caution.slice(1)}` : "."}`,
+		);
+
+	const da =
+		a.faults.find((f) => f.detectionDelayMs !== null)?.detectionDelayMs ?? null;
+	const db =
+		b.faults.find((f) => f.detectionDelayMs !== null)?.detectionDelayMs ?? null;
+	if ((a.faults.length > 0 || b.faults.length > 0) && da !== db)
+		out.push(
+			`The first failure was detected ${da === null ? "never" : `after ${formatMs(da)}`} in A and ${db === null ? "never" : `after ${formatMs(db)}`} in B.`,
+		);
+	return out;
 }
 
 export function CompareView({
@@ -147,7 +224,7 @@ export function CompareView({
 			)}
 
 			{ra.result && rb.result ? (
-				<Results a={ra.result} b={rb.result} />
+				<Results a={ra.result} b={rb.result} changes={changes} />
 			) : (
 				(ra.running || rb.running) && (
 					<p
@@ -181,6 +258,11 @@ export function CompareView({
 						the only one that changed.
 					</li>
 					<li>
+						Detection depends on where in the probe cycle a crash lands. A crash
+						exactly on a probe is the fastest case; move the failure time to see
+						the slower ones.
+					</li>
+					<li>
 						With random traffic or service times, a single seed is one sample.
 						Use the seed check above.
 					</li>
@@ -194,11 +276,7 @@ export function CompareView({
 	);
 }
 
-function WhatChanged({
-	changes,
-}: {
-	changes: ReturnType<typeof semanticDiff>;
-}) {
+function WhatChanged({ changes }: { changes: SemanticChange[] }) {
 	const n = changes.length;
 	const tone =
 		n === 1
@@ -276,83 +354,114 @@ function WhatChanged({
 	);
 }
 
-function Results({ a, b }: { a: RunResult; b: RunResult }) {
+function Results({
+	a,
+	b,
+	changes,
+}: {
+	a: RunResult;
+	b: RunResult;
+	changes: SemanticChange[];
+}) {
 	const rows = useMemo(
 		() => compareSummaries(a.metrics.summary, b.metrics.summary),
 		[a, b],
 	);
-	const failed = rows.find((r) => r.id === "failed");
-	const p95 = rows.find((r) => r.id === "p95");
+	const narrative = useMemo(
+		() => compareNarrative(a.metrics.summary, b.metrics.summary, rows),
+		[a, b, rows],
+	);
 	const sameGrid = a.metrics.series.windowMs === b.metrics.series.windowMs;
 	const horizon = Math.max(a.horizonMs, b.horizonMs);
 	const longer = a.horizonMs >= b.horizonMs ? a : b;
 
-	const markers: ChartMarker[] = [
-		...a.metrics.summary.faults.flatMap((f) => [
-			{
-				atMs: f.failedAtMs,
-				label: `${f.serverLabel} crashed (A) at ${formatMs(f.failedAtMs)}`,
-			},
-			...(f.detectedAtMs !== null
-				? [
-						{
-							atMs: f.detectedAtMs,
-							label: `Detected in A at ${formatMs(f.detectedAtMs)}`,
-						},
-					]
-				: []),
-		]),
-		...b.metrics.summary.faults.flatMap((f) => [
-			...(f.detectedAtMs !== null
-				? [
-						{
-							atMs: f.detectedAtMs,
-							label: `Detected in B at ${formatMs(f.detectedAtMs)}`,
-						},
-					]
-				: []),
-		]),
-	];
+	const markers = useMemo(() => {
+		const bySide = new Map<number, Map<string, string[]>>();
+		for (const [side, r] of [
+			["A", a],
+			["B", b],
+		] as const)
+			for (const f of r.metrics.summary.faults)
+				for (const [t, what] of [
+					[f.failedAtMs, `${f.serverLabel} crashed`],
+					...(f.detectedAtMs !== null
+						? ([[f.detectedAtMs, `${f.serverLabel} detected`]] as const)
+						: []),
+				] as const) {
+					const atTime = bySide.get(t) ?? new Map<string, string[]>();
+					atTime.set(what, [...(atTime.get(what) ?? []), side]);
+					bySide.set(t, atTime);
+				}
+		const list: ChartMarker[] = [...bySide.entries()].map(([atMs, events]) => ({
+			atMs,
+			label: [...events.entries()]
+				.map(
+					([what, sides]) =>
+						`${what} (${sides.length === 2 ? "A and B" : sides[0]})`,
+				)
+				.join("; "),
+		}));
+		return list.sort((x, y) => x.atMs - y.atMs);
+	}, [a, b]);
 
 	const perSecond = (r: RunResult, xs: number[]) =>
 		xs.map((v) => (v * 1000) / r.metrics.series.windowMs);
-	const pad = <T,>(xs: T[], fill: T) => [
+	const pad = (xs: Array<number | null>) => [
 		...xs,
-		...Array(
+		...Array<number | null>(
 			Math.max(0, longer.metrics.series.startMs.length - xs.length),
-		).fill(fill),
+		).fill(null),
 	];
+	const pair = (va: Array<number | null>, vb: Array<number | null>) => [
+		// A is drawn first and wider so it stays visible where B lies exactly on top of it.
+		{ id: "a", label: "A", color: COLOR_A, values: pad(va), width: 4 },
+		{ id: "b", label: "B", color: COLOR_B, values: pad(vb) },
+	];
+	const chartProps = {
+		startMs: longer.metrics.series.startMs,
+		windowMs: longer.metrics.series.windowMs,
+		horizonMs: horizon,
+		markers,
+	};
 
 	return (
-		<section aria-labelledby="results-heading" className="grid gap-6">
-			<h2 id="results-heading" className="font-semibold text-lg tracking-tight">
-				Results
-			</h2>
-			{failed && failed.a !== null && failed.b !== null && (
-				<p className="max-w-3xl text-base">
-					Failed requests went from{" "}
-					<strong className="tabular">{formatCount(failed.a)}</strong> in A to{" "}
-					<strong className="tabular">{formatCount(failed.b)}</strong> in B
-					{failed.delta !== null && failed.delta !== 0 && failed.a > 0 && (
-						<>
-							{" "}
-							({failed.delta < 0 ? "−" : "+"}
-							{Math.abs((failed.delta / failed.a) * 100).toLocaleString(
-								"en-US",
-								{ maximumFractionDigits: 1 },
-							)}
-							%)
-						</>
-					)}
-					.{" "}
-					{p95 && p95.a !== null && p95.b !== null && (
-						<>
-							p95 latency of successful requests: {formatLatency(p95.a)} in A,{" "}
-							{formatLatency(p95.b)} in B.
-						</>
-					)}
-				</p>
-			)}
+		<section
+			aria-labelledby="results-heading"
+			className="grid min-w-0 grid-cols-1 gap-6"
+		>
+			<div className="flex flex-wrap items-center justify-between gap-3">
+				<h2
+					id="results-heading"
+					className="font-semibold text-lg tracking-tight"
+				>
+					Results
+				</h2>
+				<div className="flex flex-wrap gap-2">
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => exportComparison(a, b, changes, rows)}
+					>
+						<Download aria-hidden="true" />
+						Export comparison (.json)
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() =>
+							exportComparisonReport(a, b, changes, rows, narrative)
+						}
+					>
+						<FileText aria-hidden="true" />
+						Report (.md)
+					</Button>
+				</div>
+			</div>
+			<div className="grid max-w-3xl gap-2 text-base">
+				{narrative.map((sentence) => (
+					<p key={sentence}>{sentence}</p>
+				))}
+			</div>
 			<div className="overflow-x-auto rounded-lg border bg-card">
 				<table className="w-full text-sm tabular">
 					<thead className="bg-muted/50 text-left text-muted-foreground text-xs">
@@ -387,13 +496,18 @@ function Results({ a, b }: { a: RunResult; b: RunResult }) {
 					</thead>
 					<tbody>
 						{rows.map((row) => (
-							<tr key={row.id} className="border-t">
+							<tr key={row.id} className="border-t align-top">
 								<th scope="row" className="px-3 py-2 text-left font-normal">
 									{row.label}
 									{row.samples && (
 										<span className="block text-muted-foreground text-xs">
 											n = {formatCount(row.samples.a)} /{" "}
 											{formatCount(row.samples.b)}
+										</span>
+									)}
+									{row.caution && (
+										<span className="mt-1 block max-w-md text-gap text-xs">
+											{row.caution}
 										</span>
 									)}
 								</th>
@@ -411,60 +525,57 @@ function Results({ a, b }: { a: RunResult; b: RunResult }) {
 					</tbody>
 				</table>
 			</div>
+			<p className="-mt-3 text-muted-foreground text-xs">
+				p50, p95 and p99: half, 95 and 99 of every 100 requests took this long
+				or less. “Successful” rows leave failed requests out; “all ended” rows
+				include them, with a timeout counted as the full timeout.
+			</p>
 
 			{sameGrid ? (
-				<div className="grid min-w-0 grid-cols-1 gap-8 xl:grid-cols-2">
-					<TimeChart
-						title="Failed requests per second"
-						startMs={longer.metrics.series.startMs}
-						windowMs={longer.metrics.series.windowMs}
-						horizonMs={horizon}
-						markers={markers}
-						series={[
-							{
-								id: "a",
-								label: "A",
-								color: COLOR_A,
-								values: pad(
-									perSecond(a, a.metrics.series.failed),
-									null as number | null,
-								),
-							},
-							{
-								id: "b",
-								label: "B",
-								color: COLOR_B,
-								values: pad(
-									perSecond(b, b.metrics.series.failed),
-									null as number | null,
-								),
-							},
-						]}
-						formatValue={formatCount}
-					/>
-					<TimeChart
-						title="p95 latency of successful requests"
-						startMs={longer.metrics.series.startMs}
-						windowMs={longer.metrics.series.windowMs}
-						horizonMs={horizon}
-						markers={markers}
-						series={[
-							{
-								id: "a",
-								label: "A",
-								color: COLOR_A,
-								values: pad(a.metrics.series.p95Ms, null),
-							},
-							{
-								id: "b",
-								label: "B",
-								color: COLOR_B,
-								values: pad(b.metrics.series.p95Ms, null),
-							},
-						]}
-						formatValue={formatLatency}
-					/>
-				</div>
+				<>
+					<div className="grid min-w-0 grid-cols-1 gap-8 xl:grid-cols-2">
+						<TimeChart
+							{...chartProps}
+							title="Failed requests per second"
+							series={pair(
+								perSecond(a, a.metrics.series.failed),
+								perSecond(b, b.metrics.series.failed),
+							)}
+							formatValue={formatCount}
+						/>
+						<TimeChart
+							{...chartProps}
+							title="p95 latency, all ended requests"
+							subtitle="Includes failures; a timed-out request counts as the full timeout"
+							series={pair(
+								a.metrics.series.endedP95Ms,
+								b.metrics.series.endedP95Ms,
+							)}
+							formatValue={formatLatency}
+						/>
+						<TimeChart
+							{...chartProps}
+							title="p95 latency, successful requests"
+							series={pair(a.metrics.series.p95Ms, b.metrics.series.p95Ms)}
+							formatValue={formatLatency}
+						/>
+					</div>
+					{markers.length > 0 && (
+						<div className="text-muted-foreground text-xs">
+							<p>Vertical lines on the charts:</p>
+							<ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+								{markers.map((m) => (
+									<li key={m.atMs} className="tabular">
+										<span className="font-medium text-foreground">
+											{formatMs(m.atMs)}
+										</span>{" "}
+										{m.label}
+									</li>
+								))}
+							</ul>
+						</div>
+					)}
+				</>
 			) : (
 				<p className="text-muted-foreground text-sm">
 					The two experiments use different chart windows, so their timelines
@@ -478,6 +589,7 @@ function Results({ a, b }: { a: RunResult; b: RunResult }) {
 						to="/experiments/$experimentId"
 						params={{ experimentId: a.experiment.experimentId }}
 						search={{ tab: "explain" }}
+						hash="results"
 					>
 						Why A behaved this way
 					</Link>
@@ -487,6 +599,7 @@ function Results({ a, b }: { a: RunResult; b: RunResult }) {
 						to="/experiments/$experimentId"
 						params={{ experimentId: b.experiment.experimentId }}
 						search={{ tab: "explain" }}
+						hash="results"
 					>
 						Why B behaved this way
 					</Link>

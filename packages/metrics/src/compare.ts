@@ -12,6 +12,11 @@ export interface ComparisonRow {
 	better: "lower" | "higher" | null;
 	/** Sample counts behind percentile rows, shown next to the values. */
 	samples?: { a: number; b: number };
+	/**
+	 * Set when the direction alone would mislead, e.g. success latency "improving" only because
+	 * fewer requests succeeded. The UI must not color such a row as better or worse.
+	 */
+	caution?: string;
 }
 
 const ratio = (part: number, whole: number) =>
@@ -47,6 +52,24 @@ export function compareSummaries(
 	const samples = la && lb ? { a: la.n, b: lb.n } : undefined;
 	const firstDetection = (s: RunSummary) =>
 		s.faults.find((f) => f.detectionDelayMs !== null)?.detectionDelayMs ?? null;
+	const fewerSuccesses = b.succeeded < a.succeeded * 0.99;
+	const moreSuccesses = b.succeeded > a.succeeded * 1.01;
+	const survivorship = (r: ComparisonRow): ComparisonRow => {
+		if (r.delta === null || r.delta === 0) return r;
+		if (fewerSuccesses && r.delta < 0)
+			return {
+				...r,
+				caution:
+					"B has fewer successful requests. Failed requests are not in this number, so the remaining successes can look faster without anything improving.",
+			};
+		if (moreSuccesses && r.delta > 0)
+			return {
+				...r,
+				caution:
+					"B completes requests that failed in A. Those extra successes can be slower, so a higher value here is not necessarily worse.",
+			};
+		return r;
+	};
 	return [
 		row("offered", "Offered", "requests", a.offered, b.offered, null),
 		row(
@@ -75,31 +98,64 @@ export function compareSummaries(
 			null,
 		),
 		row(
-			"p50",
-			"p50 latency (successful)",
-			"ms",
-			la?.p50Ms ?? null,
-			lb?.p50Ms ?? null,
+			"timed-out",
+			"Timed out",
+			"requests",
+			a.failedByReason.timeout,
+			b.failedByReason.timeout,
 			"lower",
-			samples,
+		),
+		survivorship(
+			row(
+				"p50",
+				"p50 latency (successful)",
+				"ms",
+				la?.p50Ms ?? null,
+				lb?.p50Ms ?? null,
+				"lower",
+				samples,
+			),
+		),
+		survivorship(
+			row(
+				"p95",
+				"p95 latency (successful)",
+				"ms",
+				la?.p95Ms ?? null,
+				lb?.p95Ms ?? null,
+				"lower",
+				samples,
+			),
+		),
+		survivorship(
+			row(
+				"p99",
+				"p99 latency (successful)",
+				"ms",
+				la?.p99Ms ?? null,
+				lb?.p99Ms ?? null,
+				"lower",
+				samples,
+			),
 		),
 		row(
-			"p95",
-			"p95 latency (successful)",
+			"ended-mean",
+			"Mean latency (all ended requests)",
 			"ms",
-			la?.p95Ms ?? null,
-			lb?.p95Ms ?? null,
+			a.completedLatency?.meanMs ?? null,
+			b.completedLatency?.meanMs ?? null,
 			"lower",
-			samples,
+			a.completedLatency && b.completedLatency
+				? { a: a.completedLatency.n, b: b.completedLatency.n }
+				: undefined,
 		),
 		row(
-			"p99",
-			"p99 latency (successful)",
-			"ms",
-			la?.p99Ms ?? null,
-			lb?.p99Ms ?? null,
+			"failed-wait",
+			"Client time spent on failed requests",
+			"s",
+			a.failedWaitMs / 1000,
+			b.failedWaitMs / 1000,
 			"lower",
-			samples,
 		),
 		row(
 			"ended-p95",

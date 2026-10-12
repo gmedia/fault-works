@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowLeftRight } from "lucide-react";
-import { useId } from "react";
+import { useEffect, useId } from "react";
 import { z } from "zod";
 import { Button } from "#/components/ui/button.tsx";
 import { Label } from "#/components/ui/label.tsx";
@@ -94,6 +94,19 @@ function ComparePage() {
 
 	const set = (patch: { a?: string; b?: string }) =>
 		void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+
+	// Opened with only a variant: its original is the natural baseline.
+	const suggestedA = !a && entryB?.basedOn ? entryB.basedOn : undefined;
+	const hasSuggestion = useLibrary((s) =>
+		suggestedA ? s.entries[suggestedA] !== undefined : false,
+	);
+	useEffect(() => {
+		if (suggestedA && hasSuggestion)
+			void navigate({
+				search: (prev) => ({ ...prev, a: suggestedA }),
+				replace: true,
+			});
+	}, [suggestedA, hasSuggestion, navigate]);
 
 	return (
 		<div className="mx-auto max-w-6xl px-4 py-8 sm:py-12">

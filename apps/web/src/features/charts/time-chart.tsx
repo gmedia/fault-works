@@ -19,6 +19,8 @@ export interface ChartSeries {
 	values: Array<number | null>;
 	/** Thin, de-emphasized line (e.g. offered traffic as context). */
 	muted?: boolean;
+	/** Stroke width override; a wider line drawn first stays visible under an identical one. */
+	width?: number;
 }
 
 export interface ChartBand {
@@ -412,7 +414,7 @@ export function TimeChart({
 									d={paths[i]}
 									fill="none"
 									stroke={s.color}
-									strokeWidth={s.muted ? 1.25 : 2}
+									strokeWidth={s.width ?? (s.muted ? 1.25 : 2)}
 									strokeLinejoin="round"
 									strokeLinecap="round"
 									opacity={s.muted ? 0.85 : 1}

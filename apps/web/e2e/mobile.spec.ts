@@ -17,3 +17,13 @@ for (const path of [
 		expect(overflow).toBeLessThanOrEqual(0);
 	});
 }
+
+test("on a phone the topology is a readable list and tapping a server opens its settings", async ({ page }) => {
+	await page.goto("/experiments/lb-failure-with-health-checks");
+	const servers = page.getByRole("list", { name: "Servers" });
+	await expect(servers).toBeVisible();
+	await servers.getByRole("button", { name: /Server B/ }).tap();
+	await expect(page.getByLabel("Concurrency")).toBeInViewport();
+	await page.getByRole("button", { name: "Run", exact: true }).tap();
+	await expect(page.locator("#results")).toBeInViewport();
+});

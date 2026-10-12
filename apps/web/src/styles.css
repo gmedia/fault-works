@@ -283,6 +283,22 @@
   color: var(--muted-foreground);
 }
 
+/* Touch screens: 44 px targets (WCAG 2.5.5 / Apple HIG), without changing the desktop density. */
+@media (pointer: coarse) {
+  [data-slot='button'],
+  [data-slot='tabs-trigger'],
+  [data-slot='select-trigger'] {
+    min-height: 44px;
+  }
+  [data-slot='button'][data-size^='icon'] {
+    min-width: 44px;
+  }
+  .react-flow__controls-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

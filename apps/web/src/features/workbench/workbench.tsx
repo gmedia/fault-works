@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { isTypingTarget } from "#/components/app/app-shell.tsx";
 import { formatCount } from "#/lib/format.ts";
+import { prefersReducedMotion, useMediaQuery } from "#/lib/use-media-query.ts";
+import { cn } from "#/lib/utils.ts";
 import { useEntry, useLibrary } from "#/state/library.ts";
 import { useRun, useRuns } from "#/state/runs.ts";
 import { useValidation } from "#/state/validation.ts";
@@ -18,6 +20,8 @@ import { Inspector } from "./inspector.tsx";
 import { PlaybackBar, stateChangeTimes } from "./playback.tsx";
 import { usePlayback } from "./playback-store.ts";
 import { ResultsPanel } from "./results/results-panel.tsx";
+import { StackedTopology } from "./stacked-topology.tsx";
+import { VerificationBanner } from "./verification.tsx";
 
 interface WorkbenchProps {
 	id: string;
@@ -39,6 +43,23 @@ export function Workbench(props: WorkbenchProps) {
 	const validation = useValidation(experiment);
 	const resetPlayback = usePlayback((s) => s.reset);
 	const [announcement, setAnnouncement] = useState("");
+	const phone = useMediaQuery("(max-width: 639px)");
+	const stackedLayout = useMediaQuery("(max-width: 1023px)");
+	const { onSelectNode } = props;
+	// Below the desktop layout the settings sit under the topology: bring them into view.
+	const selectNode = useCallback(
+		(node: string | null) => {
+			onSelectNode(node);
+			if (node && stackedLayout)
+				requestAnimationFrame(() =>
+					document.getElementById("settings")?.scrollIntoView({
+						behavior: prefersReducedMotion() ? "auto" : "smooth",
+						block: "start",
+					}),
+				);
+		},
+		[onSelectNode, stackedLayout],
+	);
 
 	useEffect(() => resetPlayback(id), [id, resetPlayback]);
 
@@ -54,21 +75,46 @@ export function Workbench(props: WorkbenchProps) {
 		[id, updateEntry],
 	);
 
-	const run = useCallback(() => {
-		if (!experiment || !validation?.valid || running) return;
-		void runExperiment(id, experiment).then((r) => {
-			if (!r) {
-				setAnnouncement("The run failed.");
-				return;
-			}
-			const s = r.metrics.summary;
-			setAnnouncement(
-				`Run finished. ${formatCount(s.succeeded)} of ${formatCount(s.offered)} requests succeeded, ${formatCount(s.failed)} failed.`,
-			);
-			const t = usePlayback.getState().timeMs;
-			if (t > r.horizonMs) usePlayback.getState().setTime(r.horizonMs);
-		});
-	}, [experiment, validation, running, runExperiment, id]);
+	const run = useCallback(
+		(options: { reveal?: boolean } = { reveal: true }) => {
+			if (!experiment || !validation?.valid || running) return;
+			void runExperiment(id, experiment).then((r) => {
+				// On narrow screens the results sit far below the Run button; bring them into view.
+				if (
+					r &&
+					options.reveal &&
+					window.matchMedia("(max-width: 1023px)").matches
+				)
+					document.getElementById("results")?.scrollIntoView({
+						behavior: prefersReducedMotion() ? "auto" : "smooth",
+						block: "start",
+					});
+				if (!r) {
+					setAnnouncement("The run failed.");
+					return;
+				}
+				const s = r.metrics.summary;
+				setAnnouncement(
+					`Run finished. ${formatCount(s.succeeded)} of ${formatCount(s.offered)} requests succeeded, ${formatCount(s.failed)} failed.`,
+				);
+				const t = usePlayback.getState().timeMs;
+				if (t > r.horizonMs) usePlayback.getState().setTime(r.horizonMs);
+			});
+		},
+		[experiment, validation, running, runExperiment, id],
+	);
+
+	// Results are not stored, but they are reproducible: re-run on open when this browser has run
+	// these exact settings before, or when an imported result file is waiting to be verified.
+	const autoRunKey = validation?.valid ? validation.runKey : null;
+	const hasRecord = record !== undefined;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only on open; later edits must wait for an explicit run.
+	useEffect(() => {
+		if (hasRecord || !autoRunKey) return;
+		const { ranKeys, verifications } = useRuns.getState();
+		if (ranKeys.includes(autoRunKey) || verifications[id])
+			run({ reveal: false });
+	}, [id]);
 
 	// Shortcuts. Typing in a field keeps native behavior (including the field's own undo).
 	useEffect(() => {
@@ -160,7 +206,7 @@ export function Workbench(props: WorkbenchProps) {
 						)
 							? props.selectedNode
 							: null,
-						selectNode: props.onSelectNode,
+						selectNode,
 						inspectorTab: props.inspectorTab,
 						setInspectorTab: props.onInspectorTab,
 						result,
@@ -169,7 +215,18 @@ export function Workbench(props: WorkbenchProps) {
 						run,
 					}
 				: null,
-		[experiment, validation, id, update, props, result, stale, running, run],
+		[
+			experiment,
+			validation,
+			id,
+			update,
+			props,
+			selectNode,
+			result,
+			stale,
+			running,
+			run,
+		],
 	);
 
 	if (!value) return null;
@@ -183,25 +240,34 @@ export function Workbench(props: WorkbenchProps) {
 			<div className="mx-auto grid max-w-[1600px] lg:h-[540px] lg:grid-cols-[minmax(0,1fr)_380px]">
 				<section
 					aria-label="Topology"
-					className="flex h-[460px] min-h-0 flex-col lg:h-full"
+					className={cn(
+						"flex min-h-0 flex-col lg:h-full",
+						!phone && "h-[460px]",
+					)}
 				>
 					<div className="min-h-0 flex-1">
-						<TopologyCanvas />
+						{phone ? <StackedTopology /> : <TopologyCanvas />}
 					</div>
 					{result && <PlaybackBar result={result} disabled={stale} />}
 				</section>
 				<aside
+					id="settings"
 					aria-label="Settings"
 					className="min-h-0 border-t bg-card lg:border-t-0 lg:border-l"
 				>
 					<Inspector />
 				</aside>
 			</div>
-			<section aria-labelledby="results-heading" className="border-t">
+			<section
+				id="results"
+				aria-labelledby="results-heading"
+				className="scroll-mt-16 border-t"
+			>
 				<div className="mx-auto max-w-[1600px] px-4 py-6">
 					<h2 id="results-heading" className="sr-only">
 						Results
 					</h2>
+					<VerificationBanner />
 					<ResultsPanel
 						tab={props.resultsTab}
 						onTabChange={props.onResultsTab}

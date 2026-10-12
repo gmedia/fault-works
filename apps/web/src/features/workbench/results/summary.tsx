@@ -70,7 +70,12 @@ export function SummaryTiles({
 	else
 		detection = {
 			value: formatMs(fault.detectionDelayMs),
-			detail: `${fault.serverLabel}, crash to removal${summary.faults.length > 1 ? ` (first of ${summary.faults.length} faults)` : ""}`,
+			detail: `${fault.serverLabel}, crash to removal${summary.faults.length > 1 ? ` (first of ${summary.faults.length} faults)` : ""}${
+				fault.possibleDetectionMs &&
+				fault.possibleDetectionMs.min !== fault.possibleDetectionMs.max
+					? `. Possible with these settings: ${formatMs(fault.possibleDetectionMs.min)} to ${formatMs(fault.possibleDetectionMs.max)}${fault.crashOnProbeTick ? "; this crash hit a probe, the shortest case" : ""}`
+					: ""
+			}`,
 		};
 
 	return (
@@ -122,6 +127,9 @@ export function SummaryTiles({
 								{formatLatency(summary.completedLatency.p95Ms)}
 							</span>
 						)}
+						<span className="mt-1 block">
+							p95 means 95 of every 100 requests took this long or less.
+						</span>
 					</>
 				}
 			/>

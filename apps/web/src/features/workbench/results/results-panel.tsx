@@ -56,7 +56,7 @@ export function ResultsPanel({
 					<p className="mt-1 text-muted-foreground text-sm">
 						Your settings are unchanged. Fix the input or try again.
 					</p>
-					<Button className="mt-4" onClick={run}>
+					<Button className="mt-4" onClick={() => run()}>
 						<RotateCcw aria-hidden="true" />
 						Try again
 					</Button>
@@ -90,11 +90,11 @@ export function ResultsPanel({
 							explanation built from the simulated events. It takes about a
 							second and runs in your browser.
 						</p>
-						<Button className="mt-5" size="lg" onClick={run}>
+						<Button className="mt-5" size="lg" onClick={() => run()}>
 							<Play aria-hidden="true" />
 							Run experiment
 						</Button>
-						<p className="mt-2 text-muted-foreground text-xs">
+						<p className="mt-2 text-muted-foreground text-xs pointer-coarse:hidden">
 							Shortcut:{" "}
 							<kbd className="rounded border px-1 font-mono">Ctrl</kbd> +{" "}
 							<kbd className="rounded border px-1 font-mono">Enter</kbd>
@@ -118,7 +118,7 @@ export function ResultsPanel({
 						The results below still show the previous settings.
 					</p>
 					{validation.valid ? (
-						<Button size="sm" onClick={run} disabled={running}>
+						<Button size="sm" onClick={() => run()} disabled={running}>
 							{running ? (
 								<LoaderCircle className="animate-spin" aria-hidden="true" />
 							) : (
@@ -154,7 +154,7 @@ export function ResultsPanel({
 						<TabsTrigger value="explain">What happened</TabsTrigger>
 						<TabsTrigger value="events">Events</TabsTrigger>
 						<TabsTrigger value="checks">
-							Checks
+							Engine checks
 							<span className="text-muted-foreground tabular">
 								{result.metrics.checks.filter((c) => c.passed).length}/
 								{result.metrics.checks.length}

@@ -37,7 +37,8 @@ A file is rejected when the run would exceed 15 minutes of simulated time or abo
 - Unknown fields are rejected rather than ignored, so typos do not silently change meaning.
 - Older versions are migrated first. `0.1.0-proposal`, the planning-phase example, is upgraded automatically: `failureThreshold` becomes `unhealthyThreshold`, `workload.kind: "constant-rate"` becomes `arrival: "constant"`, and missing fields get documented defaults.
 - Every problem is reported with its path (for example `model.nodes[2].config.serviceTimeMs`) and a message that says how to fix it.
-- If the id already exists in the browser, the import is saved under a new id and the user is told.
+- If the same experiment (same title and behavior) is already in the browser, it is reused instead of duplicated. If a different experiment uses the id, the import gets a new id and "(imported)" in its title.
+- Result files and comparison bundles can be imported too: their embedded experiments are imported and re-run, and the app shows whether the behavior digest, trace fingerprint and request counts match the file.
 
 ## Digests
 
@@ -54,6 +55,7 @@ Exported as `<experimentId>.result.json`:
   "resultSchemaVersion": "0.1.0",
   "engineVersion": "0.1.0",
   "metricDefinitionsVersion": "0.1.0",
+  "behaviorDigest": "sha256:…",
   "inputDigest": "sha256:…",
   "traceDigest": "fnv1a32x2:…",
   "seed": 42,
@@ -69,6 +71,10 @@ Exported as `<experimentId>.result.json`:
 ```
 
 The numbers above are the real result of `lb-failure-with-health-checks`, except the event count, which is illustrative. The artifact contains no wall-clock values, so exporting the same run twice gives byte-identical files. The full event trace can be exported separately as CSV.
+
+## Comparison bundle
+
+Exported from the Compare page as `compare-<a>-vs-<b>.comparison.json`: `comparisonSchemaVersion`, the settings diff, the metric rows, and both result artifacts in full. Importing it recreates both experiments and opens the comparison. A Markdown report with the same content is available for handouts and reviews.
 
 ## Diff for comparisons
 

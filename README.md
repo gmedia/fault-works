@@ -17,7 +17,8 @@ From there you can:
 - read a plain-language explanation built only from the simulated events;
 - trace any single request through the event log;
 - create a variant, change one setting and compare, including a paired ten-seed check for random scenarios;
-- export the experiment, the result (with input digest and trace fingerprint) or the full event log as CSV.
+- export the experiment, the result (with behavior digest and trace fingerprint), the event log as CSV, or a whole comparison as one file plus a Markdown report;
+- import any of those files elsewhere and see whether a re-run reproduces them.
 
 Everything runs in your browser. There is no account, no backend and no telemetry; experiments are saved in the browser's local storage.
 
@@ -61,7 +62,7 @@ The engine is checked three ways: reference cases whose answers were computed by
 
 ## Project status
 
-v0.1 (October 2026) covers the scope in [docs/02](docs/02-SCOPE-AND-ROADMAP.md). The next gate is the pilot in [docs/10](docs/10-VALIDATION-PLAN.md): three to five people should be able to run the A/B experiment and explain the difference without help before any v0.2 work starts.
+v0.1 (October 2026) covers the scope in [docs/02](docs/02-SCOPE-AND-ROADMAP.md). A simulated pilot with four AI personas found and drove fixes for import, comparison export, latency reporting and the phone layout ([docs/12](docs/12-SIMULATED-PILOT.md)); it does not replace real users. The next gate is the pilot in [docs/10](docs/10-VALIDATION-PLAN.md): three to five people should be able to run the A/B experiment and explain the difference without help before any v0.2 work starts.
 
 Nothing in this repository implies official GMEDIA authorization, trademark clearance or a license grant. The name **FaultWorks by GMEDIA** and the slug `faultworks` are provisional, and Apache-2.0 is recommended but not granted ([ADR-008](docs/11-DECISION-LOG.md)).
 
@@ -71,7 +72,7 @@ Nothing in this repository implies official GMEDIA authorization, trademark clea
 - [Vision](docs/01-VISION-AND-POSITIONING.md) and [scope](docs/02-SCOPE-AND-ROADMAP.md)
 - [Architecture](docs/04-ARCHITECTURE.md) and [simulation model](docs/05-SIMULATION-AND-METRICS.md)
 - [Experiment format](docs/06-EXPERIMENT-FORMAT.md)
-- [Validation plan](docs/10-VALIDATION-PLAN.md) and [decision log](docs/11-DECISION-LOG.md)
+- [Validation plan](docs/10-VALIDATION-PLAN.md), [simulated pilot](docs/12-SIMULATED-PILOT.md) and [decision log](docs/11-DECISION-LOG.md)
 - [Changelog](CHANGELOG.md)
 
 ## Existing projects to study (not copied)

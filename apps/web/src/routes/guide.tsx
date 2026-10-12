@@ -163,8 +163,10 @@ function GuidePage() {
 						answer instantly when the server is up. After the configured number
 						of consecutive failed probes the backend is removed from rotation;
 						after the configured number of consecutive successes it is added
-						back. This is a simplified active check; it does not reproduce any
-						specific proxy’s passive or active checking.
+						back. Probes are free in the model: they use no server capacity, so
+						a very short interval shows only its benefit. This is a simplified
+						active check; it does not reproduce any specific proxy’s passive or
+						active checking.
 					</p>
 					<p>
 						The period between a crash and its detection is the amber hatched
@@ -197,8 +199,12 @@ function GuidePage() {
 								"Requests without an outcome when the run stopped. They are censored: counted neither as success nor failure. Offered = succeeded + failed + still in flight.",
 							],
 							[
+								"Percentiles (p50, p95, p99)",
+								"p95 is the time within which 95 of every 100 requests finished; p50 is the median. Percentiles describe the slow end of the distribution without being thrown off by one extreme value. They use the nearest-rank method, so the value is always a real sample, and the number of samples (n) is always shown.",
+							],
+							[
 								"Latency",
-								"Completion time minus arrival time. Percentiles use the nearest-rank method on successful requests and always show the number of samples (n). Timeouts appear in the failure count, not in these percentiles.",
+								"Completion time minus arrival time. “Successful” latency leaves failed requests out. “All ended” latency includes them, with a timeout counted as the full timeout and a refused request as almost zero, so fast failures can make it look better. Compare also reports the total time clients spent on failed requests, which percentiles cannot show once more than 5% of requests fail.",
 							],
 							[
 								"Requests per second",

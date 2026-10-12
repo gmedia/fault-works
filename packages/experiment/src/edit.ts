@@ -138,6 +138,14 @@ export function cloneExperiment(
 	const copy = structuredClone(experiment);
 	copy.experimentId = uniqueId(`${experiment.experimentId}-variant`, takenIds);
 	copy.title = `${experiment.title} (variant)`.slice(0, 120);
+	// The original's description and hypotheses describe the original. Carrying them over would
+	// put stale claims into the variant's exports, so the variant starts with a prompt instead.
+	copy.description =
+		`Variant of “${experiment.title}”. Describe the one setting you changed and why.`.slice(
+			0,
+			2000,
+		);
+	copy.expectedObservations = [];
 	return copy;
 }
 

@@ -21,6 +21,7 @@ import {
 	STARTER_COMPARISON,
 } from "./examples.ts";
 import proposal from "./fixtures/proposal-0.1.0.json";
+import { parseImportJson } from "./import.ts";
 import type { Experiment } from "./schema.ts";
 import { sha256Hex } from "./sha256.ts";
 import {
@@ -279,5 +280,62 @@ describe("editing helpers", () => {
 	it("normalizes ids", () => {
 		expect(uniqueId("My Experiment!", [])).toBe("my-experiment");
 		expect(uniqueId("a", ["a", "a-2"])).toBe("a-3");
+	});
+});
+
+describe("parseImportJson", () => {
+	const result = (experiment: unknown) => ({
+		resultSchemaVersion: "0.1.0",
+		engineVersion: "0.1.0",
+		behaviorDigest: "sha256:abc",
+		traceDigest: "fnv1a32x2:0011",
+		metrics: { offered: 6000, failed: 1005 },
+		experiment,
+	});
+
+	it("imports the experiment embedded in a result file, with its claimed digests", () => {
+		const parsed = parseImportJson(JSON.stringify(result(base())));
+		expect(parsed).toMatchObject({
+			ok: true,
+			kind: "result",
+			claimed: { behaviorDigest: "abc", traceDigest: "0011", failed: 1005 },
+		});
+	});
+
+	it("imports both sides of a comparison bundle", () => {
+		const other = findBuiltIn(STARTER_COMPARISON.b);
+		const parsed = parseImportJson(
+			JSON.stringify({
+				comparisonSchemaVersion: "0.1.0",
+				a: result(base()),
+				b: result(other),
+			}),
+		);
+		expect(parsed.ok && parsed.kind).toBe("comparison");
+	});
+
+	it("explains a result file without an experiment instead of blaming the export", () => {
+		const parsed = parseImportJson(
+			JSON.stringify({ resultSchemaVersion: "0.1.0" }),
+		);
+		expect(parsed.ok).toBe(false);
+		if (!parsed.ok) expect(parsed.issues[0]?.message).toMatch(/result file/);
+	});
+
+	it("still validates the embedded experiment", () => {
+		const broken = base();
+		broken.seed = -1;
+		const parsed = parseImportJson(JSON.stringify(result(broken)));
+		expect(parsed.ok).toBe(false);
+		if (!parsed.ok) expect(parsed.issues[0]?.path).toBe("experiment.seed");
+	});
+});
+
+describe("variants", () => {
+	it("start without the original's hypotheses so exports never carry stale claims", () => {
+		const variant = cloneExperiment(base(), []);
+		expect(variant.expectedObservations).toEqual([]);
+		expect(variant.description).toMatch(/^Variant of/);
+		expect(variant.question).toBe(base().question);
 	});
 });

@@ -23,6 +23,12 @@ export {
 	STARTER_COMPARISON,
 } from "./examples.ts";
 export * from "./fields.ts";
+export {
+	type ClaimedResult,
+	type ImportedRun,
+	type ImportResult,
+	parseImportJson,
+} from "./import.ts";
 export { migrate } from "./migrate.ts";
 export * from "./schema.ts";
 export { sha256Hex } from "./sha256.ts";

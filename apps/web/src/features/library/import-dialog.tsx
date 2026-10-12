@@ -1,4 +1,9 @@
-import { type ParseResult, parseExperimentJson } from "@faultworks/experiment";
+import {
+	type Experiment,
+	type ImportedRun,
+	type ImportResult,
+	parseImportJson,
+} from "@faultworks/experiment";
 import { useNavigate } from "@tanstack/react-router";
 import { FileUp, TriangleAlert } from "lucide-react";
 import { type ReactNode, useId, useRef, useState } from "react";
@@ -17,19 +22,78 @@ import { Label } from "#/components/ui/label.tsx";
 import { Textarea } from "#/components/ui/textarea.tsx";
 import { cn } from "#/lib/utils.ts";
 import { useLibrary } from "#/state/library.ts";
+import { useRuns } from "#/state/runs.ts";
+import { validate } from "#/state/validation.ts";
+
+interface Placed {
+	id: string;
+	reused: boolean;
+	renamedFrom: string | null;
+}
 
 /**
- * Import from a file (picker or drop) or pasted JSON. Input is parsed as data only: it is
- * size-limited, schema-validated and never executed.
+ * Adds an imported experiment, or reuses an existing one that already has the same title and the
+ * same behavior, so importing a file twice never creates look-alike duplicates.
+ */
+function place(experiment: Experiment): Placed {
+	const { entries, add } = useLibrary.getState();
+	const key = validate(experiment).runKey;
+	const twin = Object.values(entries).find(
+		(e) =>
+			e.experiment.title === experiment.title &&
+			validate(e.experiment).runKey === key,
+	);
+	if (twin)
+		return {
+			id: twin.experiment.experimentId,
+			reused: true,
+			renamedFrom: null,
+		};
+	const clash = entries[experiment.experimentId] !== undefined;
+	const id = add(
+		clash
+			? { ...experiment, title: `${experiment.title} (imported)`.slice(0, 120) }
+			: experiment,
+		"imported",
+	);
+	return {
+		id,
+		reused: false,
+		renamedFrom: clash ? experiment.experimentId : null,
+	};
+}
+
+function describePlacement(
+	title: string,
+	placed: Placed,
+	migratedFrom: string | null,
+): string {
+	return [
+		placed.reused
+			? `“${title}” is already in this browser with the same settings, so the existing copy is used.`
+			: null,
+		placed.renamedFrom
+			? `A different experiment already uses the id ${placed.renamedFrom}, so this one is saved as ${placed.id} and marked “(imported)”.`
+			: null,
+		migratedFrom ? `Upgraded from schema ${migratedFrom}.` : null,
+	]
+		.filter(Boolean)
+		.join(" ");
+}
+
+/**
+ * Import from a file (picker or drop) or pasted JSON. Accepts experiment, result and comparison
+ * files. Input is parsed as data only: it is size-limited, schema-validated and never executed.
+ * Result claims (digests, counts) are queued so the next run can verify them.
  */
 export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 	const [open, setOpen] = useState(false);
 	const [text, setText] = useState("");
-	const [result, setResult] = useState<ParseResult | null>(null);
+	const [result, setResult] = useState<ImportResult | null>(null);
 	const [source, setSource] = useState<string | null>(null);
 	const [dragging, setDragging] = useState(false);
 	const fileInput = useRef<HTMLInputElement>(null);
-	const add = useLibrary((s) => s.add);
+	const setVerification = useRuns((s) => s.setVerification);
 	const navigate = useNavigate();
 	const textId = useId();
 	const errorId = useId();
@@ -40,40 +104,78 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 		setSource(null);
 	};
 
-	const accept = (parsed: ParseResult) => {
+	const queueVerification = (id: string, run: ImportedRun, from: string) => {
+		if (run.claimed) setVerification(id, { ...run.claimed, source: from });
+	};
+
+	const accept = (parsed: ImportResult, from: string) => {
 		setResult(parsed);
 		if (!parsed.ok) return;
-		const id = add(parsed.experiment, "imported");
 		setOpen(false);
 		reset();
-		toast.success(`Imported “${parsed.experiment.title}”`, {
-			description:
-				[
-					parsed.migratedFrom
-						? `Upgraded from schema ${parsed.migratedFrom}.`
-						: null,
-					id !== parsed.experiment.experimentId
-						? `An experiment with id ${parsed.experiment.experimentId} already existed, so this one is saved as ${id}.`
-						: null,
-				]
-					.filter(Boolean)
-					.join(" ") || undefined,
-		});
+		if (parsed.kind === "comparison") {
+			const a = place(parsed.a.experiment);
+			const b = place(parsed.b.experiment);
+			queueVerification(a.id, parsed.a, from);
+			queueVerification(b.id, parsed.b, from);
+			toast.success("Imported a comparison", {
+				description:
+					[
+						describePlacement(
+							parsed.a.experiment.title,
+							a,
+							parsed.a.migratedFrom,
+						),
+						describePlacement(
+							parsed.b.experiment.title,
+							b,
+							parsed.b.migratedFrom,
+						),
+					]
+						.filter(Boolean)
+						.join(" ") ||
+					"Both experiments run again now so their results can be checked.",
+			});
+			void navigate({ to: "/compare", search: { a: a.id, b: b.id } });
+			return;
+		}
+		const placed = place(parsed.experiment);
+		queueVerification(placed.id, parsed, from);
+		toast.success(
+			parsed.kind === "result"
+				? `Imported the experiment inside the result file “${parsed.experiment.title}”`
+				: `Imported “${parsed.experiment.title}”`,
+			{
+				description:
+					[
+						describePlacement(
+							parsed.experiment.title,
+							placed,
+							parsed.migratedFrom,
+						),
+						parsed.kind === "result"
+							? "It runs again now and the numbers are checked against the file."
+							: null,
+					]
+						.filter(Boolean)
+						.join(" ") || undefined,
+			},
+		);
 		void navigate({
 			to: "/experiments/$experimentId",
-			params: { experimentId: id },
+			params: { experimentId: placed.id },
 		});
 	};
 
 	const readFile = async (file: File) => {
 		setSource(file.name);
-		if (file.size > 512 * 1024) {
+		if (file.size > 16 * 1024 * 1024) {
 			setResult({
 				ok: false,
 				issues: [
 					{
 						path: "",
-						message: `${file.name} is ${Math.ceil(file.size / 1024)} KB; experiments are limited to 512 KB.`,
+						message: `${file.name} is ${Math.ceil(file.size / 1024)} KB, which is more than FaultWorks ever exports.`,
 					},
 				],
 			});
@@ -81,7 +183,7 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 		}
 		const content = await file.text();
 		setText(content);
-		accept(parseExperimentJson(content));
+		accept(parseImportJson(content), file.name);
 	};
 
 	return (
@@ -98,8 +200,9 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 					<DialogTitle>Import an experiment</DialogTitle>
 					<DialogDescription>
 						Choose a FaultWorks <span className="font-mono">.json</span> file or
-						paste its contents. The file is checked against the schema and stays
-						in this browser.
+						paste its contents: an experiment, a result (it is re-run and
+						checked) or a comparison (both sides come in). Files are checked
+						against the schema and stay in this browser.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -201,8 +304,8 @@ export function ImportDialog({ trigger }: { trigger: ReactNode }) {
 						Cancel
 					</Button>
 					<Button
-						disabled={text.trim() === ""}
-						onClick={() => accept(parseExperimentJson(text))}
+						disabled={text.trim() === "" || (result !== null && !result.ok)}
+						onClick={() => accept(parseImportJson(text), "pasted JSON")}
 					>
 						Import
 					</Button>

@@ -78,7 +78,7 @@ test("replay speed never changes the results", async ({ page }) => {
 	await expect(page.getByText("Results match these settings")).toBeVisible();
 	expect(await failedTile(page).innerText()).toBe(before);
 
-	await page.getByRole("tab", { name: /Checks/ }).click();
+	await page.getByRole("tab", { name: /Engine checks/ }).click();
 	await expect(page.getByText("Model checks: 5 of 5 passed")).toBeVisible();
 	await page.getByRole("button", { name: "Run again and compare" }).click();
 	await expect(page.getByText(/^Identical\./)).toBeVisible();

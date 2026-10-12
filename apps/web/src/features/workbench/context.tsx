@@ -19,7 +19,7 @@ export interface WorkbenchContextValue {
 	/** The shown result was produced from different behavior settings than the current ones. */
 	stale: boolean;
 	running: boolean;
-	run: () => void;
+	run: (options?: { reveal?: boolean }) => void;
 }
 
 export const WorkbenchContext = createContext<WorkbenchContextValue | null>(

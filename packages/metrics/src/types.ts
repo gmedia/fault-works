@@ -47,6 +47,13 @@ export interface FaultSummary {
 	restoredAtMs: number | null;
 	/** Requests that failed at or because of this server between the crash and detection/recovery. */
 	failedWhileUndetected: number;
+	/**
+	 * Detection delays the health-check settings allow for this fault, depending on where in the
+	 * probe cycle the crash lands. `null` without health checks.
+	 */
+	possibleDetectionMs: { min: number; max: number } | null;
+	/** The crash landed exactly on a probe tick, which gives the shortest possible detection. */
+	crashOnProbeTick: boolean;
 }
 
 export interface RunSummary {
@@ -65,6 +72,8 @@ export interface RunSummary {
 	successLatency: LatencyStats | null;
 	/** Latency of all terminal requests; timeouts contribute exactly the timeout. */
 	completedLatency: LatencyStats | null;
+	/** Total time clients waited on requests that ended in failure, in ms. */
+	failedWaitMs: number;
 	/** Terminal requests (success + failure) per simulated second. */
 	throughputRps: number;
 	/** Successful completions per simulated second (no SLO is declared, so this is not "goodput"). */

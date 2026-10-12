@@ -49,6 +49,8 @@ interface LibraryState {
 	remove(id: string): { entry: LibraryEntry; index: number } | null;
 	restoreEntry(entry: LibraryEntry, index: number): void;
 	createVariant(id: string): string | null;
+	/** Changes an experiment's id (its file name). Returns the new id, or null if it is taken or invalid. */
+	renameExperiment(id: string, nextId: string): string | null;
 	resetToBuiltIn(id: string): void;
 	restoreBuiltIns(): number;
 }
@@ -57,7 +59,7 @@ const COALESCE_MS = 800;
 const HISTORY_LIMIT = 100;
 
 /** localStorage can throw (private mode, blocked storage); the app must still work in memory. */
-const safeStorage: StateStorage = {
+export const safeStorage: StateStorage = {
 	getItem: (name) => {
 		try {
 			return window.localStorage.getItem(name);
@@ -233,6 +235,37 @@ export const useLibrary = create<LibraryState>()(
 				const order = [...state.order];
 				order.splice(Math.max(0, Math.min(index, order.length)), 0, id);
 				set({ entries: { ...state.entries, [id]: entry }, order });
+			},
+
+			renameExperiment(id, nextId) {
+				const state = get();
+				const entry = state.entries[id];
+				if (!entry || nextId === id) return entry ? id : null;
+				if (!/^[a-z0-9][a-z0-9-]{0,47}$/.test(nextId) || state.entries[nextId])
+					return null;
+				const entries: Record<string, LibraryEntry> = {};
+				for (const [key, value] of Object.entries(state.entries)) {
+					const moved =
+						key === id
+							? {
+									...value,
+									experiment: { ...value.experiment, experimentId: nextId },
+								}
+							: value;
+					entries[key === id ? nextId : key] =
+						moved.basedOn === id ? { ...moved, basedOn: nextId } : moved;
+				}
+				const history = { ...state.history };
+				if (history[id]) {
+					history[nextId] = history[id];
+					delete history[id];
+				}
+				set({
+					entries,
+					history,
+					order: state.order.map((x) => (x === id ? nextId : x)),
+				});
+				return nextId;
 			},
 
 			createVariant(id) {

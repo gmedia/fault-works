@@ -53,6 +53,14 @@ const pct = (part: number, whole: number) =>
  * Explains a run in plain sentences built only from recorded events and their counts. It never
  * guesses a cause the model did not produce.
  */
+function detectionRange(f: RunSummary["faults"][number]): string {
+	const range = f.possibleDetectionMs;
+	if (!range || range.min === range.max) return "";
+	if (f.crashOnProbeTick)
+		return ` That is the shortest delay these settings allow, because the crash landed exactly on a probe; a crash just after a probe would take up to ${formatMs(range.max)}.`;
+	return ` With these settings detection takes between ${formatMs(range.min)} and ${formatMs(range.max)}, depending on where in the probe cycle the crash lands.`;
+}
+
 export function explainRun(
 	summary: RunSummary,
 	healthChecks: boolean,
@@ -80,13 +88,14 @@ export function explainRun(
 		if (!healthChecks)
 			detection = `Health checks were off, so the load balancer kept sending it traffic${f.recoveredAtMs !== null ? ` until it recovered at ${formatMs(f.recoveredAtMs)}` : " for the rest of the run"}.`;
 		else if (f.detectedAtMs !== null && f.detectionDelayMs !== null)
-			detection = `The load balancer marked it unhealthy at ${formatMs(f.detectedAtMs)}, ${formatMs(f.detectionDelayMs)} after the crash.`;
+			detection = `The load balancer marked it unhealthy at ${formatMs(f.detectedAtMs)}, ${formatMs(f.detectionDelayMs)} after the crash.${detectionRange(f)}`;
 		else
 			detection =
 				f.recoveredAtMs !== null
 					? `It recovered at ${formatMs(f.recoveredAtMs)} before the health checks noticed.`
 					: "The health checks never marked it unhealthy before the run ended.";
-		const lost = `${n(f.failedWhileUndetected)} request${f.failedWhileUndetected === 1 ? "" : "s"} failed because ${f.failedWhileUndetected === 1 ? "it was" : "they were"} lost in the crash or sent to the server before the failure was noticed.`;
+		const they = f.failedWhileUndetected === 1 ? "it was" : "they were";
+		const lost = `${n(f.failedWhileUndetected)} request${f.failedWhileUndetected === 1 ? "" : "s"} failed because ${they} lost in the crash or sent to the server ${healthChecks ? "before the failure was noticed" : "while it was down"}.`;
 		let restore = "";
 		if (f.recoveredAtMs !== null && healthChecks)
 			restore =
@@ -170,6 +179,14 @@ export function explainRun(
 			}`,
 		});
 	}
+
+	if (healthChecks && summary.probes > 0)
+		out.push({
+			id: "probes",
+			tone: "neutral",
+			title: `The load balancer sent ${n(summary.probes)} health probes`,
+			body: "In this model probes are free: they skip the queue and use no server capacity, so a shorter probe interval only shows its benefit here. Real probes cost a little server and network time, which matters at very short intervals or with many load balancers.",
+		});
 
 	if (summary.lateResponses > 0)
 		out.push({

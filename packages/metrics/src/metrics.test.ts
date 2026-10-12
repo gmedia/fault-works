@@ -181,3 +181,61 @@ describe("explanations and comparison", () => {
 		});
 	});
 });
+
+describe("pilot findings", () => {
+	it("reports the possible detection range and whether the crash hit a probe tick", () => {
+		const onTick = runBuiltIn("lb-failure-with-health-checks").metrics.summary
+			.faults[0];
+		expect(onTick).toMatchObject({
+			possibleDetectionMs: { min: 5000, max: 10_000 },
+			crashOnProbeTick: true,
+		});
+		const offTick = runBuiltIn("lb-failure-with-health-checks", (e) => {
+			const f = e.faults[0];
+			if (f) f.atMs = 22_500;
+		}).metrics.summary;
+		expect(offTick.faults[0]).toMatchObject({
+			detectionDelayMs: 7500,
+			crashOnProbeTick: false,
+		});
+		const hang = runBuiltIn("hanging-backend").metrics.summary.faults[0];
+		expect(hang?.possibleDetectionMs).toEqual({ min: 7000, max: 12_000 });
+		expect(
+			explainRun(
+				runBuiltIn("lb-failure-with-health-checks").metrics.summary,
+				true,
+			).find((i) => i.id === "fault-server-b-crash")?.body,
+		).toContain("shortest delay these settings allow");
+	});
+
+	it("measures the time clients spent on failures, which percentiles hide", () => {
+		const noChecks = runBuiltIn("hanging-backend", (e) => {
+			for (const n of e.model.nodes)
+				if (n.kind === "load-balancer") n.config.healthCheck.enabled = false;
+		}).metrics.summary;
+		const withChecks = runBuiltIn("hanging-backend").metrics.summary;
+		expect(withChecks.failedWaitMs).toBe(355 * 1000);
+		const rows = compareSummaries(noChecks, withChecks);
+		expect(rows.find((r) => r.id === "ended-p95")?.delta).toBe(0);
+		expect(rows.find((r) => r.id === "failed-wait")).toMatchObject({
+			a: 1005,
+			b: 355,
+		});
+		expect(rows.find((r) => r.id === "timed-out")).toMatchObject({
+			a: 1005,
+			b: 355,
+		});
+	});
+
+	it("flags survivor latency instead of calling it an improvement", () => {
+		const a = runBuiltIn("random-traffic-burst").metrics.summary;
+		const b = runBuiltIn("random-traffic-burst", (e) => {
+			for (const n of e.model.nodes)
+				if (n.kind === "server") n.config.queueCapacity = 0;
+		}).metrics.summary;
+		expect(b.succeeded).toBeLessThan(a.succeeded);
+		const p95 = compareSummaries(a, b).find((r) => r.id === "p95");
+		expect(p95?.delta).toBeLessThan(0);
+		expect(p95?.caution).toMatch(/fewer successful requests/);
+	});
+});

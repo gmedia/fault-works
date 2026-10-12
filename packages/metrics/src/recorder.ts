@@ -100,6 +100,7 @@ export function createRunRecorder(
 	const failedByReason = zeroReasons();
 	const successSamples = new SampleBuffer();
 	const completedSamples = new SampleBuffer();
+	let failedWaitUs = 0;
 
 	const servers = input.servers.map((s, i) => ({
 		id: s.id,
@@ -310,6 +311,7 @@ export function createRunRecorder(
 				terminal(e.req, e.t);
 				failed++;
 				failedByReason[e.reason]++;
+				failedWaitUs += e.latencyUs;
 				completedSamples.push(e.latencyUs);
 				(windowEnded[w] as number[]).push(e.latencyUs);
 				series.failed[w] = (series.failed[w] as number) + 1;
@@ -424,6 +426,21 @@ export function createRunRecorder(
 		}
 	}
 
+	/**
+	 * Probes run every interval from time 0. A crash just after a probe waits almost a full
+	 * interval for the first failed probe; one exactly on a tick is probed at once. A hanging server
+	 * adds one probe timeout before each probe counts as failed.
+	 */
+	const possibleDetection = (behavior: "refuse" | "hang") => {
+		const hc = input.healthCheck;
+		if (!hc) return null;
+		const extra = behavior === "hang" ? hc.probeTimeoutUs : 0;
+		return {
+			min: ((hc.unhealthyThreshold - 1) * hc.intervalUs + extra) / 1000,
+			max: (hc.unhealthyThreshold * hc.intervalUs + extra) / 1000,
+		};
+	};
+
 	const finish = (result: EngineRunResult): RunMetrics => {
 		const endUs = result.endUs;
 		advanceTo(endUs);
@@ -503,6 +520,10 @@ export function createRunRecorder(
 						detectedAtMs === null ? null : detectedAtMs - failedAtMs,
 					restoredAtMs: f.restoredAtUs === null ? null : f.restoredAtUs / 1000,
 					failedWhileUndetected: f.failedWhileUndetected,
+					possibleDetectionMs: possibleDetection(f.behavior),
+					crashOnProbeTick:
+						input.healthCheck !== null &&
+						(f.failedAtUs as number) % input.healthCheck.intervalUs === 0,
 				};
 			});
 
@@ -554,6 +575,7 @@ export function createRunRecorder(
 				lateResponses,
 				successLatency: latencyStats(successSamples.view()),
 				completedLatency: latencyStats(completedSamples.view()),
+				failedWaitMs: failedWaitUs / 1000,
 				throughputRps: seconds > 0 ? (succeeded + failed) / seconds : 0,
 				successRateRps: seconds > 0 ? succeeded / seconds : 0,
 				servers: serverSummaries,
