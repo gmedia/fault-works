@@ -323,7 +323,7 @@ function buildNodes(
 		position: experiment.layout?.[n.id] ?? defaultPosition(experiment, n.id),
 		data: { serverIndex: list.findIndex((s) => s.id === n.id) },
 		selected: n.id === selected,
-		ariaLabel: `${n.kind === "load-balancer" ? "Load balancer" : n.kind === "client" ? "Client" : "Server"} ${n.label ?? n.id}`,
+		ariaLabel: `${n.label ?? n.id} (${n.kind === "load-balancer" ? "load balancer" : n.kind})`,
 		deletable: false,
 	}));
 }

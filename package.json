@@ -1,18 +1,22 @@
 {
-	"name": "faultworks",
-	"private": true,
-	"type": "module",
-	"packageManager": "pnpm@10.31.0",
-	"scripts": {
-		"dev": "pnpm --filter @faultworks/web dev",
-		"build": "pnpm -r build",
-		"typecheck": "pnpm -r typecheck",
-		"test": "pnpm -r test",
-		"check": "biome check",
-		"format": "biome format --write",
-		"lint": "biome lint"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "2.4.5"
-	}
+  "name": "faultworks",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.31.0",
+  "scripts": {
+    "dev": "pnpm --filter @faultworks/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "check": "biome check",
+    "format": "biome format --write",
+    "lint": "biome lint",
+    "test:e2e": "pnpm --filter @faultworks/web test:e2e"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.5"
+  },
+  "engines": {
+    "node": ">=22"
+  }
 }

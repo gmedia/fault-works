@@ -11,7 +11,8 @@
 		"preview": "vite preview",
 		"generate-routes": "tsr generate",
 		"typecheck": "tsc --noEmit",
-		"test": "vitest run --passWithNoTests"
+		"test": "vitest run --dir src --passWithNoTests",
+		"test:e2e": "playwright test"
 	},
 	"dependencies": {
 		"@faultworks/engine": "workspace:*",

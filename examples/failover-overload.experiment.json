@@ -1,120 +1,120 @@
 {
-  "schemaVersion": "0.1.0",
-  "experimentId": "failover-overload",
-  "title": "Failover overload: one server carries everything",
-  "question": "Can Server A absorb all traffic after Server B is removed?",
-  "description": "Each server can finish about 67 req/s (10 slots, 150 ms each). Together they handle 100 req/s comfortably. When Server B crashes for good at 20.5 s, Server A has to take everything.",
-  "seed": 42,
-  "model": {
-    "nodes": [
-      {
-        "id": "client",
-        "kind": "client",
-        "label": "Client"
-      },
-      {
-        "id": "lb",
-        "kind": "load-balancer",
-        "label": "Load balancer",
-        "config": {
-          "algorithm": "round-robin",
-          "healthCheck": {
-            "enabled": true,
-            "intervalMs": 2000,
-            "probeTimeoutMs": 1000,
-            "unhealthyThreshold": 1,
-            "healthyThreshold": 2
-          }
-        }
-      },
-      {
-        "id": "server-a",
-        "kind": "server",
-        "label": "Server A",
-        "config": {
-          "capacity": 10,
-          "queueCapacity": 50,
-          "serviceTimeMs": 150,
-          "serviceTimeDistribution": "fixed"
-        }
-      },
-      {
-        "id": "server-b",
-        "kind": "server",
-        "label": "Server B",
-        "config": {
-          "capacity": 10,
-          "queueCapacity": 50,
-          "serviceTimeMs": 150,
-          "serviceTimeDistribution": "fixed"
-        }
-      }
-    ],
-    "links": [
-      {
-        "source": "client",
-        "target": "lb"
-      },
-      {
-        "source": "lb",
-        "target": "server-a"
-      },
-      {
-        "source": "lb",
-        "target": "server-b"
-      }
-    ]
-  },
-  "workload": {
-    "arrival": "constant",
-    "offeredRps": 100,
-    "startMs": 0,
-    "durationMs": 60000,
-    "timeoutMs": 1000,
-    "bursts": []
-  },
-  "faults": [
-    {
-      "id": "server-b-crash",
-      "kind": "node-failure",
-      "target": "server-b",
-      "atMs": 20500,
-      "recoverAtMs": null,
-      "behavior": "refuse"
-    }
-  ],
-  "run": {
-    "sampleWindowMs": 1000
-  },
-  "assumptions": [
-    "Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
-    "Each server has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
-    "Health probes bypass the request queue and answer instantly when the server is up.",
-    "Servers do not know when a client gave up; they finish the work and the late response is discarded.",
-    "No retries: every failed request is final.",
-    "Numbers are scenario inputs, not measured performance of any product."
-  ],
-  "expectedObservations": [
-    "Server A's queue fills within a few seconds of the failover.",
-    "Latency rises to the service time plus the queue wait.",
-    "Once the queue is full, Server A rejects new requests even though it is healthy."
-  ],
-  "layout": {
-    "client": {
-      "x": 0,
-      "y": 0
-    },
-    "lb": {
-      "x": 300,
-      "y": 0
-    },
-    "server-a": {
-      "x": 620,
-      "y": -75.0
-    },
-    "server-b": {
-      "x": 620,
-      "y": 75.0
-    }
-  }
+	"schemaVersion": "0.1.0",
+	"experimentId": "failover-overload",
+	"title": "Failover overload: one server carries everything",
+	"question": "Can Server A absorb all traffic after Server B is removed?",
+	"description": "Each server can finish about 67 req/s (10 slots, 150 ms each). Together they handle 100 req/s comfortably. When Server B crashes for good at 20.5 s, Server A has to take everything.",
+	"seed": 42,
+	"model": {
+		"nodes": [
+			{
+				"id": "client",
+				"kind": "client",
+				"label": "Client"
+			},
+			{
+				"id": "lb",
+				"kind": "load-balancer",
+				"label": "Load balancer",
+				"config": {
+					"algorithm": "round-robin",
+					"healthCheck": {
+						"enabled": true,
+						"intervalMs": 2000,
+						"probeTimeoutMs": 1000,
+						"unhealthyThreshold": 1,
+						"healthyThreshold": 2
+					}
+				}
+			},
+			{
+				"id": "server-a",
+				"kind": "server",
+				"label": "Server A",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 50,
+					"serviceTimeMs": 150,
+					"serviceTimeDistribution": "fixed"
+				}
+			},
+			{
+				"id": "server-b",
+				"kind": "server",
+				"label": "Server B",
+				"config": {
+					"capacity": 10,
+					"queueCapacity": 50,
+					"serviceTimeMs": 150,
+					"serviceTimeDistribution": "fixed"
+				}
+			}
+		],
+		"links": [
+			{
+				"source": "client",
+				"target": "lb"
+			},
+			{
+				"source": "lb",
+				"target": "server-a"
+			},
+			{
+				"source": "lb",
+				"target": "server-b"
+			}
+		]
+	},
+	"workload": {
+		"arrival": "constant",
+		"offeredRps": 100,
+		"startMs": 0,
+		"durationMs": 60000,
+		"timeoutMs": 1000,
+		"bursts": []
+	},
+	"faults": [
+		{
+			"id": "server-b-crash",
+			"kind": "node-failure",
+			"target": "server-b",
+			"atMs": 20500,
+			"recoverAtMs": null,
+			"behavior": "refuse"
+		}
+	],
+	"run": {
+		"sampleWindowMs": 1000
+	},
+	"assumptions": [
+		"Abstract request-level model: no TCP, TLS, packets or real HTTP proxy semantics.",
+		"Each server has fixed concurrency slots and a FIFO queue; there is no CPU, memory or GC model.",
+		"Health probes bypass the request queue and answer instantly when the server is up.",
+		"Servers do not know when a client gave up; they finish the work and the late response is discarded.",
+		"No retries: every failed request is final.",
+		"Numbers are scenario inputs, not measured performance of any product."
+	],
+	"expectedObservations": [
+		"Server A's queue fills within a few seconds of the failover.",
+		"Latency rises to the service time plus the queue wait.",
+		"Once the queue is full, Server A rejects new requests even though it is healthy."
+	],
+	"layout": {
+		"client": {
+			"x": 0,
+			"y": 0
+		},
+		"lb": {
+			"x": 300,
+			"y": 0
+		},
+		"server-a": {
+			"x": 620,
+			"y": -75.0
+		},
+		"server-b": {
+			"x": 620,
+			"y": 75.0
+		}
+	}
 }
